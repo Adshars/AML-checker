@@ -1,0 +1,17 @@
+{
+  "name": "op-adapter",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "Adam Węglewski",
+  "license": "ISC",
+  "description": "OP-Adapter service for checking sanctions and PEP status using OpenSanctions Yente API",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "express": "^5.2.1"
+  }
+}

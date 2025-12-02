@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  op-adapter:
+    build: ./op-adapter
+    ports:
+      - "3001:3000"           
+    environment:
+      - YENTE_API_URL=http://yente:8000
+    depends_on:
+      - yente
+
+  # OpenSanctions (Yente)
+  yente:
+    image: opensanctions/yente:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - YENTE_TITLE=Local Compliance API
+      - YENTE_INDEX_TYPE=memory
+      # "default" the full OpenSanctions dataset
+      # "us_ofac_sdn" the US main sanctions list
+      - YENTE_SCOPE=default 
+      # Automatic data update on startup
+      - YENTE_UPDATE_DATA=true
+    volumes:
+      # Saving downloaded data to disk
+      - yente_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 6G          # Yente needs a lot of RAM for the "default" dataset
+
+volumes:
+  yente_data:

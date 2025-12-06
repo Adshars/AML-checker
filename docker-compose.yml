@@ -1,5 +1,8 @@
 version: '3.8'
 
+# Define the services
+# Op-adapter connects to Yente (OpenSanctions) API
+# Yente uses Elasticsearch as its data store
 services:
   op-adapter:
     build: ./op-adapter
@@ -10,6 +13,16 @@ services:
     depends_on:
       yente:
         condition: service_started
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3002:3000" # Wystawiamy na porcie 3002
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/auth_db
+      - JWT_SECRET=super_tajny_klucz_do_prototypu_123
+    depends_on:
+      - mongo
 
   # OpenSanctions (Yente)
   yente:
@@ -61,6 +74,30 @@ services:
       timeout: 5s
       retries: 12
 
+
+  # --- 3. BAZY DANYCH APLIKACJI ---
+  # Baza dla Auth Service (Użytkownicy)
+  mongo:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # Baza dla Core Service (Logi/Historia)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin_pass
+      - POSTGRES_DB=core_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   yente_data:
   es_data:
+  mongo_data:
+  postgres_data:

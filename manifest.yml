@@ -1,0 +1,4 @@
+catalogs:
+  - url: "https://data.opensanctions.org/datasets/latest/index.json"
+    resource_name: "entities.ftm.json"
+    scope: "us_ofac_sdn"  # USA data scope

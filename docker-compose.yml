@@ -8,7 +8,8 @@ services:
     environment:
       - YENTE_API_URL=http://yente:8000
     depends_on:
-      - yente
+      yente:
+        condition: service_started
 
   # OpenSanctions (Yente)
   yente:
@@ -19,16 +20,19 @@ services:
       - YENTE_TITLE=Local Compliance API
       # "default" the full OpenSanctions dataset
       # "us_ofac_sdn" the US main sanctions list
-      - YENTE_SCOPE=us_ofac_sdn
+      - YENTE_MANIFEST=/manifest.yml
       # Use local Elasticsearch instance (local)
       - YENTE_ELASTICSEARCH_URL=http://elasticsearch:9200
       # Automatic data update on startup
-      - YENTE_UPDATE_DATA=true
-    depends_on:
-      - elasticsearch
+      - YENTE_UPDATE_DATA=true     
     volumes:
       # Saving downloaded data to disk
       - yente_data:/data
+      # Mounting the manifest file
+      - ./manifest.yml:/manifest.yml
+    depends_on:
+      elasticsearch:
+        condition: service_healthy # Ensure ES is healthy before starting Yente
     deploy:
       resources:
         limits:
@@ -49,6 +53,13 @@ services:
       resources:
         limits:
           memory: 2G
+
+    # Check Elasticsearch health
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
 volumes:
   yente_data:

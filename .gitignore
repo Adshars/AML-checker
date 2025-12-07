@@ -1,0 +1,20 @@
+# Secret configuration file
+.env
+
+# Node.js dependencies
+**/node_modules
+node_modules/
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Docker data (local volumes, in case you accidentally map them here)
+yente_data/
+es_data/
+mongo_data/
+postgres_data/

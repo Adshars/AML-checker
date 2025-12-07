@@ -9,7 +9,7 @@ services:
     ports:
       - "3001:3000"           
     environment:
-      - YENTE_API_URL=http://yente:8000
+      - YENTE_API_URL=http://yente:${YENTE_PORT}
     depends_on:
       yente:
         condition: service_started
@@ -17,10 +17,10 @@ services:
   auth-service:
     build: ./auth-service
     ports:
-      - "3002:3000" # Wystawiamy na porcie 3002
+      - "${PORT_AUTH}:3000"
     environment:
-      - MONGO_URI=mongodb://mongo:27017/auth_db
-      - JWT_SECRET=super_tajny_klucz_do_prototypu_123
+      - MONGO_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:${MONGO_PORT}/${MONGO_DB_NAME}?authSource=admin
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - mongo
 
@@ -28,7 +28,7 @@ services:
   yente:
     image: ghcr.io/opensanctions/yente:5.1.0
     ports:
-      - "8000:8000"
+      - "${YENTE_PORT}:8000"
     environment:
       - YENTE_TITLE=Local Compliance API
       # "default" the full OpenSanctions dataset
@@ -80,7 +80,10 @@ services:
   mongo:
     image: mongo:6.0
     ports:
-      - "27017:27017"
+      - "${MONGO_PORT}:27017"
+    environment:
+    - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+    - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
       - mongo_data:/data/db
 
@@ -88,11 +91,11 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=admin_pass
-      - POSTGRES_DB=core_db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

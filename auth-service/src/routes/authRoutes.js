@@ -12,7 +12,7 @@ const generateKey = (size = 32) => crypto.randomBytes(size).toString('hex');
 // POST /register - new user and organization registration
 router.post('/register', async (req, res) => {
   try {
-    // 1. Extract extended data from the form
+    // Extract extended data from the form
     const { 
       orgName, country, city, address, //Organisation data
       email, password, firstName, lastName // Admin data

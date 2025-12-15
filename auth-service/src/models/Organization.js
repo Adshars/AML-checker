@@ -21,7 +21,7 @@ const organizationSchema = new mongoose.Schema({
   },
   address: {
     type: String,
-    required: true,
+    required: true, // Street, number, etc.
     trim: true
   },
   // API Keys for machine access (B2B)

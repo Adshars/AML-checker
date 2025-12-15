@@ -41,5 +41,4 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-    // ID (._id) generuje się automatycznie.
 export default mongoose.model('User', userSchema);

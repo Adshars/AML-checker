@@ -51,7 +51,7 @@ services:
         limits:
           memory: 4G
 
-  # Data Base
+  # Data Base for Yente (Elasticsearch)
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     environment:
@@ -75,8 +75,8 @@ services:
       retries: 12
 
 
-  # --- 3. BAZY DANYCH APLIKACJI ---
-  # Baza dla Auth Service (Użytkownicy)
+  # Databases
+  # Database for Auth Service (Users/Organizations)
   mongo:
     image: mongo:6.0
     ports:
@@ -87,7 +87,7 @@ services:
     volumes:
       - mongo_data:/data/db
 
-  # Baza dla Core Service (Logi/Historia)
+  # Database for Core Service (Logs/History)
   postgres:
     image: postgres:15-alpine
     environment:

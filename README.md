@@ -1,5 +1,5 @@
 # AML Checker
-> Mikroserwisowy POC do automatycznej weryfikacji klientow pod wzgledem sankcji i statusu PEP z wykorzystaniem lokalnej instancji OpenSanctions (Yente) oraz prostego modulu zarzadzania organizacjami/uzytkownikami.
+> Mikroserwisowy do automatycznej weryfikacji klientow pod wzgledem sankcji i statusu PEP z wykorzystaniem lokalnej instancji OpenSanctions (Yente) oraz prostego modulu zarzadzania organizacjami/uzytkownikami.
 
 ## Table of Contents
 * [General Information](#general-information)

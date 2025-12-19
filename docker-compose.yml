@@ -1,40 +1,57 @@
 version: '3.8'
 
+# Define the services
+# Op-adapter connects to Yente (OpenSanctions) API
+# Yente uses Elasticsearch as its data store
 services:
   op-adapter:
     build: ./op-adapter
     ports:
       - "3001:3000"           
     environment:
-      - YENTE_API_URL=http://yente:8000
+      - YENTE_API_URL=http://yente:${YENTE_PORT}
     depends_on:
-      - yente
+      yente:
+        condition: service_started
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "${PORT_AUTH}:3000"
+    environment:
+      - MONGO_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:${MONGO_PORT}/${MONGO_DB_NAME}?authSource=admin
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - mongo
 
   # OpenSanctions (Yente)
   yente:
     image: ghcr.io/opensanctions/yente:5.1.0
     ports:
-      - "8000:8000"
+      - "${YENTE_PORT}:8000"
     environment:
       - YENTE_TITLE=Local Compliance API
       # "default" the full OpenSanctions dataset
       # "us_ofac_sdn" the US main sanctions list
-      - YENTE_SCOPE=us_ofac_sdn
+      - YENTE_MANIFEST=/manifest.yml
       # Use local Elasticsearch instance (local)
       - YENTE_ELASTICSEARCH_URL=http://elasticsearch:9200
       # Automatic data update on startup
-      - YENTE_UPDATE_DATA=true
-    depends_on:
-      - elasticsearch
+      - YENTE_UPDATE_DATA=true     
     volumes:
       # Saving downloaded data to disk
       - yente_data:/data
+      # Mounting the manifest file
+      - ./manifest.yml:/manifest.yml
+    depends_on:
+      elasticsearch:
+        condition: service_healthy # Ensure ES is healthy before starting Yente
     deploy:
       resources:
         limits:
           memory: 4G
 
-  # Data Base
+  # Data Base for Yente (Elasticsearch)
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     environment:
@@ -50,6 +67,40 @@ services:
         limits:
           memory: 2G
 
+    # Check Elasticsearch health
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+
+  # Databases
+  # Database for Auth Service (Users/Organizations)
+  mongo:
+    image: mongo:6.0
+    ports:
+      - "${MONGO_PORT}:27017"
+    environment:
+    - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+    - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+
+  # Database for Core Service (Logs/History)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   yente_data:
   es_data:
+  mongo_data:
+  postgres_data:

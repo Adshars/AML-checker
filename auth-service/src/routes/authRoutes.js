@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import User from '../models/User.js';
 import Organization from '../models/Organization.js';
+import jwt from 'jsonwebtoken';
 
 const router = express.Router();
 
@@ -136,6 +137,66 @@ router.post('/register-organization', async (req, res) => {
         console.error('User Registration Error:', error);
         res.status(500).json({ error: 'Server error during user registration' });
       }
+  });
+
+  // Login (JWT generation)
+  // POST /login
+
+  router.post('/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      // Validation
+
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Missing email or password' });
+      }
+
+      // Find user by email
+
+      const user  = await User.findOne({ email });
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      // Compare password
+
+      const isMatch = await bcrypt.compare(password, user.passwordHash);
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      // Generate JWT
+
+      const payload = {
+        userId: user._id,
+        organizationId: user.organizationId,
+        role: user.role
+      };
+
+      const token = jwt.sign(payload, process.env.JWT_SECRET, {
+        expiresIn: '8h' // Token valid for 8 hour
+      });
+
+      // Success - Return token
+
+      res.json({
+        message: 'Login successful',
+        token: token,
+        user: {
+          id: user._id,
+          email: user.email,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          organizationId: user.organizationId
+        }
+      });
+
+    } catch (error) {
+      console.error('Login Error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
   });
 
 export default router;

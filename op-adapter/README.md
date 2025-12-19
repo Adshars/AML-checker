@@ -1,46 +1,46 @@
 OP-Adapter
 ==========
 
-Lekki adapter HTTP nad lokalnym API OpenSanctions (Yente). Udostepnia jeden punkt wejsciowy do sprawdzania sankcji/PEP dla osoby lub podmiotu, mapuje odpowiedz Yente na uproszczony format oraz wystawia health-check.
+Lightweight HTTP adapter over the local OpenSanctions (Yente) API. Exposes a single entry point to check sanctions/PEP status for a person or entity, maps Yente responses to a simplified format, and provides a health-check.
 
-Stos i zaleznosci
+Stack and Dependencies
 - Node.js 18, Express 5, ES Modules
-- axios do komunikacji z Yente
-- Domyslny port serwisu: 3000 (w docker-compose mapowany na 3001)
+- axios for Yente communication
+- Default service port: 3000 (mapped to 3001 in docker-compose)
 
-Srodowisko i konfiguracja
-- Zmienna `YENTE_API_URL` (opcjonalna) wskazuje bazowy URL Yente; domyslnie `http://localhost:8000`.
-- W docker-compose adres jest ustawiany na `http://yente:${YENTE_PORT}`.
-- Serwis nie wymaga bazy danych ani dodatkowych sekretow.
+Environment and Configuration
+- `YENTE_API_URL` (optional) points to the base Yente URL; defaults to `http://localhost:8000`.
+- In docker-compose it is set to `http://yente:${YENTE_PORT}`.
+- No database or additional secrets required.
 
-Uruchomienie lokalne
+Local Run
 1) `npm install`
 2) `npm start`
 
-Uruchomienie w Docker Compose
-- W katalogu glowym projektu: `docker compose up --build op-adapter`
-- Endpointy beda dostepne na http://localhost:3001 (mapowanie 3001:3000).
+Docker Compose Run
+- From project root: `docker compose up --build op-adapter`
+- Endpoints available at http://localhost:3001 (3001:3000 mapping).
 
-Endpointy
-- `GET /health` – prosty health-check: `{ status, service, mode }`.
-- `GET /check?name=<string>` – glowny endpoint weryfikacji.
-	- Parametr: `name` (wymagany).
-	- Zapytanie delegowane do Yente `/search/default` z limit=15, fuzzy=false.
-	- Odpowiedz zawiera tablice obiektow z polami: `id`, `name`, `schema`, `isSanctioned`, `isPep`, `country`, `birthDate`, `notes`, `score`, plus metadane `source`, `timestamp`, `hits_count`.
-	- Kody bledow: 400 (brak parametru), 502 (brak dostepu do Yente).
+Endpoints
+- `GET /health` – simple health check: `{ status, service, mode }`.
+- `GET /check?name=<string>` – main verification endpoint.
+	- Parameter: `name` (required).
+	- Delegates to Yente `/search/default` with `limit=15`, `fuzzy=false`.
+	- Response array fields: `id`, `name`, `schema`, `isSanctioned`, `isPep`, `country`, `birthDate`, `notes`, `score`, plus meta `source`, `timestamp`, `hits_count`.
+	- Error codes: 400 (missing parameter), 502 (Yente unavailable).
 
-Przyklady uzycia
+Usage Examples
 - Health:
 ```bash
 curl http://localhost:3001/health
 ```
 
-- Sprawdzenie osoby:
+- Person check:
 ```bash
 curl "http://localhost:3001/check?name=John%20Doe"
 ```
 
-Struktura odpowiedzi
+Response Structure
 ```json
 {
 	"meta": {
@@ -65,13 +65,13 @@ Struktura odpowiedzi
 }
 ```
 
-Jak to dziala (high level)
-- Endpoint `/check` wywoluje Yente z przekazanym zapytaniem `q=<name>`.
-- Odpowiedz Yente jest mapowana: flagi `isSanctioned` na podstawie `topics` zawierajacego `sanction`, `isPep` na podstawie `role.pep`.
-- Zwrocone sa wybrane pola properties (country, birthDate, notes) i score dla latwiejszej prezentacji w kliencie.
+How It Works (High Level)
+- `/check` calls Yente with `q=<name>`.
+- Yente response is mapped: `isSanctioned` based on `topics` containing `sanction`, `isPep` on `role.pep`.
+- Selected properties (country, birthDate, notes) and score are returned for easier client rendering.
 
-Ograniczenia i TODO
-- Brak uwierzytelniania / rate limiting.
-- Fuzzy search wylaczone (fuzzy=false) – mozna wlaczyc parametr.
-- Brak paginacji; limit sztywno 15.
-- Rozszerzyć zwracane pola
+Limitations and TODO
+- No authentication or rate limiting.
+- Fuzzy search disabled (`fuzzy=false`) – can be enabled if needed.
+- No pagination; limit fixed at 15.
+- Extend returned fields if required.

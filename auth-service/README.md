@@ -1,102 +1,134 @@
 Auth-Service
 ============
 
-Serwis rejestracji organizacji i uzytkownikow dla platformy AML Checker. Generuje klucze API (apiKey, apiSecret) dla organizacji, zapisuje dane w MongoDB i wystawia health-check.
+Authentication and registration service for organizations and users in the AML Checker platform. Generates API keys (apiKey, apiSecret) for organizations, stores data in MongoDB, and provides health-check endpoint.
 
-Stos i zaleznosci
+Stack and Dependencies
 - Node.js 18, Express 5, ES Modules
 - Mongoose 9 + MongoDB 6
-- bcryptjs (hash hasel i apiSecret), jsonwebtoken (przyszle logowanie), cors, dotenv
+- bcryptjs (password and apiSecret hashing), jsonwebtoken (JWT authentication), cors, dotenv
 
-Srodowisko i konfiguracja
-- `MONGO_URI` – adres MongoDB; w kodzie domyslnie `mongodb://localhost:27017/auth_db`.
-- W docker-compose MONGO_URI budowany jest z danych z `.env` (uzytkownik, haslo, port, baza).
-- Port aplikacji w kontenerze: 3000; mapowany zmienna `PORT_AUTH` (domyslnie 3002).
+Environment and Configuration
+- `MONGO_URI` – MongoDB connection string; defaults to `mongodb://localhost:27017/auth_db` in code.
+- In docker-compose, MONGO_URI is built from `.env` variables (username, password, port, database).
+- `JWT_SECRET` – secret key for JWT token signing (required for login functionality).
+- Application port in container: 3000; mapped via `PORT_AUTH` variable (default 3002).
 
-Uruchomienie lokalne
+Local Setup
 1) `npm install`
-2) `node src/index.js` (opcjonalnie ustaw `MONGO_URI` w srodowisku)
+2) `node src/index.js` (optionally set `MONGO_URI` and `JWT_SECRET` environment variables)
 
-Uruchomienie w Docker Compose
-- W katalogu glowym projektu: `docker compose up --build auth-service`
-- Endpointy beda dostepne na http://localhost:3002 (mapowanie PORT_AUTH:3000).
+Docker Compose Setup
+- From project root directory: `docker compose up --build auth-service`
+- Endpoints will be available at http://localhost:3002 (PORT_AUTH:3000 mapping).
 
-Endpointy
-- `GET /health` – zwraca status serwisu i polaczenia z Mongo (`{ service, status, database }`).
-- `POST /auth/register-organization` – rejestruje organizacje i admina, generuje `apiKey` i jednorazowo zwraca `apiSecret`.
-	- Wymagane pola: `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName`.
-	- Walidacje: duplikat org (name), duplikat email; bledy 400. Blad serwera 500.
-- `POST /auth/register-user` – dodaje uzytkownika do istniejacej organizacji.
-	- Wymagane pola: `email`, `password`, `firstName`, `lastName`, `organizationId`.
-	- Walidacje: istnienie organizationId, duplikat email; bledy 400/404; serwer 500.
+Endpoints
+- `GET /health` – returns service status and MongoDB connection (`{ service, status, database }`).
+- `POST /auth/register-organization` – registers organization and admin user, generates `apiKey` and returns `apiSecret` once.
+	- Required fields: `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName`.
+	- Validations: duplicate org name, duplicate email; 400 errors. Server error 500.
+- `POST /auth/register-user` – adds user to existing organization.
+	- Required fields: `email`, `password`, `firstName`, `lastName`, `organizationId`.
+	- Validations: organizationId existence, duplicate email; 400/404 errors; server error 500.
+- `POST /auth/login` – authenticates user and returns JWT token.
+	- Required fields: `email`, `password`.
+	- Validations: user existence, password match; 401 errors. Server error 500.
+	- Returns JWT token valid for 8 hours with user data.
 
-Przyklady uzycia
-- Health:
+Usage Examples
+- Health check:
 ```bash
 curl http://localhost:3002/health
 ```
 
-- Rejestracja organizacji + admina:
+- Organization + admin registration:
 ```bash
 curl -X POST http://localhost:3002/auth/register-organization \
 	-H "Content-Type: application/json" \
 	-d '{
 		"orgName": "ACME Corp",
 		"country": "PL",
-		"city": "Warszawa",
+		"city": "Warsaw",
 		"address": "Prosta 1",
 		"email": "admin@acme.test",
 		"password": "Str0ngPass!",
-		"firstName": "Jan",
-		"lastName": "Kowalski"
+		"firstName": "John",
+		"lastName": "Smith"
 	}'
 ```
 
-- Rejestracja uzytkownika (wymaga istniejacego `organizationId`):
+- User registration (requires existing `organizationId`):
 ```bash
 curl -X POST http://localhost:3002/auth/register-user \
 	-H "Content-Type: application/json" \
 	-d '{
 		"email": "user@acme.test",
 		"password": "Str0ngPass!",
-		"firstName": "Anna",
-		"lastName": "Nowak",
+		"firstName": "Jane",
+		"lastName": "Doe",
 		"organizationId": "<ORG_ID>"
 	}'
 ```
 
-Struktura odpowiedzi (skrot)
+- User login:
+```bash
+curl -X POST http://localhost:3002/auth/login \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "admin@acme.test",
+		"password": "Str0ngPass!"
+	}'
+```
+
+Response Structure (examples)
 - `/health`:
 ```json
 { "service": "auth-service", "status": "UP", "database": "Connected" }
 ```
 
-- `/auth/register-organization` (przyklad):
+- `/auth/register-organization`:
 ```json
 {
 	"message": "Organization registered successfully",
 	"organization": {
 		"id": "<org_id>",
 		"name": "ACME Corp",
-		"location": "Warszawa, PL",
+		"location": "Warsaw, PL",
 		"apiKey": "pk_live_...",
-		"apiSecret": "sk_live_..."   // zwracany tylko raz
+		"apiSecret": "sk_live_..."   // returned only once
 	},
 	"user": {
 		"id": "<user_id>",
-		"fullName": "Jan Kowalski",
+		"fullName": "John Smith",
 		"email": "admin@acme.test",
 		"role": "admin"
 	}
 }
 ```
 
-Jak to dziala (high level)
-- `register-organization`: sprawdza duplikaty, generuje apiKey/apiSecret, hashuje secret i haslo, zapisuje Organization i User(admin); secret zwracany jednokrotnie.
-- `register-user`: waliduje organizationId, sprawdza email, hashuje haslo, ustawia role `user` i zapisuje rekord.
-- `/health`: raportuje stan serwisu i polaczenia Mongoose.
+- `/auth/login`:
+```json
+{
+	"message": "Login successful",
+	"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+	"user": {
+		"id": "<user_id>",
+		"email": "admin@acme.test",
+		"role": "admin",
+		"firstName": "John",
+		"lastName": "Smith",
+		"organizationId": "<org_id>"
+	}
+}
+```
 
-Ograniczenia i TODO
-- Brak logowania, JWT i middleware autoryzacji.
-- Brak rate limiting i walidacji schematow (Joi/Zod).
-- Brak rotacji kluczy API, resetu hasel i audytu operacji.
+How It Works (High Level)
+- `register-organization`: checks for duplicates, generates apiKey/apiSecret, hashes secret and password, saves Organization and User (admin); secret returned only once.
+- `register-user`: validates organizationId, checks email, hashes password, sets role to `user` and saves record.
+- `login`: validates credentials, compares password hash, generates JWT token with userId, organizationId and role; token valid for 8 hours.
+- `/health`: reports service status and Mongoose connection state.
+
+Limitations and TODO
+- No authorization middleware for protected routes.
+- No rate limiting or schema validation (Joi/Zod).
+- No API key rotation, password reset, or operation auditing.

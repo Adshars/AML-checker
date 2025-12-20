@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import dotnv from 'dotenv';
+import dotenv from 'dotenv';
 
-dotnv.config();
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -18,8 +18,8 @@ const OP_ADAPTER_URL = process.env.OP_ADAPTER_URL || 'http://op-adapter:3000';
 app.use(cors());
 
 // Logging middleware
-app.use((reg, res, next) => {
-    console.log('[GATEWAY] ${reg.method} ${reg.method} ${reg.path}');
+app.use((req, res, next) => {
+    console.log(`[GATEWAY] ${req.method} ${req.url}`);
     next();
 });
 
@@ -31,7 +31,7 @@ app.use('/auth', createProxyMiddleware({
     target: AUTH_SERVICE_URL,
     changeOrigin: true,
     pathRewrite: {
-
+        '^': '/auth',
     }
 }));
 

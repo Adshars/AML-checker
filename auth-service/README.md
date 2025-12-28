@@ -24,16 +24,22 @@ Docker Compose Setup
 
 Endpoints
 - `GET /health` – returns service status and MongoDB connection (`{ service, status, database }`).
-- `POST /auth/register-organization` – registers organization and admin user, generates `apiKey` and returns `apiSecret` once.
+- `POST /auth/register-organization` – registers organization and admin user, generates `apiKey` and returns `apiSecret` once (never stored in plain text).
 	- Required fields: `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName`.
 	- Validations: duplicate org name, duplicate email; 400 errors. Server error 500.
-- `POST /auth/register-user` – adds user to existing organization.
+	- Returns: organization details with `apiKey` (format: `pk_live_...`) and `apiSecret` (format: `sk_live_...`) visible only once; admin user with role `admin`.
+- `POST /auth/register-user` – adds user to existing organization with `user` role.
 	- Required fields: `email`, `password`, `firstName`, `lastName`, `organizationId`.
 	- Validations: organizationId existence, duplicate email; 400/404 errors; server error 500.
-- `POST /auth/login` – authenticates user and returns JWT token.
+	- Returns: user details (email, name, role, organization assignment).
+- `POST /auth/login` – authenticates user by email/password and returns JWT token.
 	- Required fields: `email`, `password`.
 	- Validations: user existence, password match; 401 errors. Server error 500.
-	- Returns JWT token valid for 8 hours with user data.
+	- Returns JWT token valid for 8 hours; token payload includes `userId`, `organizationId`, `role`.
+- `POST /auth/internal/validate-api-key` – internal endpoint for API Gateway; validates API key and secret (B2B machine-to-machine authentication).
+	- Required fields: `apiKey`, `apiSecret`.
+	- Validations: API key existence, secret match (bcrypt comparison); 401 errors. Server error 500.
+	- Returns: `{ valid: true, organizationId, organizationName }` on success.
 
 Usage Examples
 - Health check:
@@ -122,13 +128,36 @@ Response Structure (examples)
 }
 ```
 
+- `/auth/internal/validate-api-key`:
+```json
+{
+	"valid": true,
+	"organizationId": "<org_id>",
+	"organizationName": "ACME Corp"
+}
+```
+
 How It Works (High Level)
-- `register-organization`: checks for duplicates, generates apiKey/apiSecret, hashes secret and password, saves Organization and User (admin); secret returned only once.
-- `register-user`: validates organizationId, checks email, hashes password, sets role to `user` and saves record.
-- `login`: validates credentials, compares password hash, generates JWT token with userId, organizationId and role; token valid for 8 hours.
-- `/health`: reports service status and Mongoose connection state.
+- `register-organization`: validates required fields, checks for duplicate org name and email, generates `apiKey` (format: `pk_live_<random>`) and `apiSecret` (format: `sk_live_<random>`), hashes apiSecret and password using bcryptjs (salt 10), saves Organization with hashed secret, creates admin User associated with organization, returns organization and user details with **plaintext apiSecret visible only once**.
+- `register-user`: validates required fields and checks organizationId existence, verifies email uniqueness, hashes password using bcryptjs (salt 10), saves User with role `user` and association to organization.
+- `login`: finds user by email, compares provided password against stored hash using bcryptjs, generates JWT token with payload `{ userId, organizationId, role }` signed with `JWT_SECRET` and expiring in 8 hours; returns token and user info.
+- `/auth/internal/validate-api-key`: finds organization by apiKey, compares provided plaintext apiSecret against stored hash using bcryptjs, returns organization ID and name on success (used by API Gateway for B2B authentication).
+- `/health`: reports service status and Mongoose connection state (1 = Connected, other = Disconnected).
+
+Authentication Methods
+- **User Login (JWT)**: User provides email and password → receives JWT token valid 8 hours → uses token in `Authorization: Bearer <token>` header for API calls → API Gateway verifies token signature.
+- **System/B2B (API Key)**: Organization receives `apiKey` and `apiSecret` at registration → uses both in `x-api-key` and `x-api-secret` headers → API Gateway validates credentials with this internal endpoint.
+
+Data Models
+- **Organization**: { name (unique), country, city, address, apiKey (unique), apiSecretHash, createdAt }
+- **User**: { email (unique, lowercase), passwordHash, firstName, lastName, organizationId (references Organization), role (admin|user), createdAt }
 
 Limitations and TODO
-- No authorization middleware for protected routes.
-- No rate limiting or schema validation (Joi/Zod).
-- No API key rotation, password reset, or operation auditing.
+- No authorization middleware on routes; all endpoints accessible without role checks (recommend adding middleware for admin-only operations).
+- No rate limiting or request throttling on registration/login endpoints (vulnerable to brute force and account enumeration attacks).
+- No schema validation using Joi/Zod; relies only on basic field presence checks.
+- No API key rotation endpoint; keys are permanent after generation (consider adding key versioning/rotation).
+- No password reset flow; users cannot self-service reset forgotten passwords.
+- No operation auditing; no logging of authentication events, failed attempts, or API key usage.
+- No token revocation/blacklist; logged-out tokens remain valid until expiration.
+- Secret is returned in plaintext only once; if user loses it during registration, recovery requires admin intervention or re-registration.

@@ -14,6 +14,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3000
       - OP_ADAPTER_URL=http://op-adapter:3000
       - JWT_SECRET=${JWT_SECRET}
+      - CORE_SERVICE_URL=http://core-service:3000
     depends_on:
       - auth-service
       - op-adapter
@@ -36,6 +37,20 @@ services:
       - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - mongo
+
+  core-service:
+    build: ./core-service
+    ports:
+      - "3005:3000" # Dostęp z zewnątrz na porcie 3005 (dla debugowania)
+    environment:
+      - DB_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - OP_ADAPTER_URL=http://op-adapter:3000
+    depends_on:
+      - postgres
+      - op-adapter
 
   # OpenSanctions (Yente)
   yente:

@@ -60,8 +60,8 @@ export const authMiddleware = async (req, res, next) => {
 
                 // Success - Attach user info to request for downstream services
 
-                if (decoded.orgId) {
-                    req.headers['x-org-id'] = decoded.orgId;
+                if (decoded.organizationId) {
+                    req.headers['x-org-id'] = decoded.organizationId;
                 } else {
                     console.warn('JWT missing organization ID');
                 }

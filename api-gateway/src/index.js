@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 8080;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
 const CORE_SERVICE_URL = process.env.CORE_SERVICE_URL || 'http://core-service:3000';
 // Temporary OP Adapter service address
-const TARGET_URL = process.env.OP_ADAPTER_URL || 'http://op-adapter:3000';
+const TEST_URL = process.env.OP_ADAPTER_URL || 'http://op-adapter:3000';
 
 // Middleware CORS (Frontend)
 app.use(cors());
@@ -38,10 +38,10 @@ app.use('/auth', createProxyMiddleware({
     }
 }));
 
-// OP Adapter Service
+// Core Service
 
 app.use('/sanctions', authMiddleware, createProxyMiddleware({
-    target: TARGET_URL,
+    target: CORE_SERVICE_URL,
     changeOrigin: true,
     pathRewrite: {
         '^/sanctions': '',

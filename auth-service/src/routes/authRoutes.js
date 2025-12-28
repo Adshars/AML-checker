@@ -199,4 +199,47 @@ router.post('/register-organization', async (req, res) => {
     }
   });
 
+  // Internal endpont: Vlaidate API Key and Secret
+  // POST /internal/validate-api-key
+
+  router.post('/internal/validate-api-key', async (req, res) => {
+    try {
+      // Gateway for B2B machine access validation
+      const { apiKey, apiSecret } = req.body;
+
+      if (!apiKey || !apiSecret) {
+        return res.status(400).json({ error: 'Missing API key or secret' });
+      }
+
+      // Find organization by API key
+
+      const organization = await Organization.findOne({ apiKey });
+
+      if (!organization) {
+        return res.status(401).json({ error: 'Invalid API key or secret' });
+      }
+
+      // Compare API secret
+
+      const isMatch = await bcrypt.compare(apiSecret, organization.apiSecretHash);
+
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Invalid API key or secret' });
+      }
+
+      // Success - Return organization info
+
+      res.json({
+        valid: true,
+        organizationId: organization._id,
+        organizationName: organization.name
+      });
+
+    } catch (error) {
+      console.error('API Key Validation Error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+
 export default router;

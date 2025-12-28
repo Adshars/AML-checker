@@ -14,12 +14,18 @@ export const authMiddleware = async (req, res, next) => {
         const apiSecret = req.headers['x-api-secret'];
 
         if (apiKey && apiSecret) {
+
+            console.log('[DEBUG] API Key Auth Attempt');
+            console.log(`[DEBUG] API Key: ${apiKey}`);
+            console.log(`[DEBUG] API Secret (length): ${apiSecret.length}`);
             try {
                 // Validate API Key and Secret with Auth Service
-                const response = await axios.post(`${AUTH_SERVICE_URL}/internal/validate-api-key`, {
+                const response = await axios.post(`${AUTH_SERVICE_URL}/auth/internal/validate-api-key`, {
                     apiKey,
                     apiSecret
                 });
+
+                console.log('[DEBUG] API Key Validation Response:', response.data);
 
                 if (response.data.valid) {
 
@@ -31,6 +37,7 @@ export const authMiddleware = async (req, res, next) => {
                     return next();
                 }
             } catch (err) {
+                console.error('API Key Validation Failed:', err.response ? err.response.data : err.message);
                 return res.status(403).json({ error: 'Invalid API Key or Secret' });
             }
         }
@@ -47,10 +54,22 @@ export const authMiddleware = async (req, res, next) => {
                 // Verify JWT
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+                //Logs
+
+                console.log('Decoded JWT:', decoded);
+
                 // Success - Attach user info to request for downstream services
 
-                req.headers ['x-org-id'] = decoded.orgId;
-                req.headers['x-user-id'] = decoded.userId;
+                if (decoded.orgId) {
+                    req.headers['x-org-id'] = decoded.orgId;
+                } else {
+                    console.warn('JWT missing organization ID');
+                }
+
+                if (decoded.userId) {
+                    req.headers['x-user-id'] = decoded.userId;
+                }
+
                 req.headers['x-auth-type'] = 'jwt';
 
                 return next();

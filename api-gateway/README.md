@@ -9,6 +9,7 @@ Stack and Dependencies
 - jsonwebtoken (JWT token verification)
 - axios (HTTP client for validation requests)
 - cors (cross-origin request handling), dotenv
+- swagger-ui-express + yamljs (serves OpenAPI docs at /api-docs)
 
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
@@ -24,13 +25,15 @@ Local Setup
 Docker Compose Setup
 - From project root directory: `docker compose up --build api-gateway`
 - Gateway will be available at http://localhost:8080
+- OpenAPI docs available at http://localhost:8080/api-docs
 
 Endpoints
 - `GET /health` – returns gateway status (`{ service, status }`).
-- `POST /auth/*` – proxied to Auth Service
+- `GET /api-docs` – Swagger UI for the gateway's OpenAPI spec.
+- `ALL /auth/*` – proxied to Auth Service
 	- Includes `/auth/register-organization`, `/auth/register-user`, `/auth/login`, and internal validation endpoints.
-	- No authentication required for `/auth/register-*` and `/auth/login`.
-- `GET/POST /sanctions/*` – proxied to Core Service (requires authentication)
+	- Public routes: `/auth/register-*`, `/auth/login`.
+- `ALL /sanctions/*` – proxied to Core Service (requires authentication)
 	- Requires valid JWT token or API Key + API Secret.
 	- Authenticated requests include `x-org-id`, `x-user-id` (if available), and `x-auth-type` headers.
 
@@ -46,6 +49,9 @@ The gateway validates two authentication scenarios:
 	- Header: `Authorization: Bearer <token>`
 	- Verifies JWT signature using `JWT_SECRET`.
 	- On success: sets `x-org-id`, `x-user-id` (if present), and `x-auth-type: jwt` headers.
+
+Headers Forwarding to Core Service
+- When proxying `/sanctions/*`, the gateway forwards any of `x-org-id`, `x-user-id`, and `x-auth-type` to the Core Service for authorization and auditing.
 
 If neither authentication method is valid, returns 401/403 error.
 
@@ -113,6 +119,7 @@ Error Responses
 
 How It Works (High Level)
 - **Request Flow**: Client request arrives → gateway logs request → authentication middleware validates credentials → validated request forwarded to downstream service with auth context headers (`x-org-id`, `x-user-id`, `x-auth-type`) → response returned to client.
+- **API Docs**: Swagger UI served at `/api-docs`, loaded from `swagger.yaml`.
 - **Public Routes** (`/auth/*`): No authentication required; direct proxy to Auth Service for registration, login, and health checks.
 - **Protected Routes** (`/sanctions/*`): Authentication middleware validates JWT token or API Key/Secret before proxying request; downstream service receives auth context for authorization.
 - **API Key Validation**: Gateway calls Auth Service `/auth/internal/validate-api-key` endpoint to verify credentials and retrieve organization ID.

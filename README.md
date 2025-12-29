@@ -31,6 +31,7 @@
 	- Routes: `/auth/*` (public) → Auth Service; `/sanctions/*` (protected) → Core Service
 	- Supports two authentication methods: JWT (user login) and API Key/Secret (B2B system-to-system)
 	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`) to downstream requests
+	- OpenAPI docs: available at http://localhost:8080/api-docs
 
 2. **Auth Service** ([auth-service/](auth-service/)) – User and organization management
 	- Port: 3000 (mapped via `PORT_AUTH`, default 3002)
@@ -154,6 +155,9 @@ curl http://localhost:3005/health          # Core Service (debug port)
 curl http://localhost:8000/health          # Yente (or YENTE_PORT)
 ```
 
+Open Swagger UI for Gateway:
+http://localhost:8080/api-docs
+
 ### Environment Variables (.env)
 See [.env.example](.env.example) for template. Key variables:
 
@@ -168,6 +172,11 @@ See [.env.example](.env.example) for template. Key variables:
 | `MONGO_INITDB_ROOT_PASSWORD` | (required) | MongoDB root password |
 | `POSTGRES_PASSWORD` | (required) | PostgreSQL root password |
 | `POSTGRES_DB` | core_db | PostgreSQL database name for Core Service |
+| `AUTH_SERVICE_URL` | http://auth-service:3000 | API Gateway target for Auth Service |
+| `CORE_SERVICE_URL` | http://core-service:3000 | API Gateway target for Core Service |
+| `OP_ADAPTER_URL` | http://op-adapter:3000 | Reserved for downstream usage (not proxied directly) |
+| `PORT` | 8080 | API Gateway listen port (inside container) |
+| `JWT_SECRET` | (required) | JWT verification secret; must match Auth Service |
 
 ### Data Persistence
 Services use Docker volumes:
@@ -292,10 +301,10 @@ curl http://localhost:3005/health                  # Core Service (debug)
 	- ✅ MongoDB (Auth Service persistence)
 	- ✅ PostgreSQL (Core Service audit logs)
 	- ✅ Elasticsearch + Yente (sanctions data)
+	- ✅ OpenAPI/Swagger docs for API Gateway (`/api-docs`)
 - **Not Yet Implemented**:
 	- ❌ Frontend (web UI for screening and organization management)
 	- ❌ Infrastructure (Kubernetes manifests, Helm charts, CI/CD)
-	- ❌ OpenAPI/Swagger documentation
 	- ❌ Rate limiting and comprehensive audit trail UI
 
 ## Room for Improvement

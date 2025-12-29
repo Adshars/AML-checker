@@ -2,9 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { authMiddleware } from './authMiddleware.js';
 
 dotenv.config();
+
+// Swagger setup
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -19,6 +27,11 @@ const TEST_URL = process.env.OP_ADAPTER_URL || 'http://op-adapter:3000';
 
 // Middleware CORS (Frontend)
 app.use(cors());
+
+// Swagger config
+
+const swaggerDocument = YAML.load(path.join(__dirname, '../swagger.yaml'));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Logging middleware
 app.use((req, res, next) => {

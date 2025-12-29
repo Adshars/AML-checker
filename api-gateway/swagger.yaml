@@ -1,0 +1,166 @@
+openapi: 3.0.0
+info:
+  title: Compliance System API
+  description: API Gateway for Sanctions Screening System
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local Docker Environment
+
+# Security definitions (Smart Auth)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for users (Frontend)
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key for B2B integration
+    apiSecretAuth:
+      type: apiKey
+      in: header
+      name: x-api-secret
+      description: API secret for B2B integration
+
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+    apiSecretAuth: []
+
+paths:
+  # AUTH SERVICE
+  /auth/login:
+    post:
+      summary: Log in user (Generates JWT)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  example: admin@testcorp.com
+                password:
+                  type: string
+                  format: password
+                  example: Password123!
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT Token
+                  user:
+                    type: object
+  
+  /auth/register-organization:
+    post:
+      summary: Register new organization (Admin + Company)
+      tags: [Auth]
+      security: [] # Public endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                orgName:
+                  type: string
+                  example: Acme Corp
+                country:
+                  type: string
+                  example: PL
+                city:
+                  type: string
+                  example: Warsaw
+                address:
+                  type: string
+                  example: Main St 1
+                email:
+                  type: string
+                  example: ceo@acme.com
+                password:
+                  type: string
+                  example: SecretPass1!
+                firstName:
+                  type: string
+                  example: John
+                lastName:
+                  type: string
+                  example: Doe
+      responses:
+        201:
+          description: Organisation registered successfully
+
+  # CORE SERVICE (SANCTIONS)
+  /sanctions/check:
+    get:
+      summary: Check entity against sanctions lists
+      description: Requires JWT (User) or API Key (B2B). Writes an audit log.
+      tags: [Sanctions]
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: true
+          description: Name or company name to check
+          example: Vladimir Putin
+      responses:
+        200:
+          description: Check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  meta:
+                    type: object
+                  hits_count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        isSanctioned:
+                          type: boolean
+                        name:
+                          type: string
+
+  /sanctions/history:
+    get:
+      summary: Get search history
+      description: Returns logs only for the current user's organization.
+      tags: [History]
+      responses:
+        200:
+          description: List of logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    searchQuery:
+                      type: string
+                    hasHit:
+                      type: boolean
+                    createdAt:
+                      type: string
+                      format: date-time

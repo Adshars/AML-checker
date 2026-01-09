@@ -25,6 +25,6 @@ router.post('/register-user', authController.registerUser);
 router.post('/login', loginLimiter, authController.login);
 
 // API Key Validation (Internal)
-router.post('/validate-api-key', authController.validateApiKey);
+router.post('/internal/validate-api-key', authController.validateApiKey);
 
 export default router;

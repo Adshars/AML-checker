@@ -155,21 +155,39 @@ export const validateApiKey = async (req, res) => {
   try {
     const { apiKey, apiSecret } = req.body;
 
-    if (!apiKey || !apiSecret) return res.status(400).json({ error: 'Missing API key or secret' });
+    console.log(`[AUTH-DEBUG] Walidacja klucza: ${apiKey}`);
+
+    if (!apiKey || !apiSecret) {
+        console.log('[AUTH-DEBUG] ❌ No API key or secret provided');
+        return res.status(400).json({ error: 'Missing API key or secret' });
+    }
 
     const organization = await Organization.findOne({ apiKey });
-    if (!organization) return res.status(401).json({ error: 'Invalid API key or secret' });
+    
+    if (!organization) {
+        console.log('[AUTH-DEBUG] ❌ Organization not found for this apiKey');
+        // UWAGA: Tu często jest błąd, jeśli w bazie klucz ma spację lub inny znak
+        return res.status(401).json({ error: 'Invalid API key or secret' });
+    }
 
+    console.log(`[AUTH-DEBUG] Organization found: ${organization.name}. Checking secret hash...`);
+    
+    // Compare hashes
     const isMatch = await bcrypt.compare(apiSecret, organization.apiSecretHash);
-    if (!isMatch) return res.status(401).json({ error: 'Invalid API key or secret' });
 
+    if (!isMatch) {
+        console.log('[AUTH-DEBUG] ❌ Secret hash does not match!');
+        return res.status(401).json({ error: 'Invalid API key or secret' });
+    }
+
+    console.log('[AUTH-DEBUG] ✅ Validation successful!');
     res.json({
       valid: true,
       organizationId: organization._id,
       organizationName: organization.name
     });
   } catch (error) {
-    console.error('API Key Validation Error:', error);
+    console.error('[AUTH-DEBUG] 💥 Błąd serwera:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };

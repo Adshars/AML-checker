@@ -27,4 +27,7 @@ router.post('/login', loginLimiter, authController.login);
 // API Key Validation (Internal)
 router.post('/internal/validate-api-key', authController.validateApiKey);
 
+// Api Secret reset
+router.post('/reset-secret', authController.resetOrganizationSecret);
+
 export default router;

@@ -39,39 +39,65 @@ app.use((req, res, next) => {
     next();
 });
 
-// ROUTING (PROXY)
+// PROXY SETUP
 
 // Auth Service
 
-app.use('/auth', createProxyMiddleware({
+const authProxy = createProxyMiddleware({
     target: AUTH_SERVICE_URL,
     changeOrigin: true,
-    pathRewrite: {
-        '^': '/auth',
+    onProxyReq: (proxyReq, req, res) => {
+        // Forward organization ID and auth type headers if present
+        if (req.headers['x-org-id']) {
+            proxyReq.setHeader('x-org-id', req.headers['x-org-id']);
+        }
+        if (req.headers['x-user-id']) {
+            proxyReq.setHeader('x-user-id', req.headers['x-user-id']);
+        }
+        if (req.headers['x-role']) {
+            proxyReq.setHeader('x-role', req.headers['x-role']);
+        }
     }
-}));
+});
 
 // Core Service
 
-app.use('/sanctions', authMiddleware, createProxyMiddleware({
+const sanctionsProxy = createProxyMiddleware({
     target: CORE_SERVICE_URL,
     changeOrigin: true,
     pathRewrite: {
-        '^/sanctions': '',
+        '^/sanctions': '', // Remove /sanctions prefix when forwarding
     },
-
-// Heading
-
-onProxyReq: (proxyReq, req, res) => {
+    onProxyReq: (proxyReq, req, res) => {
         // Forward organization ID and auth type headers if present
-        if (req.headers['x-org-id']) { proxyReq.setHeader('x-org-id', req.headers['x-org-id']);
+        if (req.headers['x-org-id']) 
+            { proxyReq.setHeader('x-org-id', req.headers['x-org-id']);
         }
-        if (req.headers['x-user-id']) { proxyReq.setHeader('x-user-id', req.headers['x-user-id']);
+        if (req.headers['x-user-id']) 
+            { proxyReq.setHeader('x-user-id', req.headers['x-user-id']);
         }
-        if (req.headers['x-auth-type']) { proxyReq.setHeader('x-auth-type', req.headers['x-auth-type']);
+        if (req.headers['x-role'])
+            { proxyReq.setHeader('x-role', req.headers['x-role']);
         }
     }
-}));
+});
+
+// Routing
+
+// Auth Service public routes
+
+app.post('/auth/register-organization', authProxy);
+app.post('/auth/register-user', authProxy);
+app.post('/auth/login', authProxy);
+app.post('/auth/internal/validate-api-key', authProxy);
+
+// Auth Service protected routes
+
+app.post('/auth/reset-secret', authMiddleware, authProxy);
+
+// Core Service protected routes
+app.use('/sanctions', authMiddleware, sanctionsProxy);
+
 
 // Health Check
 app.get('/health', (req, res) => {

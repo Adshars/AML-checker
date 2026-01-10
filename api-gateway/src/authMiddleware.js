@@ -53,9 +53,6 @@ export const authMiddleware = async (req, res, next) => {
 
                 // Verify JWT
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-                //Logs
-
                 console.log('Decoded JWT:', decoded);
 
                 // Success - Attach user info to request for downstream services
@@ -70,10 +67,15 @@ export const authMiddleware = async (req, res, next) => {
                     req.headers['x-user-id'] = decoded.userId;
                 }
 
+                if (decoded.role) {
+                    req.headers['x-role'] = decoded.role;
+                }
+
                 req.headers['x-auth-type'] = 'jwt';
 
                 return next();
             } catch (err) {
+                console.error('JWT Error:', err.message);
                 return res.status(403).json({ error: 'Invalid or Expired token' });
             }
         }

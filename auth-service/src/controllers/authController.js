@@ -191,3 +191,56 @@ export const validateApiKey = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+  // Reset organisation secret key (only for admin)
+
+  export const resetOrganizationSecret = async (req, res) => {
+    try {
+      const orgId = req.headers['x-org-id'];
+      const role = req.headers['x-role'];
+      const userId = req.headers['x-user-id'];
+
+      if (!orgId || !userId) {
+        console.log('[AUTH-CONTROLLER] ❌ Missing headers');
+        return res.status(401).json({ error: 'Unauthorized: Missing context' });
+      }
+
+      if (role !== 'admin') {
+        console.log('[AUTH-CONTROLLER] ❌ User is not admin');
+        return res.status(403).json({ error: 'Forbidden: Admins only' });
+      }
+
+      const newApiSecret = `sk_live_${generateKey(32)}`;
+
+      // Hashing new secret
+
+      const salt = await bcrypt.genSalt(10);
+      const newApiSecretHash = await bcrypt.hash(newApiSecret, salt);
+
+    // Update organization record
+
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      orgId,
+      { apiSecretHash: newApiSecretHash },
+      { new: true }
+    );
+
+    if (!updatedOrg) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    console.log(`[AUTH-DEBUG] ✅ Organization ${updatedOrg.name} secret reset by user ${userId}`);
+
+    // Return new secret (only once)
+
+    res.json({
+      message: 'API secret reset successfully',
+      apiKey: updatedOrg.apiKey,
+      apiSecret: newApiSecret
+    });
+
+  } catch (error) {
+    console.error('Reset Secret Error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};

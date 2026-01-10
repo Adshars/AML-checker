@@ -1,13 +1,7 @@
-import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
-import Organization from '../models/Organization.js';
+import * as AuthService from '../services/authService.js';
 
-// Helper function to generate random API keys
-const generateKey = (size = 32) => crypto.randomBytes(size).toString('hex');
 
-// Organisation and Admin Registration
+ // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
   try {
     const { 
@@ -15,63 +9,43 @@ export const registerOrganization = async (req, res) => {
       email, password, firstName, lastName 
     } = req.body;
 
+    // Validation
     if (!orgName || !country || !email || !password || !firstName || !lastName) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Duplicate checks
-    const existingOrg = await Organization.findOne({ name: orgName });
-    if (existingOrg) return res.status(400).json({ error: 'Organization name already exists' });
+    // Call business logic from Service
+    const result = await AuthService.registerOrgService(req.body);
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: 'Email already registered' });
-
-    // Generating API keys
-    const apiKey = `pk_live_${generateKey(16)}`;
-    const apiSecret = `sk_live_${generateKey(32)}`;
-    
-    // Hashing secret
-    const salt = await bcrypt.genSalt(10);
-    const apiSecretHash = await bcrypt.hash(apiSecret, salt);
-
-    // Create Organization
-    const newOrg = new Organization({
-      name: orgName, country, city, address, apiKey, apiSecretHash
-    });
-    const savedOrg = await newOrg.save();
-
-    // Create Admin User
-    const passwordHash = await bcrypt.hash(password, salt);
-    const newUser = new User({
-      email, passwordHash, firstName, lastName,
-      organizationId: savedOrg._id,
-      role: 'admin'
-    });
-    await newUser.save();
-
+    // Success
     res.status(201).json({
       message: 'Organization registered successfully',
       organization: {
-        id: savedOrg._id,
-        name: savedOrg.name,
-        location: `${savedOrg.city}, ${savedOrg.country}`,
-        apiKey: apiKey,
-        apiSecret: apiSecret 
+        id: result.savedOrg._id,
+        name: result.savedOrg.name,
+        location: `${result.savedOrg.city}, ${result.savedOrg.country}`,
+        apiKey: result.savedOrg.apiKey,
+        apiSecret: result.apiSecret // Only shown at creation
       },
       user: {
-        id: newUser._id,
-        fullName: `${newUser.firstName} ${newUser.lastName}`,
-        email: newUser.email,
-        role: newUser.role
+        id: result.newUser._id,
+        fullName: `${result.newUser.firstName} ${result.newUser.lastName}`,
+        email: result.newUser.email,
+        role: result.newUser.role
       }
     });
+
   } catch (error) {
-    console.error('Registration Error:', error);
+    console.error('Registration Error:', error.message);
+    // Differentiating errors (Duplicate vs Server error)
+    if (error.message.includes('exists') || error.message.includes('registered')) {
+        return res.status(400).json({ error: error.message });
+    }
     res.status(500).json({ error: 'Server error during registration' });
   }
 };
 
-// User Registration
+ // User Registration
 export const registerUser = async (req, res) => {
   try {
     const { email, password, firstName, lastName, organizationId } = req.body;
@@ -80,20 +54,7 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const orgExists = await Organization.findById(organizationId);
-    if (!orgExists) return res.status(404).json({ error: 'Organization does not exist' });
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: 'Email already registered' });
-
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
-
-    const newUser = new User({
-      email, passwordHash, firstName, lastName, organizationId,
-      role: 'user'
-    });
-    await newUser.save();
+    const newUser = await AuthService.registerUserService(req.body);
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -105,48 +66,42 @@ export const registerUser = async (req, res) => {
         organizationId: newUser.organizationId
       }
     });
+
   } catch (error) {
-    console.error('User Registration Error:', error);
+    console.error('User Registration Error:', error.message);
+    if (error.message.includes('Organization does not exist')) return res.status(404).json({ error: error.message });
+    if (error.message.includes('registered')) return res.status(400).json({ error: error.message });
+    
     res.status(500).json({ error: 'Server error during user registration' });
   }
 };
 
-// Login
+// User Login
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
 
-    const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
-
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) return res.status(401).json({ error: 'Invalid email or password' });
-
-    const payload = {
-      userId: user._id,
-      organizationId: user.organizationId,
-      role: user.role
-    };
-
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
+    const result = await AuthService.loginService(email, password);
 
     res.json({
       message: 'Login successful',
-      token: token,
+      token: result.token,
       user: {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        organizationId: user.organizationId
+        id: result.user._id,
+        email: result.user.email,
+        role: result.user.role,
+        firstName: result.user.firstName,
+        lastName: result.user.lastName,
+        organizationId: result.user.organizationId
       }
     });
+
   } catch (error) {
-    console.error('Login Error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Login Error:', error.message);
+    // Security: Always return 401 on login error
+    res.status(401).json({ error: 'Invalid email or password' });
   }
 };
 
@@ -155,30 +110,13 @@ export const validateApiKey = async (req, res) => {
   try {
     const { apiKey, apiSecret } = req.body;
 
-    console.log(`[AUTH-DEBUG] Walidacja klucza: ${apiKey}`);
+    console.log(`[AUTH-DEBUG] Validating Key: ${apiKey}`);
 
     if (!apiKey || !apiSecret) {
-        console.log('[AUTH-DEBUG] ❌ No API key or secret provided');
         return res.status(400).json({ error: 'Missing API key or secret' });
     }
 
-    const organization = await Organization.findOne({ apiKey });
-    
-    if (!organization) {
-        console.log('[AUTH-DEBUG] ❌ Organization not found for this apiKey');
-        // UWAGA: Tu często jest błąd, jeśli w bazie klucz ma spację lub inny znak
-        return res.status(401).json({ error: 'Invalid API key or secret' });
-    }
-
-    console.log(`[AUTH-DEBUG] Organization found: ${organization.name}. Checking secret hash...`);
-    
-    // Compare hashes
-    const isMatch = await bcrypt.compare(apiSecret, organization.apiSecretHash);
-
-    if (!isMatch) {
-        console.log('[AUTH-DEBUG] ❌ Secret hash does not match!');
-        return res.status(401).json({ error: 'Invalid API key or secret' });
-    }
+    const organization = await AuthService.validateApiKeyService(apiKey, apiSecret);
 
     console.log('[AUTH-DEBUG] ✅ Validation successful!');
     res.json({
@@ -186,61 +124,41 @@ export const validateApiKey = async (req, res) => {
       organizationId: organization._id,
       organizationName: organization.name
     });
+
   } catch (error) {
-    console.error('[AUTH-DEBUG] 💥 Błąd serwera:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('[AUTH-DEBUG] Validation Failed:', error.message);
+    res.status(401).json({ error: 'Invalid API key or secret' });
   }
 };
 
-  // Reset organisation secret key (only for admin)
+// Reset Organization API Secret
+export const resetOrganizationSecret = async (req, res) => {
+  try {
+    // Data injected by API Gateway
+    const orgId = req.headers['x-org-id'];
+    const role = req.headers['x-role'];
+    const userId = req.headers['x-user-id'];
 
-  export const resetOrganizationSecret = async (req, res) => {
-    try {
-      const orgId = req.headers['x-org-id'];
-      const role = req.headers['x-role'];
-      const userId = req.headers['x-user-id'];
-
-      if (!orgId || !userId) {
-        console.log('[AUTH-CONTROLLER] ❌ Missing headers');
-        return res.status(401).json({ error: 'Unauthorized: Missing context' });
-      }
-
-      if (role !== 'admin') {
-        console.log('[AUTH-CONTROLLER] ❌ User is not admin');
-        return res.status(403).json({ error: 'Forbidden: Admins only' });
-      }
-
-      const newApiSecret = `sk_live_${generateKey(32)}`;
-
-      // Hashing new secret
-
-      const salt = await bcrypt.genSalt(10);
-      const newApiSecretHash = await bcrypt.hash(newApiSecret, salt);
-
-    // Update organization record
-
-    const updatedOrg = await Organization.findByIdAndUpdate(
-      orgId,
-      { apiSecretHash: newApiSecretHash },
-      { new: true }
-    );
-
-    if (!updatedOrg) {
-      return res.status(404).json({ error: 'Organization not found' });
+    if (!orgId || !userId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing context' });
     }
 
-    console.log(`[AUTH-DEBUG] ✅ Organization ${updatedOrg.name} secret reset by user ${userId}`);
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Admins only' });
+    }
 
-    // Return new secret (only once)
+    const result = await AuthService.resetSecretService(orgId);
+
+    console.log(`[AUTH] Secret reset for Org: ${orgId} by User: ${userId}`);
 
     res.json({
       message: 'API secret reset successfully',
-      apiKey: updatedOrg.apiKey,
-      apiSecret: newApiSecret
+      apiKey: result.updatedOrg.apiKey,
+      newApiSecret: result.newApiSecret
     });
 
   } catch (error) {
-    console.error('Reset Secret Error:', error);
+    console.error('Reset Secret Error:', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 };

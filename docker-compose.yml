@@ -20,8 +20,9 @@ services:
       - op-adapter
   op-adapter:
     build: ./op-adapter
-    ports:
-      - "3001:3000"           
+    # For testing purposes, delete comments below to expose port
+    #ports:
+    #  - "3001:3000"           
     environment:
       - YENTE_API_URL=http://yente:${YENTE_PORT}
     depends_on:
@@ -30,8 +31,9 @@ services:
 
   auth-service:
     build: ./auth-service
-    ports:
-      - "${PORT_AUTH}:3000"
+    # For testing purposes, delete comments below to expose port
+    #ports:
+    #  - "${PORT_AUTH}:3000"
     environment:
       - MONGO_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:${MONGO_PORT}/${MONGO_DB_NAME}?authSource=admin
       - JWT_SECRET=${JWT_SECRET}
@@ -40,8 +42,9 @@ services:
 
   core-service:
     build: ./core-service
-    ports:
-      - "3005:3000" # Dostęp z zewnątrz na porcie 3005 (dla debugowania)
+    # For testing purposes, delete comments below to expose port
+    #ports:
+    #  - "3005:3000" # Dostęp z zewnątrz na porcie 3005 (dla debugowania)
     environment:
       - DB_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER}

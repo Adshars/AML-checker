@@ -10,6 +10,7 @@ Stack and Dependencies
 - axios (HTTP client for validation requests)
 - cors (cross-origin request handling), dotenv
 - swagger-ui-express + yamljs (serves OpenAPI docs at /api-docs)
+- winston + winston-daily-rotate-file (structured logging with file rotation)
 
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
@@ -31,11 +32,13 @@ Endpoints
 - `GET /health` – returns gateway status (`{ service, status }`).
 - `GET /api-docs` – Swagger UI for the gateway's OpenAPI spec.
 - `ALL /auth/*` – proxied to Auth Service
-	- Includes `/auth/register-organization`, `/auth/register-user`, `/auth/login`, and internal validation endpoints.
-	- Public routes: `/auth/register-*`, `/auth/login`.
+	- Includes `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`, and internal validation endpoints.
+	- Public routes: `/auth/register-*`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`.
+	- Protected routes: `/auth/reset-secret` (requires authentication).
 - `ALL /sanctions/*` – proxied to Core Service (requires authentication)
 	- Requires valid JWT token or API Key + API Secret.
-	- Authenticated requests include `x-org-id`, `x-user-id` (if available), and `x-auth-type` headers.
+	- Authenticated requests include `x-org-id`, `x-user-id` (if available), `x-auth-type`, and `x-role` headers.
+	- Available endpoints: `/sanctions/check`, `/sanctions/history`.
 
 Authentication Middleware
 The gateway validates two authentication scenarios:
@@ -48,10 +51,10 @@ The gateway validates two authentication scenarios:
 2. **JWT Authentication** (User Login)
 	- Header: `Authorization: Bearer <token>`
 	- Verifies JWT signature using `JWT_SECRET`.
-	- On success: sets `x-org-id`, `x-user-id` (if present), and `x-auth-type: jwt` headers.
+	- On success: sets `x-org-id`, `x-user-id` (if present), `x-auth-type: jwt`, and `x-role` headers.
 
-Headers Forwarding to Core Service
-- When proxying `/sanctions/*`, the gateway forwards any of `x-org-id`, `x-user-id`, and `x-auth-type` to the Core Service for authorization and auditing.
+Headers Forwarding to Downstream Services
+- When proxying requests, the gateway forwards `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers to downstream services for authorization, auditing, and request tracking.
 
 If neither authentication method is valid, returns 401/403 error.
 
@@ -118,17 +121,18 @@ Error Responses
 - `500 Internal Server Error` – Authentication middleware or upstream service error.
 
 How It Works (High Level)
-- **Request Flow**: Client request arrives → gateway logs request → authentication middleware validates credentials → validated request forwarded to downstream service with auth context headers (`x-org-id`, `x-user-id`, `x-auth-type`) → response returned to client.
+- **Request Flow**: Client request arrives → gateway generates `x-request-id` and logs request details → authentication middleware validates credentials (API Key or JWT) → validated request forwarded to downstream service with auth context headers (`x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) → response returned to client.
 - **API Docs**: Swagger UI served at `/api-docs`, loaded from `swagger.yaml`.
-- **Public Routes** (`/auth/*`): No authentication required; direct proxy to Auth Service for registration, login, and health checks.
-- **Protected Routes** (`/sanctions/*`): Authentication middleware validates JWT token or API Key/Secret before proxying request; downstream service receives auth context for authorization.
+- **Public Routes** (`/auth/*`): No authentication required; direct proxy to Auth Service for registration, login, and other public endpoints.
+- **Protected Routes** (`/auth/reset-secret`, `/sanctions/*`): Authentication middleware validates JWT token or API Key/Secret before proxying request; downstream service receives auth context for authorization.
 - **API Key Validation**: Gateway calls Auth Service `/auth/internal/validate-api-key` endpoint to verify credentials and retrieve organization ID.
-- **JWT Verification**: Gateway verifies JWT signature locally using `JWT_SECRET` and extracts user and organization information from token payload.
-- **Header Forwarding**: Downstream services receive `x-org-id`, `x-user-id` (if available), and `x-auth-type` headers for access control and audit logging.
+- **JWT Verification**: Gateway verifies JWT signature locally using `JWT_SECRET` and extracts user, organization, and role information from token payload.
+- **Header Forwarding**: Downstream services receive `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers for access control, audit logging, and request tracing.
+- **Logging**: All requests are logged with structured logging (winston) including method, URL, request ID, and client IP.
 
 Limitations and TODO
 - No per-route rate limiting.
-- No request logging to external systems (only console output).
+- No request logging to external systems (only console and file output via Winston).
 - No API key rotation or management endpoint.
 - No comprehensive error handling for malformed upstream responses.
 - Public routes (`/auth/*`) accessible to all; no DDoS protection on registration endpoints.

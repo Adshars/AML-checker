@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import authRoutes from './routes/authRoutes.js';
+import logger from './utils/logger.js';
 
 const app = express();
 const PORT = 3000;
@@ -16,6 +17,7 @@ app.use(express.json());
 // Health Check
 app.get('/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected';
+  logger.debug('Health check probe', { dbStatus });
   res.json({ service: 'auth-service', status: 'UP', database: dbStatus });
 });
 
@@ -27,13 +29,13 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await mongoose.connect(MONGO_URI);
-    console.log('✅ Connected to MongoDB');
+    logger.info('Connected to MongoDB', { uri: MONGO_URI.split('@')[1] || 'localhost' });
 
     app.listen(PORT, () => {
-      console.log(`🔐 Auth Service running on port ${PORT}`);
+      logger.info(`Auth Service running`, { port: PORT, env: process.env.NODE_ENV || 'development' });
     });
   } catch (error) {
-    console.error('❌ Database connection error:', error);
+    logger.error('Database connection error', { error: error.message, stack: error.stack });
     process.exit(1); // Exit the container if the database is not working
   }
 };

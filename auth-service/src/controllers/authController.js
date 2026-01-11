@@ -1,21 +1,32 @@
 import * as AuthService from '../services/authService.js';
+import logger from '../utils/logger.js';
 
 
  // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
+  const requestId = `reg-${Date.now()}`;
   try {
     const { 
       orgName, country, city, address, 
       email, password, firstName, lastName 
     } = req.body;
 
+    logger.info('Organization registration request', { requestId, orgName, email, country });
+
     // Validation
     if (!orgName || !country || !email || !password || !firstName || !lastName) {
+      logger.warn('Registration validation failed', { requestId, missingFields: true });
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     // Call business logic from Service
     const result = await AuthService.registerOrgService(req.body);
+
+    logger.info('Organization registered successfully', { 
+        requestId, 
+        orgId: result.savedOrg._id, 
+        adminEmail: result.newUser.email 
+    });
 
     // Success
     res.status(201).json({
@@ -36,21 +47,26 @@ export const registerOrganization = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Registration Error:', error.message);
-    // Differentiating errors (Duplicate vs Server error)
+    // Differentiate error types
     if (error.message.includes('exists') || error.message.includes('registered')) {
+        logger.warn('Registration failed: Duplicate entity', { requestId, error: error.message });
         return res.status(400).json({ error: error.message });
     }
+    logger.error('Registration server error', { requestId, error: error.message, stack: error.stack });
     res.status(500).json({ error: 'Server error during registration' });
   }
 };
 
  // User Registration
 export const registerUser = async (req, res) => {
+  const requestId = `user-reg-${Date.now()}`;
   try {
     const { email, password, firstName, lastName, organizationId } = req.body;
 
+    logger.info('User registration request', { requestId, email, organizationId });
+
     if (!email || !password || !firstName || !lastName || !organizationId) {
+      logger.warn('User registration validation failed', { requestId });
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -67,23 +83,39 @@ export const registerUser = async (req, res) => {
       }
     });
 
-  } catch (error) {
-    console.error('User Registration Error:', error.message);
-    if (error.message.includes('Organization does not exist')) return res.status(404).json({ error: error.message });
-    if (error.message.includes('registered')) return res.status(400).json({ error: error.message });
+} catch (error) {
+    if (error.message.includes('Organization does not exist') || error.message.includes('registered')) {
+        logger.warn('User registration failed', { requestId, reason: error.message });
+        if (error.message.includes('Organization does not exist')) return res.status(404).json({ error: error.message });
+        return res.status(400).json({ error: error.message });
+    }
     
+    logger.error('User registration server error', { requestId, error: error.message });
     res.status(500).json({ error: 'Server error during user registration' });
   }
 };
 
 // User Login
 export const login = async (req, res) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  const { email } = req.body;
+
   try {
     const { email, password } = req.body;
+    logger.info('Login attempt', { email, ip });
 
-    if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
+    if (!email || !password) {
+        logger.warn('Login validation failed', { ip, error: 'Missing credentials' });
+        return res.status(400).json({ error: 'Missing email or password' });
+    }
 
     const result = await AuthService.loginService(email, password);
+
+    logger.info('Login successful', { 
+        userId: result.user._id, 
+        role: result.user.role, 
+        orgId: result.user.organizationId 
+    });
 
     res.json({
       message: 'Login successful',
@@ -99,7 +131,7 @@ export const login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login Error:', error.message);
+    logger.warn('Login failed: Invalid credentials', { email, ip });
     // Security: Always return 401 on login error
     res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -110,7 +142,8 @@ export const validateApiKey = async (req, res) => {
   try {
     const { apiKey, apiSecret } = req.body;
 
-    console.log(`[AUTH-DEBUG] Validating Key: ${apiKey}`);
+    const maskedKey = apiKey ? `${apiKey.substring(0, 8)}...` : 'missing';
+    logger.debug(`Validating API Key`, { maskedKey });
 
     if (!apiKey || !apiSecret) {
         return res.status(400).json({ error: 'Missing API key or secret' });
@@ -118,7 +151,8 @@ export const validateApiKey = async (req, res) => {
 
     const organization = await AuthService.validateApiKeyService(apiKey, apiSecret);
 
-    console.log('[AUTH-DEBUG] ✅ Validation successful!');
+    logger.debug('API Key validation successful', { orgId: organization._id });
+
     res.json({
       valid: true,
       organizationId: organization._id,
@@ -126,7 +160,7 @@ export const validateApiKey = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[AUTH-DEBUG] Validation Failed:', error.message);
+    logger.warn('API Key validation failed', { error: error.message, apiKey: apiKey ? `${apiKey.substring(0, 8)}...` : 'missing' });
     res.status(401).json({ error: 'Invalid API key or secret' });
   }
 };
@@ -140,16 +174,20 @@ export const resetOrganizationSecret = async (req, res) => {
     const userId = req.headers['x-user-id'];
 
     if (!orgId || !userId) {
+      logger.warn('Unauthorized reset secret attempt', { ip: req.ip });
       return res.status(401).json({ error: 'Unauthorized: Missing context' });
     }
 
     if (role !== 'admin') {
+      logger.warn('Forbidden reset secret attempt', { userId, orgId, role, ip: req.ip });
       return res.status(403).json({ error: 'Forbidden: Admins only' });
     }
 
+    logger.info(`Initiating API Secret reset`, { orgId, requestedBy: userId });
+
     const result = await AuthService.resetSecretService(orgId);
 
-    console.log(`[AUTH] Secret reset for Org: ${orgId} by User: ${userId}`);
+    logger.info('API secret reset completed', { orgId });
 
     res.json({
       message: 'API secret reset successfully',
@@ -158,7 +196,7 @@ export const resetOrganizationSecret = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Reset Secret Error:', error.message);
+    logger.error('Reset Secret Server Error', { orgId: req.headers['x-org-id'], error: error.message });
     res.status(500).json({ error: 'Server error' });
   }
 };

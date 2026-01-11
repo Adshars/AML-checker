@@ -1,5 +1,6 @@
 import express from 'express';
 import sequelize from './config/database.js';
+import logger from './utils/logger.js';
 
 import * as SanctionsController from './controllers/sanctionsController.js';
 
@@ -24,9 +25,16 @@ app.listen(PORT, async () => {
     try {
         await sequelize.authenticate();
         await sequelize.sync({alter: true});
-        console.log(`✅ [CORE] Service running on port ${PORT} & DB Connected`);
+        logger.info('Core Service running', {
+            port: PORT,
+            dbStatus: 'Connected',
+            env: process.env.NODE_ENV || 'development'
+        });
     } catch (error) {
-        console.error('[CORE] Failed to start server:', error.message);
+        logger.error('Failed to start server or connect to DB', {
+            error: error.message,
+            stack: error.stack
+        })
         process.exit(1);
     }
 });

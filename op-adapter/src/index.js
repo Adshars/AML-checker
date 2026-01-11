@@ -1,5 +1,6 @@
 import express from 'express';
 import * as adapterController from './controllers/adapterController.js';
+import logger from './utils/logger.js';
 
 const app = express();
 const PORT = 3000;
@@ -16,5 +17,5 @@ app.get('/check', adapterController.checkEntity);
 
 // --- START SERVER ---
 app.listen(PORT, () => {
-  console.log(`OP-Adapter running on port ${PORT}`);
+  logger.info(`OP-Adapter service started`, { port: PORT, env: process.env.NODE_ENV || 'development' });
 });

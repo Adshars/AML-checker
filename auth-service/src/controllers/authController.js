@@ -5,6 +5,8 @@ import PasswordResetToken from '../models/PasswordResetToken.js';
 import { sendResetEmail } from '../utils/emailSender.js';
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
+import RefreshToken from '../models/RefreshToken.js';
+import jwt from 'jsonwebtoken';
 
 
  // Registration organisation and admin user
@@ -112,13 +114,13 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// User Login
+// User Login (Updated with Refresh Token)
+
 export const login = async (req, res) => {
   const ip = req.ip || req.connection.remoteAddress;
-  const { email } = req.body;
+  const { email, password } = req.body;
 
   try {
-    const { email, password } = req.body;
     logger.info('Login attempt', { email, ip });
 
     if (!email || !password) {
@@ -126,30 +128,57 @@ export const login = async (req, res) => {
         return res.status(400).json({ error: 'Missing email or password' });
     }
 
+    // Password validation and user retrieval
     const result = await AuthService.loginService(email, password);
+    const user = result.user;
+
+    // Generate Tokens 
+    const accessToken = jwt.sign(
+      { 
+        userId: user._id, 
+        organizationId: user.organizationId, 
+        role: user.role 
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '15m' } 
+    );
+
+    // Generate Refresh Token
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save Refresh Token in DB
+    await new RefreshToken({
+      token: refreshToken,
+      userId: user._id
+    }).save();
 
     logger.info('Login successful', { 
-        userId: result.user._id, 
-        role: result.user.role, 
-        orgId: result.user.organizationId 
+        userId: user._id, 
+        role: user.role, 
+        orgId: user.organizationId 
     });
 
+    // Return tokens and user info
     res.json({
       message: 'Login successful',
-      token: result.token,
+      accessToken,   
+      refreshToken,  
       user: {
-        id: result.user._id,
-        email: result.user.email,
-        role: result.user.role,
-        firstName: result.user.firstName,
-        lastName: result.user.lastName,
-        organizationId: result.user.organizationId
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        organizationId: user.organizationId
       }
     });
 
   } catch (error) {
-    logger.warn('Login failed: Invalid credentials', { email, ip });
-    // Security: Always return 401 on login error
+    logger.warn('Login failed: Invalid credentials', { email, ip, error: error.message });
     res.status(401).json({ error: 'Invalid email or password' });
   }
 };
@@ -297,6 +326,64 @@ export const resetPassword = async (req, res) => {
 
   } catch (error) {
     logger.error('Reset Password Error', { requestId, error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Refresh Token and logout section
+
+// Refresh Access Token
+
+export const refreshAccessToken = async (req, res) => {
+  const { refreshToken } = req.body;
+  
+  if (!refreshToken) return res.status(401).json({ error: 'Refresh Token required' });
+
+  try {
+    // Check if token is in DB (not revoked)
+    const storedToken = await RefreshToken.findOne({ token: refreshToken });
+    if (!storedToken) {
+      logger.warn('Refresh attempt with invalid/revoked token');
+      return res.status(403).json({ error: 'Invalid Refresh Token (logged out?)' });
+    }
+
+    // Cryptographic verification
+    jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
+      if (err) return res.status(403).json({ error: 'Invalid Refresh Token' });
+
+      // Fetch user (role might have changed?)
+      const user = await User.findById(decoded.userId);
+      if (!user) return res.status(403).json({ error: 'User not found' });
+
+      // 4. Generate NEW Access Token
+      const newAccessToken = jwt.sign(
+        { userId: user._id, organizationId: user.organizationId, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '15m' }
+      );
+
+      logger.info('Access Token refreshed', { userId: user._id });
+      res.json({ accessToken: newAccessToken });
+    });
+
+  } catch (error) {
+    logger.error('Refresh Error', { error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Logout (Revoke Refresh Token)
+export const logout = async (req, res) => {
+  const { refreshToken } = req.body;
+
+  try {
+    // Delete the refresh token from DB
+    await RefreshToken.findOneAndDelete({ token: refreshToken });
+    
+    logger.info('User logged out (Refresh Token revoked)');
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    logger.error('Logout Error', { error: error.message });
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };

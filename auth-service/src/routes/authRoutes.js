@@ -23,6 +23,8 @@ router.post('/register-user', authController.registerUser);
 
 // Login
 router.post('/login', loginLimiter, authController.login);
+router.post('/refresh', authController.refreshAccessToken);
+router.post('/logout', authController.logout);
 
 // API Key Validation (Internal)
 router.post('/internal/validate-api-key', authController.validateApiKey);

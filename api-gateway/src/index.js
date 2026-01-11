@@ -103,6 +103,8 @@ app.post('/auth/login', authProxy);
 app.post('/auth/internal/validate-api-key', authProxy);
 app.post('/auth/forgot-password', authProxy);
 app.post('/auth/reset-password', authProxy);
+app.post('/auth/refresh', authProxy);
+app.post('/auth/logout', authProxy);
 
 // Auth Service protected routes
 

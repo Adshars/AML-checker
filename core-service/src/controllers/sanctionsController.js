@@ -97,27 +97,41 @@ export const checkSanctions = async (req, res) => {
 // History Retrieval Handler (/history)
 export const getHistory = async (req, res) => {
     const orgID = req.headers['x-org-id'];
-    const requestId = req.headers['x-request-id'] || 'hist-${Date.now()}';
+    const userRole = req.headers['x-role']
+    const requestId = req.headers['x-request-id'] || `hist-${Date.now()}`;
 
-    if (!orgID) {
+    if (!orgID && userRole !== 'superadmin') {
         logger.warn('Security alert: History access without OrgID', { requestId, ip: req.ip });
         return res.status(403).json({ error: 'Unauthorized' });
     }
-    
 
     try {
-        // Validation always filter by organization ID
-        logger.info('Retrieving audit history', { requestId, orgID });
-        
-        const history = await AuditLog.findAll({
-            where: { organizationId: orgID },
+        logger.info('Fetching audit history', { requestId, orgID, role: userRole });
+
+        let queryOptions = {
             order: [['createdAt', 'DESC']],
             limit: 50
-        });
-        logger.info('History retrieved', { requestId, count: history.length });
+        };
+        
+        if (userRole === 'superadmin') {
+            // Superadmin can filter by orgId if provided
+
+            if (req.query.orgId) {
+                queryOptions.where = { organizationId: req.query.orgId };
+            }
+
+        } else {
+            // Regular users can only see their own org's history
+            queryOptions.where = { organizationId: orgID };
+        }
+
+        const history = await AuditLog.findAll(queryOptions);
+        
+        logger.info('History retrieved', { requestId, count: history.length, role: userRole });
         res.json(history);
+
     } catch (error) {
         logger.error('Database error retrieving history', { requestId, error: error.message });
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error', requestId });
     }
 };

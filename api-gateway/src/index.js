@@ -116,5 +116,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`[GATEWAY] API Gateway running on port ${PORT}`);
+  logger.info(`API Gateway running`, { port: PORT, env: process.env.NODE_ENV || 'development' });
 });

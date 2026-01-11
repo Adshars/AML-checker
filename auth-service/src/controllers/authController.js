@@ -5,6 +5,18 @@ import logger from '../utils/logger.js';
  // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
   const requestId = `reg-${Date.now()}`;
+
+  // --- New security feature ---
+  // Only SuperAdmin can create new organizations
+  /*
+  const requesterRole = req.headers['x-role'];
+  if (requesterRole !== 'superadmin') {
+      logger.warn('Unauthorized org registration attempt', { requestId });
+      return res.status(403).json({ error: 'Only SuperAdmin can create organizations' });
+  }
+  */
+  // ---------------------------------
+
   try {
     const { 
       orgName, country, city, address, 

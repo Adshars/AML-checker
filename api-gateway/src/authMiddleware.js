@@ -1,89 +1,103 @@
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
+import logger from './utils/logger.js';
 
 // Adres Auth Service in Docker network
 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
 
-export const authMiddleware = async (req, res, next) => {
+// Auxiliary functions
+
+const handleApiKeyAuth = async (req) => {
+    const apiKey = req.headers['x-api-key'];
+    const apiSecret = req.headers['x-api-secret'];
+
+    if (!apiKey || !apiSecret) return null; // No API key/secret provided = not this auth method
+
+    const maskedKey = `${apiKey.substring(0, 8)}...`;
+    logger.debug(`Gateway API Key Auth Attempt`, { requestId: req.requestId, keyPrefix: maskedKey });
+
     try {
-        
-        // SCENARIO: Login with API Key (System to System communication)
+        const response = await axios.post(`${AUTH_SERVICE_URL}/auth/internal/validate-api-key`, {
+            apiKey,
+            apiSecret
+        });
 
-        const apiKey = req.headers['x-api-key'];
-        const apiSecret = req.headers['x-api-secret'];
-
-        if (apiKey && apiSecret) {
-
-            console.log('[DEBUG] API Key Auth Attempt');
-            console.log(`[DEBUG] API Key: ${apiKey}`);
-            console.log(`[DEBUG] API Secret (length): ${apiSecret.length}`);
-            try {
-                // Validate API Key and Secret with Auth Service
-                const response = await axios.post(`${AUTH_SERVICE_URL}/auth/internal/validate-api-key`, {
-                    apiKey,
-                    apiSecret
-                });
-
-                console.log('[DEBUG] API Key Validation Response:', response.data);
-
-                if (response.data.valid) {
-
-                    // Success Orgazation ID in request for downstream services
-
-                    req.headers['x-org-id'] = response.data.organizationId;
-                    req.headers['x-auth-type'] = 'api-key';
-
-                    return next();
-                }
-            } catch (err) {
-                console.error('API Key Validation Failed:', err.response ? err.response.data : err.message);
-                return res.status(403).json({ error: 'Invalid API Key or Secret' });
-            }
+        if (response.data.valid) {
+            return {
+                orgId: response.data.organizationId,
+                authType: 'api-key',
+                userId: null,
+                role: null
+            };
         }
-
-        // SCENARIO: Login with JWT (User authentication)
-
+    } catch (error) {
+        logger.warn('Gateway API Key Validation Failed', { requestId: req.requestId, error: error.message });
+        throw new Error('Invalid API Key or Secret');
+    }
+    return null;
+};
+    const handleJwtAuth = (req) => {
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
 
-        if (token) {
+        if (!token) return null; // No token provided = not this auth method
 
-            try {
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            logger.debug('Gateway JWT Verified', { requestId: req.requestId, userId: decoded.userId, orgId: decoded.organizationId });
+            return {
+                orgId: decoded.organizationId,
+                userId: decoded.userId,
+                role: decoded.role,
+                authType: 'jwt',
+            };
+        } catch (error) {
+            logger.warn('Gateway JWT Invalid', { requestId: req.requestId, error: error.message });
+            throw new Error('Invalid or Expired token');
+        }
+    };
 
-                // Verify JWT
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+// Main Middleware Function
 
-                //Logs
+export const authMiddleware = async (req, res, next) => {
+    try{
 
-                console.log('Decoded JWT:', decoded);
+        try {
+            // Try API Key Authentication first
+            const apiAuth = await handleApiKeyAuth(req);
+            if (apiAuth) {
+                req.headers['x-org-id'] = apiAuth.orgId;
+                req.headers['x-auth-type'] = apiAuth.authType;
 
-                // Success - Attach user info to request for downstream services
-
-                if (decoded.organizationId) {
-                    req.headers['x-org-id'] = decoded.organizationId;
-                } else {
-                    console.warn('JWT missing organization ID');
-                }
-
-                if (decoded.userId) {
-                    req.headers['x-user-id'] = decoded.userId;
-                }
-
-                req.headers['x-auth-type'] = 'jwt';
-
+                logger.info('Gateway Auth Success (API Key)', { requestId: req.requestId, orgId: apiAuth.orgId });
                 return next();
-            } catch (err) {
-                return res.status(403).json({ error: 'Invalid or Expired token' });
             }
+        } catch (error) {
+            return res.status(403).json({ error: error.message });
+        }
+            // Try JWT Authentication next
+        try {
+            const jwtAuth = handleJwtAuth(req);
+            if (jwtAuth) {
+                req.headers['x-org-id'] = jwtAuth.orgId;
+                req.headers['x-user-id'] = jwtAuth.userId;
+                req.headers['x-role'] = jwtAuth.role;
+                req.headers['x-auth-type'] = jwtAuth.authType;
+
+                logger.info('Gateway Auth Success (JWT)', { requestId: req.requestId, userId: jwtAuth.userId });
+                return next();
+            }
+        } catch (error) {
+            return res.status(403).json({ error: error.message });
         }
 
-        // SCENARIO: No valid authentication provided
-
+        // If neither method authenticated
+        logger.warn('Gateway Auth Missing Credentials', { requestId: req.requestId, ip: req.ip });
         return res.status(401).json({ error: 'Authentication required' });
 
     } catch (error) {
-        console.error('Auth Middleware Error:', error);
+        logger.error('Gateway Auth Middleware Error', { requestId: req.requestId, error: error.message, stack: error.stack });
         return res.status(500).json({ error: 'Internal Server Error' });
     }
-    };
+};

@@ -101,6 +101,8 @@ app.post('/auth/register-organization', authProxy);
 app.post('/auth/register-user', authProxy);
 app.post('/auth/login', authProxy);
 app.post('/auth/internal/validate-api-key', authProxy);
+app.post('/auth/forgot-password', authProxy);
+app.post('/auth/reset-password', authProxy);
 
 // Auth Service protected routes
 

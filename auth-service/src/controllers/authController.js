@@ -1,5 +1,10 @@
 import * as AuthService from '../services/authService.js';
 import logger from '../utils/logger.js';
+import crypto from 'crypto';
+import PasswordResetToken from '../models/PasswordResetToken.js';
+import { sendResetEmail } from '../utils/emailSender.js';
+import User from '../models/User.js';
+import bcrypt from 'bcryptjs';
 
 
  // Registration organisation and admin user
@@ -210,5 +215,88 @@ export const resetOrganizationSecret = async (req, res) => {
   } catch (error) {
     logger.error('Reset Secret Server Error', { orgId: req.headers['x-org-id'], error: error.message });
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Password Reset Section
+
+// Forgot Password - Request Reset
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  const requestId = `forgot-${Date.now()}`;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      logger.info('Forgot password request for non-existent email', { requestId, email });
+        return res.status(200).json({ message: 'If a user with that email exists, a password reset link has been sent.' });
+    }
+
+    // Delete existing tokens for this user
+    await PasswordResetToken.findOneAndDelete({ userId: user._id });
+
+    // Generate token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // Save token to DB
+    await new PasswordResetToken({
+      userId: user._id,
+      token: resetToken,
+    }).save();
+
+    // Create reset link
+    // In a real app, the frontend URL would be used here
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/reset-password?token=${resetToken}&id=${user._id}`;
+
+    // Send email
+    logger.info(`Sending reset email to user`, { requestId, userId: user._id });
+    await sendResetEmail(user.email, link);
+
+    res.status(200).json({ message: 'If a user with that email exists, a password reset link has been sent.' });
+
+    } catch (error) {
+    logger.error('Forgot Password Error', { requestId, error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Reset Password - Using Token
+
+export const resetPassword = async (req, res) => {
+  const { userId, token, newPassword } = req.body;
+  const requestId = `reset-${Date.now()}`;
+
+  try {
+    const pwdResetToken = await PasswordResetToken.findOne({ userId });
+
+    if (!pwdResetToken) {
+      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+    }
+
+    // Verify token
+    const isValid = pwdResetToken.token === token;
+    if (!isValid) {
+      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(newPassword, salt);
+
+    // Update user's password
+    await User.findByIdAndUpdate(userId, { 
+        $set: { passwordHash: hash } 
+    }, { new: true });
+
+    // Delete the used token
+    await pwdResetToken.deleteOne();
+
+    logger.info('Password reset successful', { requestId, userId });
+    res.json({ message: 'Password has been reset successfully' });
+
+  } catch (error) {
+    logger.error('Reset Password Error', { requestId, error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 };

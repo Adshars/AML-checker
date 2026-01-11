@@ -30,4 +30,8 @@ router.post('/internal/validate-api-key', authController.validateApiKey);
 // Api Secret reset
 router.post('/reset-secret', authController.resetOrganizationSecret);
 
+// Password Reset Flows
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
+
 export default router;

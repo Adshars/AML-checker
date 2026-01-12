@@ -1,7 +1,7 @@
 API Gateway
 ===========
 
-Central reverse proxy and authentication gateway for the AML Checker platform. Routes requests to microservices (Auth Service, Core Service, OP Adapter), enforces authentication on protected routes via JWT tokens or API keys, and forwards authentication context (organization ID, user ID, auth type) to downstream services.
+Central reverse proxy and authentication gateway for the AML Checker platform. Routes requests to microservices (Auth Service, Core Service), enforces authentication on protected routes via JWT tokens or API keys, and forwards authentication context (organization ID, user ID, auth type) to downstream services.
 
 Stack and Dependencies
 - Node.js 18, Express 5, ES Modules
@@ -147,11 +147,3 @@ How It Works (High Level)
 - **JWT Verification**: Gateway verifies JWT signature locally using `JWT_SECRET` and extracts user, organization, and role information from token payload.
 - **Header Forwarding**: Downstream services receive `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers for access control, audit logging, and request tracing.
 - **Logging**: All requests are logged with structured logging (winston) including method, URL, request ID, and client IP.
-
-Limitations and TODO
-- No per-route rate limiting.
-- No request logging to external systems (only console and file output via Winston).
-- No API key rotation or management endpoint.
-- No comprehensive error handling for malformed upstream responses.
-- Public routes (`/auth/*`) accessible to all; no DDoS protection on registration endpoints.
-- OP Adapter service integration not implemented (was used for testing purposes only).

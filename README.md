@@ -36,9 +36,11 @@
 2. **Auth Service** ([auth-service/](auth-service/)) – User and organization management
 	- Port: 3000 (mapped via `PORT_AUTH`, default 3002)
 	- Database: MongoDB 6 (Mongoose 9 ORM)
-	- Responsibilities: organization registration with API key generation, user registration, user login with JWT, API key validation (internal endpoint for API Gateway)
-	- Endpoints: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/internal/validate-api-key`, `/health`
+	- Responsibilities: organization registration with API key generation, user registration, user login with JWT access + refresh tokens, password reset flow, API key validation (internal endpoint for API Gateway)
+	- Endpoints: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/reset-secret` (admin only), `/auth/internal/validate-api-key`, `/health`
+	- Generates JWT tokens: `accessToken` (valid 15 minutes) and `refreshToken` (valid 7 days)
 	- Generates API keys (`pk_live_...`) and secrets (`sk_live_...`); secrets hashed with bcryptjs
+	- Supports three user roles: `superadmin`, `admin`, `user`
 
 3. **Core Service** ([core-service/](core-service/)) – Sanctions checking and audit logging
 	- Port: 3000 (mapped to 3005 for debug; accessed via API Gateway on production)
@@ -49,8 +51,9 @@
 
 4. **OP Adapter** ([op-adapter/](op-adapter/)) – OpenSanctions Yente wrapper
 	- Port: 3000 (mapped to 3001)
-	- Responsibilities: translate HTTP requests into Yente API calls, map Yente responses to simplified format
-	- Endpoints: `/check?name=<entity>` (sanctions/PEP check), `/health`
+	- Responsibilities: translate HTTP requests into Yente API calls, map Yente responses to simplified format, automatic retry on failures
+	- Retry mechanism: axios-retry with 3 attempts and exponential backoff (1s → 2s → 4s) for network errors and 5xx responses
+	- Endpoints: `/check?name=<entity>` (sanctions/PEP check with request tracking), `/health`
 	- Extracts sanctions flags: `isSanctioned`, `isPep` from Yente topics
 
 5. **Yente** (OpenSanctions Local API) – Sanctions data service
@@ -90,31 +93,37 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 ## Features
 - **Organization & User Management**: 
 	- Register organizations with automatic API key (`apiKey`, `apiSecret`) generation
-	- Add users to organizations with role-based access (admin, user)
-	- User login returning JWT token valid for 8 hours
+	- Add users to organizations with role-based access (`superadmin`, `admin`, `user`)
+	- User login returning access token (15 minutes) and refresh token (7 days)
+	- Refresh access token using refresh token without re-authenticating
+	- Logout revokes refresh token, preventing further access token generation
+	- Password reset flow: request reset via `/forgot-password` (sends email with token), reset password with token via `/reset-password`
 	- API key validation for system-to-system (B2B) authentication
+	- Reset organization API secret (`/reset-secret` admin-only endpoint)
 
 - **API Gateway & Authentication**:
 	- Central API Gateway routing public (`/auth`) and protected (`/sanctions`) endpoints
 	- Two authentication methods: JWT (user login) and API Key/Secret (B2B)
-	- Automatic context header injection (`x-org-id`, `x-user-id`, `x-auth-type`) for downstream services
+	- Automatic context header injection (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) for downstream services
 	- Organization-based isolation: users can only access their organization's data
+	- Superadmin access: superadmin users can access all organizations' audit logs
 
 - **Sanctions & PEP Screening**:
 	- Real-time screening via GET `/sanctions/check?name=` against OpenSanctions data
 	- Maps Yente results to simplified response with flags: `isSanctioned`, `isPep`
 	- Returns entity details: name, schema (Person/Company), country, birth date, match score
 	- Supports OFAC, UN, EU, and other sanctions lists via Yente
+	- Request tracking with `x-request-id` header for end-to-end tracing
 
 - **Audit Logging & Compliance**:
 	- Automatic logging of all sanctions checks to audit table (PostgreSQL)
 	- Audit log includes: organization ID, user ID, search query, hit status, hit count, timestamp
 	- History endpoint to retrieve past screening queries per organization
-	- Data isolation: organizations can only view their own audit logs
+	- Data isolation: organizations can only view their own audit logs; superadmins can view all or filter by organization
 
-- **Health Checks & Monitoring**:
-	- Health endpoints for each service with database connection status
-	- Database health verification (MongoDB, PostgreSQL, Elasticsearch)
+- **Resilience & Performance**:
+	- Automatic retry mechanism in OP Adapter (3 retries, exponential backoff) for Yente API calls
+	- Health checks for all services with database connection status
 	- Docker health checks for container orchestration
 
 ## Setup
@@ -163,9 +172,12 @@ See [.env.example](.env.example) for template. Key variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | (required) | Secret key for signing JWT tokens; must be long and random |
+| `JWT_SECRET` | (required) | Secret key for signing JWT access tokens; must be long and random |
+| `REFRESH_TOKEN_SECRET` | (required) | Secret key for signing refresh tokens; must be long and random and different from JWT_SECRET |
+| `FRONTEND_URL` | http://localhost:3000 | Frontend URL for password reset email links |
 | `GATEWAY_PORT` | 8080 | API Gateway external port |
 | `PORT_AUTH` | 3002 | Auth Service external port |
+| `PORT_OP_ADAPTER` | 3001 | OP Adapter external port |
 | `YENTE_PORT` | 8000 | Yente API external port |
 | `POSTGRES_PORT` | 5432 | PostgreSQL external port |
 | `MONGO_PORT` | 27017 | MongoDB external port |
@@ -174,9 +186,8 @@ See [.env.example](.env.example) for template. Key variables:
 | `POSTGRES_DB` | core_db | PostgreSQL database name for Core Service |
 | `AUTH_SERVICE_URL` | http://auth-service:3000 | API Gateway target for Auth Service |
 | `CORE_SERVICE_URL` | http://core-service:3000 | API Gateway target for Core Service |
-| `OP_ADAPTER_URL` | http://op-adapter:3000 | Reserved for downstream usage (not proxied directly) |
-| `PORT` | 8080 | API Gateway listen port (inside container) |
-| `JWT_SECRET` | (required) | JWT verification secret; must match Auth Service |
+| `OP_ADAPTER_URL` | http://op-adapter:3000 | Core Service target for OP Adapter |
+| `YENTE_API_URL` | http://localhost:8000 | OP Adapter target for Yente API |
 
 ### Data Persistence
 Services use Docker volumes:
@@ -222,7 +233,7 @@ curl -X POST http://localhost:8080/auth/register-user \
 	}'
 ```
 
-### 3. User Login (Get JWT Token)
+### 3. User Login (Get JWT Tokens)
 ```bash
 curl -X POST http://localhost:8080/auth/login \
 	-H "Content-Type: application/json" \
@@ -232,26 +243,78 @@ curl -X POST http://localhost:8080/auth/login \
 	}'
 ```
 **Response includes**:
-- `token` – JWT valid for 8 hours (save as `<JWT_TOKEN>`)
+- `accessToken` – JWT valid for 15 minutes (use in `Authorization: Bearer <accessToken>` header)
+- `refreshToken` – JWT valid for 7 days (save for token refresh)
 
-### 4. Sanctions Check with JWT
+### 3.5 Refresh Access Token (Before Expiration)
+```bash
+curl -X POST http://localhost:8080/auth/refresh \
+	-H "Content-Type: application/json" \
+	-d '{
+		"refreshToken": "<REFRESH_TOKEN>"
+	}'
+```
+**Response includes**:
+- `accessToken` – new JWT valid for 15 minutes
+
+### 3.75 Logout (Revoke Refresh Token)
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+	-H "Content-Type: application/json" \
+	-d '{
+		"refreshToken": "<REFRESH_TOKEN>"
+	}'
+```
+
+### 4. Request Password Reset (Forgot Password)
+```bash
+curl -X POST http://localhost:8080/auth/forgot-password \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "admin@acme.test"
+	}'
+```
+**Response**: Success message (email sent with reset link and token valid for 1 hour)
+
+### 4.5 Reset Password (Using Token from Email)
+```bash
+curl -X POST http://localhost:8080/auth/reset-password \
+	-H "Content-Type: application/json" \
+	-d '{
+		"userId": "<USER_ID>",
+		"token": "<TOKEN_FROM_EMAIL>",
+		"newPassword": "NewStr0ngPass!"
+	}'
+```
+
+### 5. Reset Organization API Secret (Admin Only)
+```bash
+curl -X POST http://localhost:8080/auth/reset-secret \
+	-H "Authorization: Bearer <ACCESS_TOKEN>" \
+	-H "Content-Type: application/json"
+```
+**Response includes**:
+- `apiKey` – same as before
+- `newApiSecret` – new secret (plaintext, visible **only once**)
+
+### 6. Sanctions Check with JWT
 ```bash
 curl -X GET "http://localhost:8080/sanctions/check?name=John%20Doe" \
-	-H "Authorization: Bearer <JWT_TOKEN>" \
+	-H "Authorization: Bearer <ACCESS_TOKEN>" \
 	-H "Content-Type: application/json"
 ```
 **Response includes**:
 - `hits_count` – number of matches found
 - `data[]` – array of entities with `isSanctioned`, `isPep`, `score` flags
 
-### 5. Sanctions Check with API Key (B2B)
+### 7. Sanctions Check with API Key (B2B)
 ```bash
 curl -X GET "http://localhost:8080/sanctions/check?name=Jane%20Smith" \
 	-H "x-api-key: <API_KEY>" \
 	-H "x-api-secret: <API_SECRET>"
 ```
 
-### 6. Retrieve Audit History
+### 8. Retrieve Audit History
 ```bash
 curl -X GET http://localhost:8080/sanctions/history \
 	-H "Authorization: Bearer <JWT_TOKEN>"
@@ -308,13 +371,14 @@ curl http://localhost:3005/health                  # Core Service (debug)
 	- ❌ Rate limiting and comprehensive audit trail UI
 
 ## Room for Improvement
-- **Security**: Add rate limiting on public endpoints (registration, login), implement request signing for B2B, add IP whitelisting
-- **Features**: Add password reset flow, API key rotation, export audit logs, bulk entity screening, webhook notifications for high-risk matches
-- **Architecture**: Add caching layer (Redis) for frequently checked names, implement request queuing for high-volume screening, add comprehensive logging/metrics (ELK stack, Prometheus)
-- **Testing**: Write unit tests (Jest), integration tests (Postman/Newman), load tests (k6)
-- **Frontend**: Build web UI for user/org management, screening dashboard, audit log viewer, analytics
-- **Documentation**: Complete OpenAPI spec, deployment guide for Kubernetes/AWS, troubleshooting guide
-- **Compliance**: Add compliance audit trail viewer, data retention policies, GDPR data deletion, role-based access control (RBAC)
+- **Security**: Add rate limiting on public endpoints (registration, login), implement request signing for B2B, add IP whitelisting, enforce strong password policies
+- **Features**: Add bulk entity screening, webhook notifications for high-risk matches, export audit logs to PDF/CSV, advanced filtering options for audit history
+- **Architecture**: Add caching layer (Redis) for frequently checked names, implement request queuing for high-volume screening, add comprehensive metrics (Prometheus), implement distributed tracing (Jaeger)
+- **Testing**: Write unit tests (Jest), integration tests (Postman/Newman), load tests (k6), E2E tests (Cypress)
+- **Frontend**: Build web UI for user/org management, screening dashboard, audit log viewer, analytics, compliance reporting
+- **Documentation**: Complete OpenAPI spec for all endpoints, API client libraries (Node.js, Python), deployment guide for Kubernetes/AWS, troubleshooting guide, security best practices
+- **Compliance**: Add GDPR data deletion endpoint, implement data retention policies with automatic archival, add role-based access control (RBAC) UI, comprehensive audit trail viewer with export
+- **Monitoring**: Implement alerting (Slack, PagerDuty) for service failures, add performance dashboards, implement SLA tracking
 
 ## Acknowledgements
 - **OpenSanctions** – provides open-source sanctions and PEP datasets via Yente API ([opensanctions.org](https://opensanctions.org))

@@ -6,8 +6,11 @@ Sanctions checking and audit logging service for the AML Checker platform. Recei
 Stack and Dependencies
 - Node.js 18, Express 4, ES Modules
 - Sequelize 6 + PostgreSQL 15 (relational database)
+- pg + pg-hstore (PostgreSQL adapter and data type serialization)
 - axios (HTTP client for OP Adapter communication)
-- cors, nodemon (dev dependency)
+- cors (cross-origin request handling)
+- winston + winston-daily-rotate-file (structured logging with file rotation)
+- nodemon (dev dependency for auto-reload)
 
 Environment and Configuration
 - `DB_HOST` – PostgreSQL hostname; defaults to `postgres` in Docker network.
@@ -35,16 +38,17 @@ Endpoints
 - `GET /check` – sanctions checking endpoint (protected; requires organization context).
 	- Query parameters: `name` (required) – entity name to check against sanctions lists.
 	- Headers required: `x-org-id` (organization context; enforced by API Gateway middleware).
-	- Optional header: `x-user-id` (user context from JWT; if absent, defaults to 'B2B-API-KEY' in audit log).
+	- Optional headers: `x-user-id` (user context from JWT; if absent, defaults to 'B2B-API-KEY' in audit log), `x-request-id` (request tracking ID; auto-generated if missing).
 	- Returns: sanctions check result from OP Adapter with `hits_count`, list of matches, and entity details.
 	- Automatically creates AuditLog record with search query and result (HIT/CLEAR).
 	- Error responses: 400 (missing name), 403 (missing x-org-id), 502 (OP Adapter error).
-- `GET /history` – returns audit log for the requesting organization (protected; requires organization context).
-	- No query parameters.
-	- Headers required: `x-org-id` (enforced by API Gateway middleware).
-	- Returns: array of up to 50 most recent AuditLog entries for the organization, ordered by creation date descending.
-	- Data isolation: returns only logs for the organization in `x-org-id` header.
-	- Error responses: 403 (missing x-org-id), 500 (database error).
+- `GET /history` – returns audit log for the requesting organization (protected; requires organization context or superadmin role).
+	- No required query parameters; optional: `orgId` (superadmin only).
+	- Headers required: `x-org-id` (enforced by API Gateway middleware, unless user is superadmin).
+	- Optional header: `x-role` (user role; if 'superadmin', can access logs without x-org-id and filter by organization).
+	- Returns: array of up to 50 most recent AuditLog entries, ordered by creation date descending.
+	- Data isolation: regular users see only their organization's logs (filtered by `x-org-id`); superadmins see all logs or can filter by `?orgId=<ORG_ID>` query parameter.
+	- Error responses: 403 (missing x-org-id and not superadmin), 500 (database error).
 
 Usage Examples
 - Health check:
@@ -69,6 +73,20 @@ curl -X GET "http://localhost:3000/check?name=Jane%20Smith" \
 ```bash
 curl -X GET http://localhost:3000/history \
 	-H "x-org-id: <ORG_ID>"
+```
+
+- Audit history for all organizations (superadmin only):
+```bash
+curl -X GET http://localhost:3000/history \
+	-H "Authorization: Bearer <JWT_TOKEN_SUPERADMIN>" \
+	-H "x-role: superadmin"
+```
+
+- Audit history for specific organization (superadmin filtering):
+```bash
+curl -X GET "http://localhost:3000/history?orgId=<ORG_ID>" \
+	-H "Authorization: Bearer <JWT_TOKEN_SUPERADMIN>" \
+	-H "x-role: superadmin"
 ```
 
 Response Structure
@@ -124,7 +142,7 @@ Response Structure
 How It Works (High Level)
 - **Request Flow**: Client sends `GET /check?name=<entity>` with organization context in header → Core Service validates name parameter and `x-org-id` header presence → forwards request to OP Adapter at `/check` endpoint with query name → receives sanctions result with hit count and matches → creates AuditLog record (organization-scoped, audit trail) → returns result to client.
 - **Audit Logging**: Every search query is automatically logged to AuditLog table with: organization ID (from header), user ID (from header or 'B2B-API-KEY'), search query, whether hit occurred, and hit count. Enables compliance auditing and search history per organization.
-- **Data Isolation**: Core Service enforces organization-based access control on `/history` endpoint by filtering AuditLog records using `x-org-id` header. Users can only see their organization's audit logs; no cross-organization data leakage.
+- **Data Isolation**: Core Service enforces organization-based access control on `/history` endpoint by filtering AuditLog records using `x-org-id` header for regular users. Superadmin users (identified by `x-role: superadmin` header) can access all organization logs without requiring `x-org-id` header and can optionally filter by organization using `?orgId=<ORG_ID>` query parameter. Regular users can only see their organization's audit logs; no cross-organization data leakage.
 - **OP Adapter Integration**: Core Service acts as middleware between API Gateway and OP Adapter, adding audit logging and organization context validation. All validation logic (sanctions list matching) is delegated to OP Adapter.
 - **Database Sync**: Sequelize automatically syncs schema on startup (`sync({ alter: true })`), creating AuditLog table if missing and altering schema if needed.
 

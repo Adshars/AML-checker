@@ -15,7 +15,6 @@ Stack and Dependencies
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
 - `CORE_SERVICE_URL` – address of Core Service; defaults to `http://core-service:3000` in Docker network.
-- `OP_ADAPTER_URL` – address of OP Adapter service; defaults to `http://op-adapter:3000` in Docker network.
 - `JWT_SECRET` – secret key for JWT token verification (must match Auth Service's `JWT_SECRET` for valid token verification).
 - Application port in container: 8080; mapped via `PORT` variable (default 8080).
 
@@ -32,8 +31,8 @@ Endpoints
 - `GET /health` – returns gateway status (`{ service, status }`).
 - `GET /api-docs` – Swagger UI for the gateway's OpenAPI spec.
 - `ALL /auth/*` – proxied to Auth Service
-	- Includes `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`, and internal validation endpoints.
-	- Public routes: `/auth/register-*`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`.
+	- Includes `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
+	- Public routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
 	- Protected routes: `/auth/reset-secret` (requires authentication).
 - `ALL /sanctions/*` – proxied to Core Service (requires authentication)
 	- Requires valid JWT token or API Key + API Secret.
@@ -46,7 +45,7 @@ The gateway validates two authentication scenarios:
 1. **API Key Authentication** (System-to-System)
 	- Headers: `x-api-key`, `x-api-secret`
 	- Validates credentials with Auth Service `/auth/internal/validate-api-key` endpoint.
-	- On success: sets `x-org-id` and `x-auth-type: api-key` headers.
+	- On success: sets `x-org-id` and `x-auth-type: api-key` headers. User ID and role are not available for API Key auth.
 
 2. **JWT Authentication** (User Login)
 	- Header: `Authorization: Bearer <token>`
@@ -88,6 +87,25 @@ curl -X POST http://localhost:8080/auth/login \
 		"email": "admin@acme.test",
 		"password": "Str0ngPass!"
 	}'
+```
+
+- User registration (via gateway):
+```bash
+curl -X POST http://localhost:8080/auth/register-user \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "user@acme.test",
+		"password": "Str0ngPass!",
+		"firstName": "Jane",
+		"lastName": "Doe"
+	}'
+```
+
+- User logout (via gateway):
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+	-H "Authorization: Bearer <JWT_TOKEN>" \
+	-H "Content-Type: application/json"
 ```
 
 - Request to protected endpoint with JWT:
@@ -136,3 +154,4 @@ Limitations and TODO
 - No API key rotation or management endpoint.
 - No comprehensive error handling for malformed upstream responses.
 - Public routes (`/auth/*`) accessible to all; no DDoS protection on registration endpoints.
+- OP Adapter service integration not implemented (was used for testing purposes only).

@@ -1,6 +1,13 @@
 import * as AuthService from '../services/authService.js';
 import logger from '../utils/logger.js';
-
+import crypto from 'crypto';
+import PasswordResetToken from '../models/PasswordResetToken.js';
+import { sendResetEmail } from '../utils/emailSender.js';
+import User from '../models/User.js';
+import bcrypt from 'bcryptjs';
+import RefreshToken from '../models/RefreshToken.js';
+import jwt from 'jsonwebtoken';
+import { registerOrgSchema, registerUserSchema, loginSchema, resetPasswordSchema } from '../utils/validationSchemas.js';
 
  // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
@@ -18,6 +25,14 @@ export const registerOrganization = async (req, res) => {
   // ---------------------------------
 
   try {
+    // Validation
+    const { error } = registerOrgSchema.validate(req.body);
+    if (error) {
+      logger.warn('Registration validation failed', { requestId, error: error.details[0].message });
+      return res.status(400).json({ error: error.details[0].message });
+    }
+
+    /*
     const { 
       orgName, country, city, address, 
       email, password, firstName, lastName 
@@ -30,7 +45,7 @@ export const registerOrganization = async (req, res) => {
       logger.warn('Registration validation failed', { requestId, missingFields: true });
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
+*/
     // Call business logic from Service
     const result = await AuthService.registerOrgService(req.body);
 
@@ -73,6 +88,15 @@ export const registerOrganization = async (req, res) => {
 export const registerUser = async (req, res) => {
   const requestId = `user-reg-${Date.now()}`;
   try {
+    logger.info('User registration request', { requestId });
+    
+    // Validation
+    const { error } = registerUserSchema.validate(req.body);
+    if (error) {
+      logger.warn('User registration validation failed', { requestId, error: error.details[0].message });
+      return res.status(400).json({ error: error.details[0].message });
+    }
+ /*
     const { email, password, firstName, lastName, organizationId } = req.body;
 
     logger.info('User registration request', { requestId, email, organizationId });
@@ -81,7 +105,7 @@ export const registerUser = async (req, res) => {
       logger.warn('User registration validation failed', { requestId });
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
+*/
     const newUser = await AuthService.registerUserService(req.body);
 
     res.status(201).json({
@@ -107,44 +131,79 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// User Login
+// User Login (Updated with Refresh Token)
+
 export const login = async (req, res) => {
   const ip = req.ip || req.connection.remoteAddress;
-  const { email } = req.body;
+
+  // Validation
+  const { error } = loginSchema.validate(req.body);
+  if (error) {
+    logger.warn('Login validation failed', { ip, error: error.details[0].message });
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
+  const { email, password } = req.body;
 
   try {
-    const { email, password } = req.body;
     logger.info('Login attempt', { email, ip });
-
+/*
     if (!email || !password) {
         logger.warn('Login validation failed', { ip, error: 'Missing credentials' });
         return res.status(400).json({ error: 'Missing email or password' });
     }
-
+*/
+    // Password validation and user retrieval
     const result = await AuthService.loginService(email, password);
+    const user = result.user;
+
+    // Generate Tokens 
+    const accessToken = jwt.sign(
+      { 
+        userId: user._id, 
+        organizationId: user.organizationId, 
+        role: user.role 
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '15m' } 
+    );
+
+    // Generate Refresh Token
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save Refresh Token in DB
+    await new RefreshToken({
+      token: refreshToken,
+      userId: user._id
+    }).save();
 
     logger.info('Login successful', { 
-        userId: result.user._id, 
-        role: result.user.role, 
-        orgId: result.user.organizationId 
+        userId: user._id, 
+        role: user.role, 
+        orgId: user.organizationId 
     });
 
+    // Return tokens and user info
     res.json({
       message: 'Login successful',
-      token: result.token,
+      accessToken,   
+      refreshToken,  
       user: {
-        id: result.user._id,
-        email: result.user.email,
-        role: result.user.role,
-        firstName: result.user.firstName,
-        lastName: result.user.lastName,
-        organizationId: result.user.organizationId
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        organizationId: user.organizationId
       }
     });
 
   } catch (error) {
-    logger.warn('Login failed: Invalid credentials', { email, ip });
-    // Security: Always return 401 on login error
+    logger.warn('Login failed: Invalid credentials', { email, ip, error: error.message });
     res.status(401).json({ error: 'Invalid email or password' });
   }
 };
@@ -210,5 +269,151 @@ export const resetOrganizationSecret = async (req, res) => {
   } catch (error) {
     logger.error('Reset Secret Server Error', { orgId: req.headers['x-org-id'], error: error.message });
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Password Reset Section
+
+// Forgot Password - Request Reset
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  const requestId = `forgot-${Date.now()}`;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      logger.info('Forgot password request for non-existent email', { requestId, email });
+        return res.status(200).json({ message: 'If a user with that email exists, a password reset link has been sent.' });
+    }
+
+    // Delete existing tokens for this user
+    await PasswordResetToken.findOneAndDelete({ userId: user._id });
+
+    // Generate token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // Save token to DB
+    await new PasswordResetToken({
+      userId: user._id,
+      token: resetToken,
+    }).save();
+
+    // Create reset link
+    // In a real app, the frontend URL would be used here
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/reset-password?token=${resetToken}&id=${user._id}`;
+
+    // Send email
+    logger.info(`Sending reset email to user`, { requestId, userId: user._id });
+    await sendResetEmail(user.email, link);
+
+    res.status(200).json({ message: 'If a user with that email exists, a password reset link has been sent.' });
+
+    } catch (error) {
+    logger.error('Forgot Password Error', { requestId, error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Reset Password - Using Token
+
+export const resetPassword = async (req, res) => {
+  const { userId, token, newPassword } = req.body;
+  const requestId = `reset-${Date.now()}`;
+
+  const { error } = resetPasswordSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
+  try {
+    const pwdResetToken = await PasswordResetToken.findOne({ userId });
+
+    if (!pwdResetToken) {
+      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+    }
+    
+    // Verify token
+    const isValid = pwdResetToken.token === token;
+    if (!isValid) {
+      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(newPassword, salt);
+
+    // Update user's password
+    await User.findByIdAndUpdate(userId, { 
+        $set: { passwordHash: hash } 
+    }, { new: true });
+
+    // Delete the used token
+    await pwdResetToken.deleteOne();
+
+    logger.info('Password reset successful', { requestId, userId });
+    res.json({ message: 'Password has been reset successfully' });
+
+  } catch (error) {
+    logger.error('Reset Password Error', { requestId, error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Refresh Token and logout section
+
+// Refresh Access Token
+
+export const refreshAccessToken = async (req, res) => {
+  const { refreshToken } = req.body;
+  
+  if (!refreshToken) return res.status(401).json({ error: 'Refresh Token required' });
+
+  try {
+    // Check if token is in DB (not revoked)
+    const storedToken = await RefreshToken.findOne({ token: refreshToken });
+    if (!storedToken) {
+      logger.warn('Refresh attempt with invalid/revoked token');
+      return res.status(403).json({ error: 'Invalid Refresh Token (logged out?)' });
+    }
+
+    // Cryptographic verification
+    jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
+      if (err) return res.status(403).json({ error: 'Invalid Refresh Token' });
+
+      // Fetch user (role might have changed?)
+      const user = await User.findById(decoded.userId);
+      if (!user) return res.status(403).json({ error: 'User not found' });
+
+      // 4. Generate NEW Access Token
+      const newAccessToken = jwt.sign(
+        { userId: user._id, organizationId: user.organizationId, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '15m' }
+      );
+
+      logger.info('Access Token refreshed', { userId: user._id });
+      res.json({ accessToken: newAccessToken });
+    });
+
+  } catch (error) {
+    logger.error('Refresh Error', { error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Logout (Revoke Refresh Token)
+export const logout = async (req, res) => {
+  const { refreshToken } = req.body;
+
+  try {
+    // Delete the refresh token from DB
+    await RefreshToken.findOneAndDelete({ token: refreshToken });
+    
+    logger.info('User logged out (Refresh Token revoked)');
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    logger.error('Logout Error', { error: error.message });
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 };

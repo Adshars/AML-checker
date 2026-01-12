@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { authMiddleware } from './authMiddleware.js';
 import logger from './utils/logger.js';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
@@ -45,6 +46,26 @@ app.use((req, res, next) => {
         ip: req.ip || req.connection.remoteAddress
     });
     next();
+});
+
+// Rate Limiting
+// 10 request per 15 minutes per IP
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    message: { error: 'Too many requests from this IP, please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Limit for API routes
+// 100 requests per 15 minutes per IP
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    message: { error: 'Too many requests from this IP, please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 // PROXY SETUP
@@ -97,17 +118,21 @@ const sanctionsProxy = createProxyMiddleware({
 
 // Auth Service public routes
 
-app.post('/auth/register-organization', authProxy);
-app.post('/auth/register-user', authProxy);
-app.post('/auth/login', authProxy);
+app.post('/auth/register-organization', authLimiter, authProxy);
+app.post('/auth/register-user', authLimiter, authProxy);
+app.post('/auth/login', authLimiter, authProxy);
 app.post('/auth/internal/validate-api-key', authProxy);
+app.post('/auth/forgot-password', authLimiter, authProxy);
+app.post('/auth/reset-password', authLimiter, authProxy);
+app.post('/auth/refresh', authProxy);
+app.post('/auth/logout', authProxy);
 
 // Auth Service protected routes
 
 app.post('/auth/reset-secret', authMiddleware, authProxy);
 
 // Core Service protected routes
-app.use('/sanctions', authMiddleware, sanctionsProxy);
+app.use('/sanctions', authMiddleware, apiLimiter, sanctionsProxy);
 
 
 // Health Check

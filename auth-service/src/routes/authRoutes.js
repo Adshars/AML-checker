@@ -23,11 +23,17 @@ router.post('/register-user', authController.registerUser);
 
 // Login
 router.post('/login', loginLimiter, authController.login);
+router.post('/refresh', authController.refreshAccessToken);
+router.post('/logout', authController.logout);
 
 // API Key Validation (Internal)
 router.post('/internal/validate-api-key', authController.validateApiKey);
 
 // Api Secret reset
 router.post('/reset-secret', authController.resetOrganizationSecret);
+
+// Password Reset Flows
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
 
 export default router;

@@ -3,6 +3,7 @@ import sequelize from './config/database.js';
 import logger from './utils/logger.js';
 
 import * as SanctionsController from './controllers/sanctionsController.js';
+import * as HistoryController from './controllers/historyController.js';
 
 const app = express();
 const PORT = 3000;
@@ -17,7 +18,7 @@ app.get('/health', SanctionsController.getHealth);
 app.get('/check', SanctionsController.checkSanctions);
 
 // Endpoint for retrieving audit history
-app.get('/history', SanctionsController.getHistory);
+app.get('/history', HistoryController.getHistory);
 
 // Start the server after syncing the database
 

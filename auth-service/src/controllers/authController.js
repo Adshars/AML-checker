@@ -7,7 +7,7 @@ import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import RefreshToken from '../models/RefreshToken.js';
 import jwt from 'jsonwebtoken';
-
+import { registerOrgSchema, registerUserSchema, loginSchema, resetPasswordSchema } from '../utils/validationSchemas.js';
 
  // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
@@ -25,6 +25,14 @@ export const registerOrganization = async (req, res) => {
   // ---------------------------------
 
   try {
+    // Validation
+    const { error } = registerOrgSchema.validate(req.body);
+    if (error) {
+      logger.warn('Registration validation failed', { requestId, error: error.details[0].message });
+      return res.status(400).json({ error: error.details[0].message });
+    }
+
+    /*
     const { 
       orgName, country, city, address, 
       email, password, firstName, lastName 
@@ -37,7 +45,7 @@ export const registerOrganization = async (req, res) => {
       logger.warn('Registration validation failed', { requestId, missingFields: true });
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
+*/
     // Call business logic from Service
     const result = await AuthService.registerOrgService(req.body);
 
@@ -80,6 +88,15 @@ export const registerOrganization = async (req, res) => {
 export const registerUser = async (req, res) => {
   const requestId = `user-reg-${Date.now()}`;
   try {
+    logger.info('User registration request', { requestId });
+    
+    // Validation
+    const { error } = registerUserSchema.validate(req.body);
+    if (error) {
+      logger.warn('User registration validation failed', { requestId, error: error.details[0].message });
+      return res.status(400).json({ error: error.details[0].message });
+    }
+ /*
     const { email, password, firstName, lastName, organizationId } = req.body;
 
     logger.info('User registration request', { requestId, email, organizationId });
@@ -88,7 +105,7 @@ export const registerUser = async (req, res) => {
       logger.warn('User registration validation failed', { requestId });
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
+*/
     const newUser = await AuthService.registerUserService(req.body);
 
     res.status(201).json({
@@ -118,16 +135,24 @@ export const registerUser = async (req, res) => {
 
 export const login = async (req, res) => {
   const ip = req.ip || req.connection.remoteAddress;
+
+  // Validation
+  const { error } = loginSchema.validate(req.body);
+  if (error) {
+    logger.warn('Login validation failed', { ip, error: error.details[0].message });
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
   const { email, password } = req.body;
 
   try {
     logger.info('Login attempt', { email, ip });
-
+/*
     if (!email || !password) {
         logger.warn('Login validation failed', { ip, error: 'Missing credentials' });
         return res.status(400).json({ error: 'Missing email or password' });
     }
-
+*/
     // Password validation and user retrieval
     const result = await AuthService.loginService(email, password);
     const user = result.user;
@@ -296,13 +321,18 @@ export const resetPassword = async (req, res) => {
   const { userId, token, newPassword } = req.body;
   const requestId = `reset-${Date.now()}`;
 
+  const { error } = resetPasswordSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
   try {
     const pwdResetToken = await PasswordResetToken.findOne({ userId });
 
     if (!pwdResetToken) {
       return res.status(400).json({ error: 'Invalid or expired password reset token' });
     }
-
+    
     // Verify token
     const isValid = pwdResetToken.token === token;
     if (!isValid) {

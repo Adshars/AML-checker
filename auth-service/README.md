@@ -8,6 +8,7 @@ Stack and Dependencies
 - Mongoose 9 + MongoDB 6
 - bcryptjs (password and apiSecret hashing), jsonwebtoken (JWT authentication), cors, dotenv
 - express-rate-limit (endpoint rate limiting), nodemailer (password reset emails)
+- joi (request payload validation: email format, password rules)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
 
 Environment and Configuration
@@ -30,16 +31,16 @@ Endpoints
 - `GET /health` – returns service status and MongoDB connection (`{ service, status, database }`).
 - `POST /auth/register-organization` – registers organization and admin user, generates `apiKey` and returns `apiSecret` once (never stored in plain text).
 	- Required fields: `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName`.
-	- Validations: duplicate org name, duplicate email; 400 errors. Server error 500.
+	- Validations: required fields (Joi), email format, password minimum 8 characters; duplicate org name, duplicate email; 400 errors. Server error 500.
 	- Returns: organization details with `apiKey` (format: `pk_live_...`) and `apiSecret` (format: `sk_live_...`) visible only once; admin user with role `admin`.
 - `POST /auth/register-user` – adds user to existing organization with `user` role.
 	- Required fields: `email`, `password`, `firstName`, `lastName`, `organizationId`.
-	- Validations: organizationId existence, duplicate email; 400/404 errors; server error 500.
+	- Validations: required fields (Joi), email format, password minimum 8 characters; organizationId existence, duplicate email; 400/404 errors; server error 500.
 	- Returns: user details (email, name, role, organization assignment).
 - `POST /auth/login` – authenticates user by email/password and returns access token + refresh token.
 	- Required fields: `email`, `password`.
 	- Rate limited: 10 requests per 15 minutes per IP.
-	- Validations: user existence, password match; 401 errors. Server error 500.
+	- Validations: email format (Joi), password required; user existence, password match; 401 errors. Server error 500.
 	- Returns: `accessToken` valid for 15 minutes (JWT payload includes `userId`, `organizationId`, `role`); `refreshToken` valid for 7 days.
 - `POST /auth/refresh` – generates new access token using valid refresh token.
 	- Required fields: `refreshToken` (from login response).
@@ -55,7 +56,7 @@ Endpoints
 	- Sends email with reset link containing token and user ID (valid for 1 hour).
 - `POST /auth/reset-password` – resets password using token from email.
 	- Required fields: `userId`, `token`, `newPassword`.
-	- Validations: token existence and validity; 400 errors. Server error 500.
+	- Validations: token existence and validity; new password minimum 8 characters (Joi); 400 errors. Server error 500.
 	- Hashes new password and updates user record; deletes used reset token.
 	- Returns: reset success message.
 - `POST /auth/reset-secret` – resets organization's API secret (admin only, requires authentication).
@@ -224,6 +225,11 @@ How It Works (High Level)
 - `/auth/internal/validate-api-key`: finds organization by apiKey, compares provided plaintext apiSecret against stored hash using bcryptjs, returns organization ID and name on success (used by API Gateway for B2B authentication).
 - `/health`: reports service status and Mongoose connection state (1 = Connected, other = Disconnected).
 
+Validation Rules (Joi)
+- Email: must be a valid email address (contains `@` and a domain with a dot); required.
+- Password: minimum 8 characters; required for registration and login; enforced for `newPassword` during reset.
+- Required fields: all listed required fields are validated via Joi schemas; errors return `400` with descriptive messages.
+
 Authentication Methods
 - **User Login (JWT)**: User provides email and password → receives `accessToken` (15 min) and `refreshToken` (7 days) → uses accessToken in `Authorization: Bearer <token>` header for API calls → API Gateway verifies token signature → when accessToken expires, client uses refreshToken to obtain new accessToken → on logout, refreshToken is revoked and cannot be used.
 - **System/B2B (API Key)**: Organization receives `apiKey` and `apiSecret` at registration → uses both in `x-api-key` and `x-api-secret` headers → API Gateway validates credentials with `/auth/internal/validate-api-key` endpoint → no token expiration (persistent until reset via `/reset-secret`).
@@ -242,10 +248,4 @@ Implemented Features
 - ✅ **Role-Based Access**: `superadmin`, `admin`, and `user` roles supported; `/reset-secret` requires `admin` or `superadmin` role.
 - ✅ **Structured Logging**: winston with daily rotation for all authentication events and errors.
 - ✅ **API Secret Reset**: `/reset-secret` endpoint allows admins to regenerate organization API credentials.
-
-Limitations and TODO
-- No authorization middleware on routes; access control relies on header validation from API Gateway (role checks implemented in reset-secret endpoint).
-- No schema validation using Joi/Zod; relies only on basic field presence checks.
-- No operation auditing beyond structured logs; no detailed audit trail of who changed what and when.
-- API key/secret is returned in plaintext only once at registration or reset; if user loses it, recovery requires calling `/reset-secret` (admin only).
-- Password reset email URL is hardcoded to frontend URL; token does not include expiration metadata (relies on database TTL).
+- ✅ **Schema Validation (Joi)**: email format and password minimum length enforced for registration, login, and reset-password.

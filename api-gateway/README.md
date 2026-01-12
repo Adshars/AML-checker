@@ -11,12 +11,19 @@ Stack and Dependencies
 - cors (cross-origin request handling), dotenv
 - swagger-ui-express + yamljs (serves OpenAPI docs at /api-docs)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
+- express-rate-limit (request rate limiting per IP)
 
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
 - `CORE_SERVICE_URL` – address of Core Service; defaults to `http://core-service:3000` in Docker network.
 - `JWT_SECRET` – secret key for JWT token verification (must match Auth Service's `JWT_SECRET` for valid token verification).
 - Application port in container: 8080; mapped via `PORT` variable (default 8080).
+
+Rate Limiting
+- **Auth Endpoints Rate Limit**: 10 requests per 15 minutes per IP address. Applies to authentication routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`.
+- **API Endpoints Rate Limit**: 100 requests per 15 minutes per IP address. Applies to protected API routes: `/sanctions/*`.
+- Rate limit status is returned in response headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).
+- When limit is exceeded, the gateway returns `429 Too Many Requests` error with message: `"Too many requests from this IP, please try again later."`
 
 Local Setup
 1) `npm install`
@@ -136,10 +143,12 @@ Response Structure
 Error Responses
 - `401 Unauthorized` – No authentication provided.
 - `403 Forbidden` – Invalid or expired JWT token; invalid API Key/Secret.
+- `429 Too Many Requests` – Rate limit exceeded for the IP address.
 - `500 Internal Server Error` – Authentication middleware or upstream service error.
 
 How It Works (High Level)
-- **Request Flow**: Client request arrives → gateway generates `x-request-id` and logs request details → authentication middleware validates credentials (API Key or JWT) → validated request forwarded to downstream service with auth context headers (`x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) → response returned to client.
+- **Request Flow**: Client request arrives → gateway generates `x-request-id` and logs request details → rate limiting middleware checks request quota for IP → authentication middleware validates credentials (API Key or JWT) → validated request forwarded to downstream service with auth context headers (`x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) → response returned to client.
+- **Rate Limiting**: The gateway uses `express-rate-limit` middleware to enforce per-IP request limits. Authentication routes are limited to 10 requests per 15 minutes, while protected API routes are limited to 100 requests per 15 minutes. Rate limit information is included in response headers.
 - **API Docs**: Swagger UI served at `/api-docs`, loaded from `swagger.yaml`.
 - **Public Routes** (`/auth/*`): No authentication required; direct proxy to Auth Service for registration, login, and other public endpoints.
 - **Protected Routes** (`/auth/reset-secret`, `/sanctions/*`): Authentication middleware validates JWT token or API Key/Secret before proxying request; downstream service receives auth context for authorization.

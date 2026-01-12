@@ -86,6 +86,8 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 	- Elasticsearch 8.11 for Yente
 - **Sanctions Data**: OpenSanctions Yente 5.1 (local instance)
 - **Authentication**: bcryptjs (password/secret hashing), jsonwebtoken (JWT), API Key validation
+- **Validation**: joi (request payload validation for email format, password strength)
+- **Rate Limiting**: express-rate-limit (per-IP request throttling for auth and API endpoints)
 - **HTTP/Networking**: axios (inter-service calls), CORS middleware, http-proxy-middleware (reverse proxy)
 - **Infrastructure**: Docker Compose 3.8, environment variables (.env)
 - **Development**: nodemon (watch mode)
@@ -100,25 +102,29 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 	- Password reset flow: request reset via `/forgot-password` (sends email with token), reset password with token via `/reset-password`
 	- API key validation for system-to-system (B2B) authentication
 	- Reset organization API secret (`/reset-secret` admin-only endpoint)
+	- **Request validation** using Joi: email format validation, password minimum 8 characters for registration and password reset
 
 - **API Gateway & Authentication**:
 	- Central API Gateway routing public (`/auth`) and protected (`/sanctions`) endpoints
 	- Two authentication methods: JWT (user login) and API Key/Secret (B2B)
+	- **Rate limiting**: 10 requests per 15 minutes for auth endpoints, 100 requests per 15 minutes for API endpoints (per IP address)
 	- Automatic context header injection (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) for downstream services
 	- Organization-based isolation: users can only access their organization's data
 	- Superadmin access: superadmin users can access all organizations' audit logs
 
 - **Sanctions & PEP Screening**:
 	- Real-time screening via GET `/sanctions/check?name=` against OpenSanctions data
+	- **Configurable search parameters**: `limit` (default 15), `fuzzy` (default false), `schema` (filter by entity type), `country` (filter by country code)
 	- Maps Yente results to simplified response with flags: `isSanctioned`, `isPep`
-	- Returns entity details: name, schema (Person/Company), country, birth date, match score
+	- Returns entity details: name, schema (Person/Company), country, birth date, birthplace, gender, nationality, position, aliases, addresses, match score
 	- Supports OFAC, UN, EU, and other sanctions lists via Yente
 	- Request tracking with `x-request-id` header for end-to-end tracing
 
 - **Audit Logging & Compliance**:
 	- Automatic logging of all sanctions checks to audit table (PostgreSQL)
 	- Audit log includes: organization ID, user ID, search query, hit status, hit count, timestamp
-	- History endpoint to retrieve past screening queries per organization
+	- **Paginated history** endpoint with **advanced filtering**: text search, hit status filter, date range filter, user ID filter, superadmin org filter
+	- History endpoint supports: `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId`, `orgId` (superadmin only)
 	- Data isolation: organizations can only view their own audit logs; superadmins can view all or filter by organization
 
 - **Resilience & Performance**:
@@ -319,7 +325,30 @@ curl -X GET "http://localhost:8080/sanctions/check?name=Jane%20Smith" \
 curl -X GET http://localhost:8080/sanctions/history \
 	-H "Authorization: Bearer <JWT_TOKEN>"
 ```
-**Response**: Array of recent sanctions checks for the organization (up to 50 most recent)
+**Response**: Paginated array of sanctions checks for the organization with metadata (totalItems, totalPages, currentPage, itemsPerPage)
+
+### 8a. Retrieve Audit History with Filters
+```bash
+# Search for entity name
+curl -X GET "http://localhost:8080/sanctions/history?search=John" \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+
+# Filter by hit status (only hits)
+curl -X GET "http://localhost:8080/sanctions/history?hasHit=true" \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+
+# Filter by date range
+curl -X GET "http://localhost:8080/sanctions/history?startDate=2025-12-01T00:00:00Z&endDate=2025-12-31T23:59:59Z" \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+
+# Pagination (page 2, 50 items per page)
+curl -X GET "http://localhost:8080/sanctions/history?page=2&limit=50" \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+
+# Combined filters (search + date range + pagination)
+curl -X GET "http://localhost:8080/sanctions/history?search=John&startDate=2025-12-01T00:00:00Z&hasHit=true&page=1&limit=10" \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+```
 
 ### Health Checks
 ```bash
@@ -334,9 +363,15 @@ curl http://localhost:3005/health                  # Core Service (debug)
 {
 	"meta": {
 		"source": "OpenSanctions (Local Yente)",
-		"timestamp": "2025-12-28T10:30:45.123Z"
+		"timestamp": "2025-12-28T10:30:45.123Z",
+		"requestId": "req-1735386645123-a1b2c3d4"
 	},
 	"query": "John Doe",
+	"search_params": {
+		"limit": 15,
+		"fuzzy": false,
+		"schema": null
+	},
 	"hits_count": 2,
 	"data": [
 		{
@@ -345,45 +380,50 @@ curl http://localhost:3005/health                  # Core Service (debug)
 			"schema": "Person",
 			"isSanctioned": true,
 			"isPep": false,
+			"score": 0.98,
+			"birthDate": "1970-01-01",
+			"birthPlace": "New York",
+			"gender": "M",
+			"nationality": ["US"],
 			"country": ["US"],
-			"birthDate": ["1970-01-01"],
-			"notes": ["U.S. OFAC Sanctions List"],
-			"score": 0.98
+			"position": ["OFAC Officer"],
+			"description": ["U.S. OFAC Sanctions List"],
+			"aliases": ["J. Doe"],
+			"addresses": ["123 Main St, New York, NY"],
+			"datasets": ["ofac-sdn"]
 		}
 	]
 }
 ```
 
-## Project Status
-- **Status**: In progress (core platform complete, frontend and infrastructure pending)
-- **Implemented & Running**:
-	- ✅ OP Adapter (Yente wrapper)
-	- ✅ Auth Service (organization/user management, JWT, API keys)
-	- ✅ API Gateway (request routing, authentication enforcement)
-	- ✅ Core Service (sanctions checking with audit logging)
-	- ✅ MongoDB (Auth Service persistence)
-	- ✅ PostgreSQL (Core Service audit logs)
-	- ✅ Elasticsearch + Yente (sanctions data)
-	- ✅ OpenAPI/Swagger docs for API Gateway (`/api-docs`)
-- **Not Yet Implemented**:
-	- ❌ Frontend (web UI for screening and organization management)
-	- ❌ Infrastructure (Kubernetes manifests, Helm charts, CI/CD)
-	- ❌ Rate limiting and comprehensive audit trail UI
-
-## Room for Improvement
-- **Security**: Add rate limiting on public endpoints (registration, login), implement request signing for B2B, add IP whitelisting, enforce strong password policies
-- **Features**: Add bulk entity screening, webhook notifications for high-risk matches, export audit logs to PDF/CSV, advanced filtering options for audit history
-- **Architecture**: Add caching layer (Redis) for frequently checked names, implement request queuing for high-volume screening, add comprehensive metrics (Prometheus), implement distributed tracing (Jaeger)
-- **Testing**: Write unit tests (Jest), integration tests (Postman/Newman), load tests (k6), E2E tests (Cypress)
-- **Frontend**: Build web UI for user/org management, screening dashboard, audit log viewer, analytics, compliance reporting
-- **Documentation**: Complete OpenAPI spec for all endpoints, API client libraries (Node.js, Python), deployment guide for Kubernetes/AWS, troubleshooting guide, security best practices
-- **Compliance**: Add GDPR data deletion endpoint, implement data retention policies with automatic archival, add role-based access control (RBAC) UI, comprehensive audit trail viewer with export
-- **Monitoring**: Implement alerting (Slack, PagerDuty) for service failures, add performance dashboards, implement SLA tracking
-
-## Acknowledgements
-- **OpenSanctions** – provides open-source sanctions and PEP datasets via Yente API ([opensanctions.org](https://opensanctions.org))
-- **Yente** – local API wrapper around OpenSanctions data ([yente-api.com](https://www.opensanctions.org/docs/yente/))
-- **Elasticsearch** – search and analytics engine powering Yente
-
-## Contact
-**Repository**: [AML-Checker GitHub](https://github.com/your-org/AML-checker)
+### Response Example (Audit History - Paginated)
+```json
+{
+	"data": [
+		{
+			"id": "550e8400-e29b-41d4-a716-446655440000",
+			"organizationId": "<org_id>",
+			"userId": "<user_id>",
+			"searchQuery": "John Doe",
+			"hasHit": true,
+			"hitsCount": 2,
+			"createdAt": "2025-12-28T10:30:00Z"
+		},
+		{
+			"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+			"organizationId": "<org_id>",
+			"userId": "B2B-API-KEY",
+			"searchQuery": "Jane Smith",
+			"hasHit": false,
+			"hitsCount": 0,
+			"createdAt": "2025-12-28T10:25:00Z"
+		}
+	],
+	"meta": {
+		"totalItems": 150,
+		"totalPages": 8,
+		"currentPage": 1,
+		"itemsPerPage": 20
+	}
+}
+```

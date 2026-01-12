@@ -2,6 +2,7 @@ import axios from 'axios';
 import sequelize from '../config/database.js';
 import AuditLog from '../models/AuditLog.js';
 import logger from '../utils/logger.js';
+import { response } from 'express';
 
 const OP_ADAPTER_URL = process.env.OP_ADAPTER_URL || 'http://op-adapter:3000';
 
@@ -22,7 +23,8 @@ export const getHealth = async (req, res) => {
 
 // Sanctions Check Handler (/check)
 export const checkSanctions = async (req, res) => {
-    const queryName = req.query.name;
+    const { name, limit, fuzzy, schema, country } = req.query;
+    const queryName = name;
 
     // Get context from the headers
     const orgID = req.headers['x-org-id'];
@@ -41,29 +43,71 @@ export const checkSanctions = async (req, res) => {
         return res.status(403).json({ error: 'Missing Organization Context (x-org-id)' });
     }
 
+    logger.info('Received sanctions check request', { requestId, orgID, userID, queryName });
+
     try {
         // Forward the request to the OP Adapter
         logger.debug(`Forwarding check to OP-Adapter`, { requestId, query: queryName });
 
         const startAdapter = Date.now();
+
         const adapterResponse = await axios.get(`${OP_ADAPTER_URL}/check`, {
-            params: { name: queryName },
+            params: { 
+                name: queryName, 
+                limit, 
+                fuzzy, 
+                schema, 
+                country },
             headers: { 'x-request-id': requestId }
         });
         const durationAdapter = Date.now() - startAdapter;
         logger.debug(`OP-Adapter response received in ${durationAdapter}ms`, { requestId });
 
-        const data = adapterResponse.data;
-        const hasHit = data.hits_count > 0;
+        const responseData = adapterResponse.data;
+        const hits = responseData.data || [];
+        const hasHit = responseData.hits_count > 0;
 
-        // Log the audit record
+        // Prepare detailed match information for save
+
+        // Chosting top match
+        let bestMatch = null;
+        if (hits.length > 0) {
+            bestMatch = hits[0]; // First item is best match
+        }
+
+        const joinArr = (arr) => (Array.isArray(arr) && arr.length > 0 ? arr.join(', ') : null);
+
+        // Helper: Combines description and position into one text
+        const getDescription = (match) => {
+            if (!match) return null;
+            const pos = joinArr(match.position) || '';
+            const desc = joinArr(match.description) || ''; // Op-adapter returns this as 'description' or 'notes'
+            const combined = `${pos} ${desc}`.trim();
+            return combined.length > 0 ? combined : null; 
+        };
+
+
+        // Save the audit record
         try {
             await AuditLog.create({
                 organizationId: orgID,
-                userId: userID || 'B2B-API-KEY', // When no user ID, assume API key usage
+                userId: userID || 'API',
                 searchQuery: queryName,
                 hasHit: hasHit,
-                hitsCount: data.hits_count
+                hitsCount: responseData.hits_count || 0,
+
+                // Mapping best match details
+                entityName: bestMatch?.name || null,
+                entityScore: bestMatch?.score || null,
+                entityBirthDate: bestMatch?.birthDate || null,
+                entityGender: bestMatch?.gender || null,
+                
+                entityCountries: bestMatch ? joinArr(bestMatch.country) : null,
+                entityDatasets: bestMatch ? joinArr(bestMatch.datasets) : null,
+                entityDescription: getDescription(bestMatch),
+
+                isSanctioned: bestMatch?.isSanctioned || false,
+                isPep: bestMatch?.isPep || false
             });
             logger.info('Audit log saved successfully', { requestId, orgID, hasHit });
         } catch (dbError) {
@@ -77,7 +121,7 @@ export const checkSanctions = async (req, res) => {
     });
 
         // Return the response from the adapter
-        res.json(data);
+        res.json(responseData);
 
     } catch (error) {
         const errorDetails = error.response?.data || error.message;
@@ -90,6 +134,5 @@ export const checkSanctions = async (req, res) => {
 
         res.status(502).json({ error: 'Validation failed downstream' });
     }
-
 
 };

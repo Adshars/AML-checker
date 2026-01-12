@@ -26,6 +26,19 @@ axiosRetry(apiClient, {
   }
 });
 
+// Helper to safely get first property value
+const getProp = (item, propName) => {
+  const props = item.properties || {};
+  const values = props[propName];
+  return values && values.length > 0 ? values[0] : null;
+};
+
+// Helper to safely get list property value
+const getList = (item, propName) => {
+    const props = item.properties || {};
+    return props[propName] || [];
+};
+
 // Health Check
 export const getHealth = (req, res) => {
   logger.debug('Health check requested');
@@ -34,33 +47,45 @@ export const getHealth = (req, res) => {
 
 // Main Check Logic
 export const checkEntity = async (req, res) => {
-  const queryName = req.query.name;
   const requestId = req.headers['x-request-id'] || `req-${Date.now()}`;
+  
+  // Dynamic query parameters
+  const { 
+      name, 
+      limit = 15, 
+      fuzzy = 'false', 
+      schema, 
+      country 
+  } = req.query;
 
-  logger.info('Received check request', { requestId, queryName });
+  logger.info('Received check request', { requestId, name, limit, fuzzy, schema, country });
 
-  if (!queryName) {
+  if (!name) {
     logger.warn('Missing name parameter in check request', { requestId });
     return res.status(400).json({ error: 'Missing name parameter' });
   }
 
   try {
-    logger.debug(`Initiating Yente API search`, { requestId, queryName, url: YENTE_URL });
+    logger.debug(`Initiating Yente API search`, { requestId, name, url: YENTE_URL });
 
     const start = Date.now();
 
-    // API Call with retry
+    // Building Yente query parameters
+    const yenteParams = {
+        q: name,
+        limit: parseInt(limit) || 15,
+        fuzzy: fuzzy === 'true'
+    };
+
+
+    if (schema) yenteParams.schema = schema;
+    if (country) yenteParams.countries = country;
+
     const response = await apiClient.get('/search/default', {
-      params: {
-        q: queryName,
-        limit: 15,
-        fuzzy: false
-      }
+      params: yenteParams
     });
 
     const duration = Date.now() - start;
-
-    const rawResults = response.data.results || [];
 
     // Mapping logic (DTO)
     const results = response.data.results.map(item => {
@@ -70,18 +95,29 @@ export const checkEntity = async (req, res) => {
       return {
         id: item.id,
         name: item.caption,
-        schema: item.schema, 
+        schema: item.schema,
+        score: item.score, 
         
         // Key Flags
         isSanctioned: topics.includes('sanction'),
         isPep: topics.includes('role.pep'),
+
+        // Personal Details
+        birthDate: getProp(item, 'birthDate'),
+        birthPlace: getProp(item, 'birthPlace'),
+        gender: getProp(item, 'gender'),
+        nationality: getList(item, 'nationality'),
         
-        // Context
+        // Localization and Context
         country: props.country || [],
-        birthDate: props.birthDate || [],
-        notes: props.notes || [],
+        position: getList(item, 'position'),
+        description: getList(item, 'notes'),
         
-        score: item.score
+        // Bonus data
+        aliases: getList(item, 'alias'),
+        addresses: getList(item, 'address'),
+
+        datasets: item.datasets || []
       };
     });
 
@@ -92,13 +128,15 @@ export const checkEntity = async (req, res) => {
       source: 'OpenSanctions (Local Yente)' 
     });
 
+    // Return the formatted response
     res.json({
       meta: {
         source: 'OpenSanctions (Local Yente)',
         timestamp: new Date().toISOString(),
         requestId
       },
-      query: queryName,
+      query: name,
+      search_params: { limit: yenteParams.limit, fuzzy: yenteParams.fuzzy, schema: yenteParams.schema },
       hits_count: results.length,
       data: results
     });

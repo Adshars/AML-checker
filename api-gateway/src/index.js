@@ -51,7 +51,7 @@ app.use((req, res, next) => {
 // Rate Limiting
 // 10 request per 15 minutes per IP
 const authLimiter = rateLimit({
-    windowsMS: 15 * 60 * 1000, // 15 minutes
+    windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10,
     message: { error: 'Too many requests from this IP, please try again later.' },
     standardHeaders: true,
@@ -61,7 +61,7 @@ const authLimiter = rateLimit({
 // Limit for API routes
 // 100 requests per 15 minutes per IP
 const apiLimiter = rateLimit({
-    windowsMS: 15 * 60 * 1000, // 15 minutes
+    windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100,
     message: { error: 'Too many requests from this IP, please try again later.' },
     standardHeaders: true,

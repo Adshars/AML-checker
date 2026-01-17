@@ -1,7 +1,5 @@
 import axios from 'axios';
 
-// Pobieramy adres z zmiennej środowiskowej (zdefiniowanej w docker-compose)
-// Jeśli jej nie ma, domyślnie używamy localhost:8080
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 const api = axios.create({
@@ -11,12 +9,12 @@ const api = axios.create({
   },
 });
 
-// --- INTERCEPTORS (To jest magia bezpieczeństwa) ---
+// Axios Interceptors
 
-// 1. Request Interceptor: Automatycznie dodaj token do każdego zapytania
+// Request Interceptor: Automatic inclusion of token in headers
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token'); // Pobieramy token z pamięci przeglądarki
+    const token = localStorage.getItem('token'); // We get the token from the browser's local storage
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
@@ -27,19 +25,20 @@ api.interceptors.request.use(
   }
 );
 
-// 2. Response Interceptor: Obsługa wygaśnięcia sesji (401)
+// Response Interceptor: Handling session expiration (401)
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error) => {
-    // Jeśli serwer zwróci 401 (Unauthorized), znaczy to, że token wygasł
+    // If the server returns 401 (Unauthorized), it means the token has expired
     if (error.response && error.response.status === 401) {
-      // Unikamy pętli (nie wylogowuj, jeśli błąd dotyczy samego logowania)
+      // Avoid loops (do not log out if the error concerns the login itself)
       if (!error.config.url.includes('/login')) {
         localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
-        // Przeładowanie strony wymusi powrót do ekranu logowania (obsłużymy to w AuthContext)
+        // Reloading the page will force a return to the login screen (we will handle this in AuthContext)
         window.location.href = '/login';
       }
     }

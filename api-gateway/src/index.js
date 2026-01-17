@@ -16,7 +16,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+export const app = express();
 const PORT = process.env.PORT || 8080;
 
 // Configuration
@@ -140,6 +140,8 @@ app.get('/health', (req, res) => {
     res.json({ service: 'api-gateway', status: 'UP' });
 });
 
-app.listen(PORT, () => {
-  logger.info(`API Gateway running`, { port: PORT, env: process.env.NODE_ENV || 'development' });
-});
+if (process.env.NODE_ENV !== 'test') {
+        app.listen(PORT, () => {
+            logger.info(`API Gateway running`, { port: PORT, env: process.env.NODE_ENV || 'development' });
+        });
+}

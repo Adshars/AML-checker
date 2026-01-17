@@ -4,7 +4,7 @@ import cors from 'cors';
 import authRoutes from './routes/authRoutes.js';
 import logger from './utils/logger.js';
 
-const app = express();
+export const app = express();
 const PORT = 3000;
 
 // Connection string do MongoDB
@@ -25,19 +25,22 @@ app.get('/health', (req, res) => {
 app.use('/auth', authRoutes);
 
 // Start the server after connecting to the database
-const startServer = async () => {
-  try {
-    // Connect to MongoDB
-    await mongoose.connect(MONGO_URI);
-    logger.info('Connected to MongoDB', { uri: MONGO_URI.split('@')[1] || 'localhost' });
+if (process.env.NODE_ENV !== 'test') {
+    
+    const startServer = async () => {
+      try {
+        // Connect to MongoDB
+        await mongoose.connect(MONGO_URI);
+        logger.info('Connected to MongoDB', { uri: MONGO_URI.split('@')[1] || 'localhost' });
 
-    app.listen(PORT, () => {
-      logger.info(`Auth Service running`, { port: PORT, env: process.env.NODE_ENV || 'development' });
-    });
-  } catch (error) {
-    logger.error('Database connection error', { error: error.message, stack: error.stack });
-    process.exit(1); // Exit the container if the database is not working
-  }
-};
+        app.listen(PORT, () => {
+          logger.info(`Auth Service running`, { port: PORT, env: process.env.NODE_ENV || 'development' });
+        });
+      } catch (error) {
+        logger.error('Database connection error', { error: error.message, stack: error.stack });
+        process.exit(1); // Exit the container if the database is not working
+      }
+    };
 
-startServer();
+    startServer();
+}

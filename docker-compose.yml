@@ -20,6 +20,21 @@ services:
     depends_on:
       - auth-service
       - op-adapter
+
+  frontend:
+    build: ./frontend
+    container_name: ${FRONTEND_CONTAINER_NAME}
+    ports:
+      - "80:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080 
+    depends_on:
+      - api-gateway
+    networks:
+      - default
   op-adapter:
     build: ./op-adapter
     # For testing purposes, delete comments below to expose port
@@ -78,14 +93,14 @@ services:
     ports:
       - "${YENTE_PORT}:8000"
     environment:
-      - YENTE_TITLE=Local Compliance API
+      - YENTE_TITLE=${YENTE_TITLE}
       # "default" the full OpenSanctions dataset
       # "us_ofac_sdn" the US main sanctions list
-      - YENTE_MANIFEST=/manifest.yml
+      - YENTE_MANIFEST=${YENTE_MANIFEST}
       # Use local Elasticsearch instance (local)
       - YENTE_ELASTICSEARCH_URL=http://elasticsearch:9200
       # Automatic data update on startup
-      - YENTE_UPDATE_DATA=true     
+      - YENTE_UPDATE_DATA=${YENTE_UPDATE_DATA}     
     volumes:
       # Saving downloaded data to disk
       - yente_data:/data
@@ -103,9 +118,9 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false # Disable security for simplicity
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g # Limit Java to 1GB RAM
+      - discovery.type=${ES_DISCOVERY_TYPE}
+      - xpack.security.enabled=${ES_SECURITY_ENABLED} # Disable security for simplicity
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS} # Limit Java to 1GB RAM
     ports:
       - "9200:9200" # Elasticsearch REST API for debugging
     volumes:

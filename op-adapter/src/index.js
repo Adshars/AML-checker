@@ -2,7 +2,7 @@ import express from 'express';
 import * as adapterController from './controllers/adapterController.js';
 import logger from './utils/logger.js';
 
-const app = express();
+export const app = express();
 const PORT = 3000;
 
 app.use(express.json());
@@ -16,6 +16,8 @@ app.get('/health', adapterController.getHealth);
 app.get('/check', adapterController.checkEntity);
 
 // --- START SERVER ---
-app.listen(PORT, () => {
-  logger.info(`OP-Adapter service started`, { port: PORT, env: process.env.NODE_ENV || 'development' });
-});
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+      logger.info(`OP-Adapter service started`, { port: PORT, env: process.env.NODE_ENV || 'development' });
+    });
+}

@@ -12,6 +12,9 @@ Stack and Dependencies
 - swagger-ui-express + yamljs (serves OpenAPI docs at /api-docs)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
 - express-rate-limit (request rate limiting per IP)
+- jest + supertest (dev dependencies for E2E testing)
+- nock (dev dependency for mocking HTTP requests)
+- cross-env (dev dependency for cross-platform environment variables)
 
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
@@ -28,6 +31,7 @@ Rate Limiting
 Local Setup
 1) `npm install`
 2) `node src/index.js` (optionally set service URLs and `JWT_SECRET` environment variables)
+3) `npm test` (for running E2E tests)
 
 Docker Compose Setup
 - From project root directory: `docker compose up --build api-gateway`
@@ -156,3 +160,52 @@ How It Works (High Level)
 - **JWT Verification**: Gateway verifies JWT signature locally using `JWT_SECRET` and extracts user, organization, and role information from token payload.
 - **Header Forwarding**: Downstream services receive `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers for access control, audit logging, and request tracing.
 - **Logging**: All requests are logged with structured logging (winston) including method, URL, request ID, and client IP.
+
+Testing
+-------
+
+End-to-End (E2E) tests for API Gateway verify routing to microservices, rate limiting enforcement, and authentication context forwarding. Tests use Jest with Supertest for HTTP testing and nock for mocking upstream service responses.
+
+Test Files
+- `tests/gateway.test.js` – comprehensive E2E tests for gateway infrastructure.
+	- **Rate Limiting (Auth & API)**:
+		- Tests verify that `/auth/*` endpoints are rate-limited to 10 requests per 15 minutes per IP.
+		- Tests verify that `/sanctions/*` endpoints are rate-limited to 100 requests per 15 minutes per IP.
+		- 101st request after limit is reached returns 429 Too Many Requests.
+	- **Request Routing**:
+		- Tests verify that `/auth/*` requests are correctly proxied to Auth Service.
+		- Tests verify that `/sanctions/*` requests are correctly proxied to Core Service.
+		- Mock responses from upstream services are validated.
+	- **Authentication Context**:
+		- Tests use JWT tokens to verify that authenticated requests include `x-org-id`, `x-user-id`, and `x-role` headers forwarded to downstream services.
+	- Mocks: nock (HTTP request interception and mocking).
+
+Running Tests
+- Command: `npm test` (runs all E2E tests with verbose output)
+- Uses Jest with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
+- Tests run in isolated environment with mocked upstream services (no real Auth/Core Service connection required)
+- Environment: `NODE_ENV=test` prevents server startup; supertest provides HTTP client without requiring listening port
+
+Test Coverage
+- **Infrastructure**: Tests verify correct routing of requests to upstream services based on URL path.
+- **Rate Limiting**: Tests ensure rate limits are enforced per IP address for both auth and API endpoints.
+- **Request/Response**: Tests validate that requests are proxied correctly and upstream responses are returned to client.
+- **Headers**: Tests verify that authentication context headers are forwarded to downstream services.
+
+Example Test Execution
+```bash
+npm test
+```
+
+Expected output:
+```
+PASS  tests/gateway.test.js
+  API Gateway E2E
+    ✓ Rate limiting: 101st request to /sanctions returns 429
+    ✓ Routing: /auth/login is proxied to Auth Service
+    ✓ Routing: /sanctions/* is proxied to Core Service
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+```
+

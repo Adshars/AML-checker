@@ -132,6 +132,56 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 	- Health checks for all services with database connection status
 	- Docker health checks for container orchestration
 
+## Testing
+
+The project includes comprehensive test suites for all microservices with **51 total tests** covering integration, E2E, data mapping, error handling, and security scenarios.
+
+### Running All Tests
+```bash
+npm test
+```
+This runs tests for all four microservices sequentially:
+- `npm run test:auth` – Auth Service (9 tests)
+- `npm run test:core` – Core Service (7 tests)
+- `npm run test:adapter` – OP Adapter (32 tests)
+- `npm run test:gateway` – API Gateway (3 tests)
+
+### Test Suites Overview
+
+| Service | Tests | Focus Areas |
+|---------|-------|------------|
+| **core-service** | 7 | Parameter validation, org context enforcement, audit logging, pagination, data isolation |
+| **auth-service** | 9 | Registration flows, user login, token refresh, logout with revocation |
+| **op-adapter** | 32 | DTO mapping, error handling, retry logic with exponential backoff, parameter forwarding |
+| **api-gateway** | 3 | Rate limiting enforcement (429), request routing to microservices |
+
+### Test Framework & Tools
+- **Jest** with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
+- **Supertest** for HTTP testing
+- **Mocking**: jest.unstable_mockModule (module mocking), nock (HTTP interception)
+- **Isolation**: All tests run with mocked external dependencies (no real database or service calls required)
+
+### Running Tests for Individual Services
+```bash
+# Auth Service
+cd auth-service && npm test
+
+# Core Service
+cd core-service && npm test
+
+# OP Adapter
+cd op-adapter && npm test
+
+# API Gateway
+cd api-gateway && npm test
+```
+
+For detailed information about each test suite, see the Testing section in individual service README files:
+- [core-service/README.md](core-service/README.md#testing)
+- [auth-service/README.md](auth-service/README.md#testing)
+- [op-adapter/README.md](op-adapter/README.md#testing)
+- [api-gateway/README.md](api-gateway/README.md#testing)
+
 ## Setup
 
 ### Requirements

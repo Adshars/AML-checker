@@ -11,6 +11,8 @@ Stack and Dependencies
 - cors (cross-origin request handling)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
 - nodemon (dev dependency for auto-reload)
+- jest + supertest (dev dependencies for integration testing)
+- cross-env (dev dependency for cross-platform environment variables)
 
 Environment and Configuration
 - `DB_HOST` – PostgreSQL hostname; defaults to `postgres` in Docker network.
@@ -26,6 +28,7 @@ Local Setup
 2) Ensure PostgreSQL is running on `localhost:5432` with credentials from environment variables
 3) `npm start` (for production) or `npm run dev` (for development with nodemon)
 4) Set environment variables: `DB_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `OP_ADAPTER_URL`
+5) `npm test` (for running integration tests)
 
 Docker Compose Setup
 - From project root directory: `docker compose up --build core-service`
@@ -207,3 +210,58 @@ Data Models
 	- `hasHit` (boolean; true if matches found)
 	- `hitsCount` (integer; number of sanctions matches)
 	- `createdAt` (timestamp; auto-set on record creation)
+
+Testing
+-------
+
+Integration tests for Core Service verify endpoint behavior, request validation, data isolation, and interaction with external dependencies (OP Adapter, database). Tests use Jest test framework with Supertest for HTTP testing and mock external dependencies.
+
+Test Files
+- `tests/check.test.js` – integration tests for `/check` endpoint.
+	- Validates request parameter validation (missing `name` returns 400).
+	- Validates organization context enforcement (missing `x-org-id` returns 403).
+	- Tests successful sanctions check with mocked OP Adapter response and audit log creation.
+	- Mocks: axios (OP Adapter HTTP client), AuditLog model, logger.
+- `tests/history.test.js` – integration tests for `/history` endpoint.
+	- Validates organization context enforcement (missing `x-org-id` returns 403 for non-superadmin users).
+	- Tests pagination (page-based pagination with correct metadata calculation).
+	- Tests data isolation (regular users can only access their organization's audit logs).
+	- Tests search query filtering (text search by entity name).
+	- Mocks: AuditLog model, logger, axios.
+
+Running Tests
+- Command: `npm test` (runs all tests with verbose output)
+- Uses Jest with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
+- Tests run in isolated environment with mocked dependencies (no real database or OP Adapter connection required)
+- All mocks are defined before importing application code using `jest.unstable_mockModule`
+
+Test Coverage
+- **Request Validation**: Tests verify proper HTTP status codes for missing required parameters and headers.
+- **Security**: Tests ensure organization-based data isolation on `/history` endpoint (regular users cannot access other organizations' audit logs).
+- **Business Logic**: Tests verify correct handling of sanctions check results and audit log creation.
+- **Pagination**: Tests validate correct pagination metadata calculation (totalItems, totalPages, currentPage, itemsPerPage).
+- **Filtering**: Tests verify that query parameters (search, hasHit, date range, etc.) are correctly applied to database queries.
+
+Example Test Execution
+```bash
+npm test
+```
+
+Expected output:
+```
+PASS  tests/check.test.js
+  GET /check Integration Test
+    ✓ should return 400 if name is missing
+    ✓ should return 403 if x-org-id is missing
+    ✓ should process successful response from Op-Adapter and save log
+
+PASS  tests/history.test.js
+  GET /history Integration Test
+    ✓ should return 403 if x-org-id is missing (Security)
+    ✓ should return paginated results (Pagination)
+    ✓ should enforce data isolation for regular users
+    ✓ should allow filtering by search query
+
+Test Suites: 2 passed, 2 total
+Tests:       7 passed, 7 total
+```

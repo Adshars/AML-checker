@@ -10,6 +10,8 @@ Stack and Dependencies
 - express-rate-limit (endpoint rate limiting), nodemailer (password reset emails)
 - joi (request payload validation: email format, password rules)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
+- jest + supertest (dev dependencies for integration testing)
+- cross-env (dev dependency for cross-platform environment variables)
 
 Environment and Configuration
 - `MONGO_URI` – MongoDB connection string; defaults to `mongodb://localhost:27017/auth_db` in code.
@@ -22,6 +24,7 @@ Environment and Configuration
 Local Setup
 1) `npm install`
 2) `node src/index.js` (optionally set `MONGO_URI` and `JWT_SECRET` environment variables)
+3) `npm test` (for running integration tests)
 
 Docker Compose Setup
 - From project root directory: `docker compose up --build auth-service`
@@ -249,3 +252,67 @@ Implemented Features
 - ✅ **Structured Logging**: winston with daily rotation for all authentication events and errors.
 - ✅ **API Secret Reset**: `/reset-secret` endpoint allows admins to regenerate organization API credentials.
 - ✅ **Schema Validation (Joi)**: email format and password minimum length enforced for registration, login, and reset-password.
+
+Testing
+-------
+
+Integration tests for Auth Service verify endpoint behavior, request validation, authentication flows, and interaction with external dependencies (MongoDB, email service). Tests use Jest test framework with Supertest for HTTP testing and mock external dependencies.
+
+Test Files
+- `tests/auth.test.js` – comprehensive integration tests for all authentication endpoints.
+	- **Organization Registration** (`POST /auth/register-organization`):
+		- Happy path: successful organization and admin user registration with API key generation (201).
+		- Duplicate email validation: rejects duplicate email registrations (400).
+		- Password validation: enforces minimum 8-character password requirement via Joi (400).
+	- **User Login** (`POST /auth/login`):
+		- Success: authenticates user and returns JWT access token and refresh token (200).
+		- Failure: rejects invalid credentials with 401 error.
+	- **Token Refresh** (`POST /auth/refresh`):
+		- Success: generates new access token using valid refresh token stored in database (200).
+		- Failure: rejects invalid, expired, or revoked refresh tokens with 403 error.
+	- **User Logout** (`POST /auth/logout`):
+		- Success: revokes refresh token from database, preventing future token refreshes (200).
+		- Rejects refresh attempts with revoked token (403 after logout).
+	- Mocks: AuthService (business logic), RefreshToken model (database), User model, logger, email sender.
+
+Running Tests
+- Command: `npm test` (runs all tests with verbose output)
+- Uses Jest with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
+- Tests run in isolated environment with mocked dependencies (no real MongoDB or email service connection required)
+- All mocks are defined before importing application code using `jest.unstable_mockModule`
+- Environment variables are set in test file (`JWT_SECRET`, `REFRESH_TOKEN_SECRET`)
+
+Test Coverage
+- **Request Validation**: Tests verify proper HTTP status codes for invalid inputs (short password, missing required fields).
+- **Security**: Tests ensure proper validation and rejection of duplicate credentials, invalid passwords, and unauthorized token usage.
+- **Authentication Flows**: Tests verify complete authentication flows including login, token generation, token refresh, and logout.
+- **JWT Token Handling**: Tests validate JWT token creation, cryptographic signing, and database persistence of refresh tokens.
+- **Database Interaction**: Tests verify correct interaction with RefreshToken and User models (save, find, delete operations).
+- **Error Handling**: Tests ensure proper HTTP error codes for various failure scenarios (validation errors 400, authentication errors 401, unauthorized errors 403).
+
+Example Test Execution
+```bash
+npm test
+```
+
+Expected output:
+```
+PASS  tests/auth.test.js
+  Auth Service Integration Tests
+    POST /auth/register-organization
+      ✓ should register organization (Happy Path) -> 201
+      ✓ should fail on Duplicate -> 400
+      ✓ should fail Validation (short password) -> 400
+    POST /auth/login
+      ✓ should login (Success) -> 200 + tokens
+      ✓ should fail login (Wrong Password) -> 401
+    POST /auth/refresh
+      ✓ should refresh token (Success) -> 200 + new AccessToken
+      ✓ should fail (Reuse/Invalid/Logged Out) -> 403
+    POST /auth/logout
+      ✓ should logout (Remove token) -> 200
+		✓ should prevent refresh after logout (revoked token) -> 403
+
+	Test Suites: 1 passed, 1 total
+	Tests:       9 passed, 9 total
+```

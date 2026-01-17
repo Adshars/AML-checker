@@ -8,6 +8,8 @@ Stack and Dependencies
 - axios (^1.13.2) – HTTP client for Yente communication
 - axios-retry (^4.0.0) – automatic retry mechanism with exponential backoff for Yente API calls
 - winston + winston-daily-rotate-file (^5.0.0) – structured logging with file rotation
+- jest + supertest (dev dependencies for integration testing)
+- cross-env (dev dependency for cross-platform environment variables)
 - Default service port: 3000 (mapped to 3001 in docker-compose via PORT_OP_ADAPTER variable)
 
 Environment and Configuration
@@ -20,6 +22,8 @@ Local Run
 1) `npm install`
 2) Ensure Yente API is running on `http://localhost:8000` (or set `YENTE_API_URL` to correct address)
 3) `npm start` – starts OP-Adapter on http://localhost:3000
+
+4) `npm test` (for running integration tests)
 
 Docker Compose Run
 - From project root: `docker compose up --build op-adapter yente`
@@ -193,6 +197,111 @@ Yente API Field Mapping
 - Yente `properties.address` → OP-Adapter `addresses` (array of address strings)
 - Yente `datasets` → OP-Adapter `datasets` (array of dataset identifiers)
 - Yente `score` → OP-Adapter `score` (relevance/match score 0.0-1.0)
+
+Limitations and TODO
+
+Testing
+-------
+
+Integration tests for OP-Adapter verify endpoint behavior, data mapping, error handling, retry logic, and parameter forwarding to Yente. Tests use Jest test framework with Supertest for HTTP testing and mock axios/axios-retry to simulate various Yente responses and failure scenarios.
+
+Test Files
+- `tests/adapter.test.js` – comprehensive integration tests for the `/check` endpoint and `/health` health check.
+	- **Data Mapping (DTO Tests)**:
+		- Tests verify correct mapping of Yente response fields to simplified OP-Adapter format.
+		- Validates extraction of sanctioning flags (`isSanctioned`, `isPep`) from `topics` array.
+		- Handles sparse responses (missing optional fields, defaulting to null or empty arrays).
+		- Extracts first value from multi-valued properties (e.g., `birthDate`, `birthPlace`).
+		- Returns empty data array when Yente finds no results.
+	- **Error Handling (Yente Failures)**:
+		- Tests simulate Yente returning 500, 503, and other 5xx errors → verifies OP-Adapter returns 502 Bad Gateway.
+		- Tests simulate network errors (timeout, connection refused) → verifies OP-Adapter returns 502 instead of crashing.
+		- Tests simulate malformed Yente response (missing expected fields) → verifies graceful 502 error.
+		- Tests validate missing `name` parameter returns 400 Bad Request before calling Yente.
+	- **Retry Logic (Resilience)**:
+		- Tests verify retry mechanism: simulates 1st call failure, 2nd call success → verifies request eventually succeeds.
+		- Tests verify retry condition: 4xx errors do NOT trigger retry (safe to skip), 5xx errors DO trigger retry.
+		- Tests verify exponential backoff configuration (3 retries max, increasing delay).
+		- Tests verify exhausted retries: all 3 attempts fail → verifies final 502 response.
+	- **Parameter Passing (Forwarding to Yente)**:
+		- Tests verify `name` parameter is correctly passed to Yente as `q` query parameter.
+		- Tests verify `limit` parameter is passed as-is (with default 15 if omitted).
+		- Tests verify `fuzzy` parameter converts string 'true'/'false' to boolean.
+		- Tests verify `country` parameter is mapped to `countries` in Yente URL.
+		- Tests verify `schema` parameter is passed without modification.
+		- Tests verify optional parameters are omitted from request if not provided.
+		- Tests verify multiple parameters can be combined correctly.
+	- **Response Structure Tests**:
+		- Tests verify response includes request tracking ID (from header or auto-generated).
+		- Tests verify metadata includes timestamp and source attribution.
+		- Tests verify search parameters are echoed back in response.
+		- Tests verify original query string is included in response.
+	- **Health Check Tests**:
+		- Tests verify `/health` endpoint returns UP status without requiring authentication.
+	- Mocks: axios (HTTP client with controlled Yente responses), axios-retry (retry configuration), logger.
+
+Running Tests
+- Command: `npm test` (runs all tests with verbose output)
+- Uses Jest with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
+- Tests run in isolated environment with mocked dependencies (no real Yente connection required)
+- All mocks are defined before importing application code using `jest.unstable_mockModule`
+
+Test Coverage
+- **Data Transformation**: Tests verify correct field extraction, mapping of `topics` to flags, handling of multi-valued properties, and null/empty defaults.
+- **Failure Scenarios**: Tests ensure proper error handling for Yente server errors, network failures, timeouts, and malformed responses.
+- **Resilience**: Tests verify retry mechanism with exponential backoff, retry conditions, and exhaustion handling.
+- **API Contract**: Tests ensure all query parameters are correctly forwarded to Yente with proper transformations (e.g., country → countries, fuzzy string → boolean).
+- **Response Contract**: Tests verify response structure includes metadata, search parameters, hit count, and mapped data array.
+
+Example Test Execution
+```bash
+npm test
+```
+
+Expected output:
+```
+PASS  tests/adapter.test.js
+	OP-Adapter Integration Tests
+		Data Mapping (DTO) - Yente Response Transformation
+			✓ should correctly map Yente response with all fields populated
+			✓ should handle sparse Yente response (missing optional fields)
+			✓ should extract first value from multi-valued properties
+			✓ should return empty data array when Yente finds no results
+		Error Handling - Yente API Failures
+			✓ should return 502 when Yente returns 500 after retries
+			✓ should return 502 when Yente is unreachable (network error)
+			✓ should return 502 when Yente returns malformed response
+			✓ should return 400 when name parameter is missing
+			✓ should return 502 when Yente returns 503 Service Unavailable
+		Retry Logic - Exponential Backoff and Recovery
+			✓ should succeed on retry after initial failure
+			✓ should retry on network errors but not on 4xx errors
+			✓ should retry on 5xx errors
+			✓ should eventually fail after max retries exhausted
+			✓ should configure exponential backoff delay
+		Parameter Passing - Query Parameter Forwarding to Yente
+			✓ should pass name parameter to Yente
+			✓ should pass limit parameter (custom value)
+			✓ should use default limit when not provided
+			✓ should pass fuzzy parameter as boolean true
+			✓ should pass fuzzy parameter as boolean false
+			✓ should pass country parameter as countries in Yente URL
+			✓ should pass schema parameter without modification
+			✓ should not include optional parameters when not provided
+			✓ should combine multiple parameters correctly
+		Response Structure - Adapter Response Format
+			✓ should include request tracking ID in response
+			✓ should auto-generate request ID if not provided
+			✓ should include metadata with timestamp and source
+			✓ should include search parameters used in response
+			✓ should include original query string
+		Health Check Endpoint
+			✓ should return UP status
+			✓ should not require authentication
+
+Test Suites: 1 passed, 1 total
+Tests:       32 passed, 32 total
+```
 
 Limitations and TODO
 - **No authentication or rate limiting** – OP-Adapter assumes it's called only from Core Service (behind API Gateway auth); direct access is unrestricted.

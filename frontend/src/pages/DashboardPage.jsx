@@ -1,5 +1,6 @@
 import { useContext } from 'react';
 import { Navbar, Container, Button, Card, Nav } from 'react-bootstrap';
+import ScreeningPanel from '../components/ScreeningPanel';
 import { AuthContext } from '../context/AuthContext';
 
 const DashboardPage = () => {
@@ -41,6 +42,10 @@ const DashboardPage = () => {
             </Card.Text>
           </Card.Body>
         </Card>
+
+        <div className="mt-4">
+          <ScreeningPanel />
+        </div>
 
         <div className="mt-3">
           <Button variant="danger" onClick={handleLogout}>

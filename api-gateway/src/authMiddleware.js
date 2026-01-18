@@ -62,6 +62,10 @@ const handleApiKeyAuth = async (req) => {
 
 export const authMiddleware = async (req, res, next) => {
     try{
+        // Allow CORS preflight without auth
+        if (req.method === 'OPTIONS') {
+            return next();
+        }
 
         try {
             // Try API Key Authentication first

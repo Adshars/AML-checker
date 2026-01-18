@@ -46,12 +46,6 @@ const DashboardPage = () => {
         <div className="mt-4">
           <ScreeningPanel />
         </div>
-
-        <div className="mt-3">
-          <Button variant="danger" onClick={handleLogout}>
-            Wyloguj
-          </Button>
-        </div>
       </Container>
     </>
   );

@@ -4,7 +4,6 @@ import coreService from '../services/coreService';
 
 function ScreeningPanel() {
   const [name, setName] = useState('');
-  const [fuzzy, setFuzzy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
@@ -21,7 +20,7 @@ function ScreeningPanel() {
 
     setLoading(true);
     try {
-      const result = await coreService.checkEntity({ name: trimmedName, fuzzy, limit: 10 });
+      const result = await coreService.checkEntity({ name: trimmedName, fuzzy: true, limit: 10 });
       console.log('API RESPONSE STRUCTURE:', result);
       console.log('Pełna odpowiedź JSON:', JSON.stringify(result, null, 2));
 
@@ -62,15 +61,6 @@ function ScreeningPanel() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-3" controlId="screeningFuzzy">
-            <Form.Check
-              type="switch"
-              label="Fuzzy (rozmyte dopasowanie)"
-              checked={fuzzy}
-              onChange={(e) => setFuzzy(e.target.checked)}
             />
           </Form.Group>
 

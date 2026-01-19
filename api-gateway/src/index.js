@@ -28,8 +28,25 @@ const CORE_SERVICE_URL = process.env.CORE_SERVICE_URL || 'http://core-service:30
 // Temporary OP Adapter service address
 // const TEST_URL = process.env.OP_ADAPTER_URL || 'http://op-adapter:3000';
 
+// CORS configuration (allow preflight before auth)
+const corsOptions = {
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-api-secret', 'x-org-id', 'x-user-id', 'x-role', 'x-auth-type'],
+    optionsSuccessStatus: 204,
+};
+
 // Middleware CORS (Frontend)
-app.use(cors());
+app.use(cors(corsOptions));
+
+// Short-circuit OPTIONS globally (avoid path-to-regexp wildcards)
+app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
 
 // Swagger config
 

@@ -23,7 +23,7 @@ Environment and Configuration
 - Application port in container: 8080; mapped via `PORT` variable (default 8080).
 
 Rate Limiting
-- **Auth Endpoints Rate Limit**: 10 requests per 15 minutes per IP address. Applies to authentication routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`.
+- **Auth Endpoints Rate Limit**: 10 requests per 15 minutes per IP address. Applies to authentication routes: `/auth/register-organization`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
 - **API Endpoints Rate Limit**: 100 requests per 15 minutes per IP address. Applies to protected API routes: `/sanctions/*`.
 - Rate limit status is returned in response headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).
 - When limit is exceeded, the gateway returns `429 Too Many Requests` error with message: `"Too many requests from this IP, please try again later."`
@@ -41,10 +41,9 @@ Docker Compose Setup
 Endpoints
 - `GET /health` – returns gateway status (`{ service, status }`).
 - `GET /api-docs` – Swagger UI for the gateway's OpenAPI spec.
-- `ALL /auth/*` – proxied to Auth Service
-	- Includes `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
-	- Public routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
-	- Protected routes: `/auth/reset-secret` (requires authentication).
+- `ALL /auth/*` – proxied to Auth Service (explicit routes configured)
+	- Public routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`.
+	- Protected routes: `/auth/reset-secret`, `/auth/refresh`, `/auth/logout` (require authentication middleware).
 - `ALL /sanctions/*` – proxied to Core Service (requires authentication)
 	- Requires valid JWT token or API Key + API Secret.
 	- Authenticated requests include `x-org-id`, `x-user-id` (if available), `x-auth-type`, and `x-role` headers.

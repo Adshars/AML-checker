@@ -7,7 +7,7 @@ Stack and Dependencies
 - Node.js 18, Express 4, ES Modules
 - Sequelize 6 + PostgreSQL 15 (relational database)
 - pg + pg-hstore (PostgreSQL adapter and data type serialization)
-- axios (HTTP client for OP Adapter communication)
+- axios (via OpAdapterClient for OP Adapter communication)
 - cors (cross-origin request handling)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
 - nodemon (dev dependency for auto-reload)
@@ -21,7 +21,7 @@ Environment and Configuration
 - `POSTGRES_DB` – database name; defaults to `core_db`.
 - `OP_ADAPTER_URL` – address of OP Adapter service; defaults to `http://op-adapter:3000` in Docker network.
 - Application port in container: 3000; exposed and mapped via docker-compose.
-- Database auto-syncs on startup using Sequelize `sync({ alter: true })`.
+- Database auto-syncs on startup using Sequelize `sync({ alter: true })` (see src/index.js).
 
 Local Setup
 1) `npm install`
@@ -39,26 +39,19 @@ Endpoints
 - `GET /health` – returns service status and PostgreSQL connection state (`{ service, status, database }`).
 	- No authentication required; available for health checks and liveness probes.
 - `GET /check` – sanctions checking endpoint (protected; requires organization context).
-	- Query parameters: `name` (required) – entity name to check against sanctions lists.
+	- Query parameters: `name` (required); optional: `limit`, `fuzzy`, `schema`, `country` (forwarded to OP Adapter).
 	- Headers required: `x-org-id` (organization context; enforced by API Gateway middleware).
-	- Optional headers: `x-user-id` (user context from JWT; if absent, defaults to 'B2B-API-KEY' in audit log), `x-request-id` (request tracking ID; auto-generated if missing).
-	- Returns: sanctions check result from OP Adapter with `hits_count`, list of matches, and entity details.
-	- Automatically creates AuditLog record with search query and result (HIT/CLEAR).
-	- Error responses: 400 (missing name), 403 (missing x-org-id), 502 (OP Adapter error).
-- `GET /history` – returns paginated audit log for the requesting organization (protected; requires organization context or superadmin role).
-	- Query parameters (optional):
-		- `page` – page number for pagination (default: 1).
-		- `limit` – number of records per page (default: 20).
-		- `search` – text filter for searching entity names (case-insensitive).
-		- `hasHit` – filter by hit status: `true` or `false` (returns only hits or clear results).
-		- `startDate`, `endDate` – ISO 8601 date range filter for search timestamp (e.g., `2025-12-28T00:00:00Z`).
-		- `userId` – filter by specific user ID (e.g., 'B2B-API-KEY' for system access).
-		- `orgId` – superadmin only; filter by organization ID.
-	- Headers required: `x-org-id` (enforced by API Gateway middleware, unless user is superadmin).
-	- Optional header: `x-role` (user role; if 'superadmin', can access logs without x-org-id and filter by organization).
-	- Returns: paginated array of AuditLog entries with metadata (totalItems, totalPages, currentPage, itemsPerPage), ordered by creation date descending.
-	- Data isolation: regular users see only their organization's logs (filtered by `x-org-id`); superadmins see all logs or can filter by `?orgId=<ORG_ID>` query parameter.
-	- Error responses: 403 (missing x-org-id and not superadmin), 500 (database error).
+	- Optional headers: `x-user-id` (user context from JWT; if absent, defaults to `API` in audit log), `x-request-id` (request tracking ID; auto-generated if missing).
+	- Returns: OP Adapter response with `hits_count`, `data` array of mapped entities, and `meta` passthrough.
+	- Automatically creates AuditLog record with search query, hit flag/count, and best-match enrichment (name, score, birthDate, countries, datasets, description/notes, isPep, isSanctioned).
+	- Error responses: 400 (missing name), 403 (missing x-org-id), 502 (OP Adapter error), 500 (unexpected).
+- `GET /history` – returns paginated audit log (protected; requires organization context or superadmin role).
+	- Query parameters (optional): `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId`; `orgId` allowed only with `x-role: superadmin`.
+	- Headers required: `x-org-id` (unless `x-role: superadmin`).
+	- Optional header: `x-role` (if `superadmin`, can access without `x-org-id` and filter by organization).
+	- Returns: `{ data, meta { totalItems, totalPages, currentPage, itemsPerPage } }` ordered by `createdAt` descending.
+	- Data isolation: regular users see only their organization's logs; superadmins can view all logs or filter by `orgId`.
+	- Error responses: 403 (missing org context for non-superadmin), 500 (database error).
 
 Usage Examples
 - Health check:
@@ -73,7 +66,7 @@ curl -X GET "http://localhost:3000/check?name=John%20Doe" \
 	-H "x-user-id: <USER_ID>"
 ```
 
-- Sanctions check (via API Gateway with API Key – user ID defaults to 'B2B-API-KEY'):
+- Sanctions check (via API Gateway with API Key – userId stored as `API`):
 ```bash
 curl -X GET "http://localhost:3000/check?name=Jane%20Smith" \
 	-H "x-org-id: <ORG_ID>"
@@ -109,7 +102,7 @@ curl -X GET "http://localhost:3000/history?startDate=2025-12-01T00:00:00Z&endDat
 	-H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history filtered by user ID (e.g., specific user or B2B-API-KEY):
+- Audit history filtered by user ID (e.g., specific user or API key call stored as `API`):
 ```bash
 curl -X GET "http://localhost:3000/history?userId=<USER_ID>" \
 	-H "x-org-id: <ORG_ID>"
@@ -141,106 +134,98 @@ Response Structure
 { "service": "core-service", "status": "UP", "database": "Connected" }
 ```
 
-- `/check` (success; example from OP Adapter):
+- `/check` (success; passthrough from OP Adapter):
 ```json
 {
-	"entity_name": "John Doe",
-	"hits_count": 2,
-	"matches": [
-		{
-			"list_name": "UN Sanctions List",
-			"match_score": 0.95,
-			"details": "..."
-		},
-		{
-			"list_name": "EU Consolidated List",
-			"match_score": 0.88,
-			"details": "..."
-		}
-	]
+  "hits_count": 1,
+  "data": [
+    {
+      "name": "Vladimir Putin",
+      "score": 1.0,
+      "birthDate": "1952-10-07",
+      "country": ["RU"],
+      "datasets": ["ofac"],
+      "isSanctioned": true,
+      "isPep": false
+    }
+  ],
+  "meta": { "requestId": "...", "source": "OpenSanctions" }
 }
 ```
 
 - `/history` (success; example with pagination metadata):
 ```json
 {
-	"data": [
-		{
-			"id": "<uuid>",
-			"organizationId": "<org_id>",
-			"userId": "<user_id>",
-			"searchQuery": "John Doe",
-			"hasHit": true,
-			"hitsCount": 2,
-			"createdAt": "2025-12-28T10:30:00Z"
-		},
-		{
-			"id": "<uuid>",
-			"organizationId": "<org_id>",
-			"userId": "B2B-API-KEY",
-			"searchQuery": "Jane Smith",
-			"hasHit": false,
-			"hitsCount": 0,
-			"createdAt": "2025-12-28T10:25:00Z"
-		}
-	],
-	"meta": {
-		"totalItems": 150,
-		"totalPages": 8,
-		"currentPage": 1,
-		"itemsPerPage": 20
-	}
+  "data": [
+    {
+      "id": "<uuid>",
+      "organizationId": "<org_id>",
+      "userId": "API",
+      "searchQuery": "Putin",
+      "hasHit": true,
+      "hitsCount": 1,
+      "entityName": "Vladimir Putin",
+      "entityScore": 1,
+      "entityBirthDate": "1952-10-07",
+      "entityCountries": "RU",
+      "entityDatasets": "ofac",
+      "isSanctioned": true,
+      "isPep": false,
+      "createdAt": "2025-12-28T10:30:00Z"
+    }
+  ],
+  "meta": {
+    "totalItems": 1,
+    "totalPages": 1,
+    "currentPage": 1,
+    "itemsPerPage": 20
+  }
 }
 ```
 
 How It Works (High Level)
-- **Request Flow**: Client sends `GET /check?name=<entity>` with organization context in header → Core Service validates name parameter and `x-org-id` header presence → forwards request to OP Adapter at `/check` endpoint with query name → receives sanctions result with hit count and matches → creates AuditLog record (organization-scoped, audit trail) → returns result to client.
-- **Audit Logging**: Every search query is automatically logged to AuditLog table with: organization ID (from header), user ID (from header or 'B2B-API-KEY'), search query, whether hit occurred, and hit count. Enables compliance auditing and search history per organization.
-- **Pagination and Filtering**: `/history` endpoint supports pagination (page-based with configurable page size) and multiple filtering options: text search by entity name (case-insensitive), hit status filter, date range filter, user ID filter, and (for superadmins) organization ID filter. Filters can be combined for advanced queries.
-- **Data Isolation**: Core Service enforces organization-based access control on `/history` endpoint by filtering AuditLog records using `x-org-id` header for regular users. Superadmin users (identified by `x-role: superadmin` header) can access all organization logs without requiring `x-org-id` header and can optionally filter by organization using `?orgId=<ORG_ID>` query parameter. Regular users can only see their organization's audit logs; no cross-organization data leakage.
-- **OP Adapter Integration**: Core Service acts as middleware between API Gateway and OP Adapter, adding audit logging and organization context validation. All validation logic (sanctions list matching) is delegated to OP Adapter.
-- **Database Sync**: Sequelize automatically syncs schema on startup (`sync({ alter: true })`), creating AuditLog table if missing and altering schema if needed.
+- **Request Flow**: Client sends `GET /check?name=<entity>` with organization context in header → Core Service validates `name` and `x-org-id` → forwards to OP Adapter via `OpAdapterClient` → receives sanctions result with `hits_count` and `data` → creates AuditLog record (organization-scoped) → returns adapter payload.
+- **Audit Logging**: Each search stores organization ID, user ID (`API` default), search query, hit flag/count, and best-match enrichment (name, score, birthDate, gender, countries, datasets, description/notes, isPep, isSanctioned). Supports compliance and search history per org.
+- **Pagination and Filtering**: `/history` supports pagination with filters: text search by entity name, hit status, date range, user ID, and (superadmin only) organization ID.
+- **Data Isolation**: Organization-based access enforced on `/history` via `x-org-id`; `x-role: superadmin` can omit org header and optionally filter by `orgId`.
+- **OP Adapter Integration**: Core Service delegates sanctions validation to OP Adapter through `OpAdapterClient`, adding logging and audit persistence around the call.
+- **Database Sync**: Sequelize auto-syncs schema on startup (`sync({ alter: true })`), creating AuditLog if missing.
 
 Data Models
-- **AuditLog**: 
+- **AuditLog**:
 	- `id` (UUID, primary key)
-	- `organizationId` (string, indexed for fast filtering)
-	- `userId` (string, optional; 'B2B-API-KEY' for system access)
+	- `organizationId` (string, indexed)
+	- `userId` (string; defaults to `API` when header absent)
 	- `searchQuery` (string; the entity name queried)
-	- `hasHit` (boolean; true if matches found)
-	- `hitsCount` (integer; number of sanctions matches)
-	- `createdAt` (timestamp; auto-set on record creation)
+	- `hasHit` (boolean), `hitsCount` (integer)
+	- Best match enrichment: `entityName`, `entityScore`, `entityBirthDate`, `entityGender`, `entityCountries`, `entityDatasets`, `entityDescription`, `isSanctioned`, `isPep`
+	- `createdAt` (timestamp; auto-set)
 
 Testing
 -------
 
-Integration tests for Core Service verify endpoint behavior, request validation, data isolation, and interaction with external dependencies (OP Adapter, database). Tests use Jest test framework with Supertest for HTTP testing and mock external dependencies.
+Integration tests verify validation, data isolation, and adapter/database interactions. Jest + Supertest with ESM uses `jest.unstable_mockModule` to mock before imports.
 
 Test Files
-- `tests/check.test.js` – integration tests for `/check` endpoint.
-	- Validates request parameter validation (missing `name` returns 400).
-	- Validates organization context enforcement (missing `x-org-id` returns 403).
-	- Tests successful sanctions check with mocked OP Adapter response and audit log creation.
-	- Mocks: axios (OP Adapter HTTP client), AuditLog model, logger.
-- `tests/history.test.js` – integration tests for `/history` endpoint.
-	- Validates organization context enforcement (missing `x-org-id` returns 403 for non-superadmin users).
-	- Tests pagination (page-based pagination with correct metadata calculation).
-	- Tests data isolation (regular users can only access their organization's audit logs).
-	- Tests search query filtering (text search by entity name).
-	- Mocks: AuditLog model, logger, axios.
+- `tests/check.test.js` – `/check` endpoint.
+	- Missing `name` → 400; missing `x-org-id` → 403.
+	- Happy path persists AuditLog using mocked `OpAdapterClient.checkSanctions` response.
+	- Mocks: `OpAdapterClient`, `AuditLog`, `logger`.
+- `tests/history.test.js` – `/history` endpoint.
+	- Org context required unless `x-role: superadmin`.
+	- Pagination metadata and filters (`search`, `hasHit`, `userId`, `startDate`/`endDate`, `orgId` when superadmin).
+	- Mocks: `OpAdapterClient` (constructed in app), `AuditLog`, `logger`.
 
 Running Tests
 - Command: `npm test` (runs all tests with verbose output)
-- Uses Jest with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
-- Tests run in isolated environment with mocked dependencies (no real database or OP Adapter connection required)
-- All mocks are defined before importing application code using `jest.unstable_mockModule`
+- Uses ESM via `cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`
+- Tests run isolated from real DB/adapter; all externals mocked before app import
 
 Test Coverage
-- **Request Validation**: Tests verify proper HTTP status codes for missing required parameters and headers.
-- **Security**: Tests ensure organization-based data isolation on `/history` endpoint (regular users cannot access other organizations' audit logs).
-- **Business Logic**: Tests verify correct handling of sanctions check results and audit log creation.
-- **Pagination**: Tests validate correct pagination metadata calculation (totalItems, totalPages, currentPage, itemsPerPage).
-- **Filtering**: Tests verify that query parameters (search, hasHit, date range, etc.) are correctly applied to database queries.
+- **Request Validation**: Proper status codes for missing `name` / `x-org-id`.
+- **Security**: Org-based isolation on `/history`; superadmin exemption via `x-role` header.
+- **Business Logic**: Audit log persistence with best-match enrichment and hit counting.
+- **Pagination & Filtering**: Metadata calculation and query filters for history results.
 
 Example Test Execution
 ```bash

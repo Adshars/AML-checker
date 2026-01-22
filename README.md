@@ -28,7 +28,7 @@
 1. **API Gateway** ([api-gateway/](api-gateway/)) – Central entry point for all client requests
 	- Port: 8080 (mapped via `GATEWAY_PORT`, default 8080)
 	- Responsibilities: request routing (reverse proxy), authentication enforcement, header forwarding
-	- Routes: `/auth/*` (public) → Auth Service; `/sanctions/*` (protected) → Core Service
+	- Routes: `/auth/*` (public, except `/auth/reset-secret`) → Auth Service; `/sanctions/*` (protected) → Core Service
 	- Supports two authentication methods: JWT (user login) and API Key/Secret (B2B system-to-system)
 	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`) to downstream requests
 	- OpenAPI docs: available at http://localhost:8080/api-docs

@@ -170,6 +170,11 @@ export default class GatewayServer {
       this.authProxy
     );
 
+    this.app.post('/auth/register-user',
+      this.authLimiter,
+      this.authProxy
+    );
+
     this.app.post('/auth/forgot-password',
       this.authLimiter,
       this.authProxy
@@ -180,22 +185,20 @@ export default class GatewayServer {
       this.authProxy
     );
 
-    // ==================== PROTECTED AUTH ROUTES ====================
-    // Auth required, rate limited
-
-    this.app.post('/auth/reset-secret',
-      this.authLimiter,
-      this.authMiddleware.middleware,
-      this.authProxy
-    );
-
     this.app.post('/auth/refresh',
       this.authLimiter,
-      this.authMiddleware.middleware,
       this.authProxy
     );
 
     this.app.post('/auth/logout',
+      this.authLimiter,
+      this.authProxy
+    );
+
+    // ==================== PROTECTED AUTH ROUTES ====================
+    // Auth required, rate limited
+
+    this.app.post('/auth/reset-secret',
       this.authLimiter,
       this.authMiddleware.middleware,
       this.authProxy
@@ -211,8 +214,8 @@ export default class GatewayServer {
     );
 
     logger.info('All routes configured', {
-      publicAuthRoutes: ['/login', '/register-organization', '/forgot-password', '/reset-password'],
-      protectedAuthRoutes: ['/reset-secret', '/refresh-token', '/logout'],
+      publicAuthRoutes: ['/login', '/register-organization', '/register-user', '/forgot-password', '/reset-password', '/refresh', '/logout'],
+      protectedAuthRoutes: ['/reset-secret'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
     });
   }

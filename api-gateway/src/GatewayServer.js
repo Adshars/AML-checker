@@ -175,6 +175,11 @@ export default class GatewayServer {
       this.authProxy
     );
 
+    this.app.post('/auth/reset-password',
+      this.authLimiter,
+      this.authProxy
+    );
+
     // ==================== PROTECTED AUTH ROUTES ====================
     // Auth required, rate limited
 
@@ -184,7 +189,7 @@ export default class GatewayServer {
       this.authProxy
     );
 
-    this.app.post('/auth/refresh-token',
+    this.app.post('/auth/refresh',
       this.authLimiter,
       this.authMiddleware.middleware,
       this.authProxy
@@ -206,7 +211,7 @@ export default class GatewayServer {
     );
 
     logger.info('All routes configured', {
-      publicAuthRoutes: ['/login', '/register-organization', '/forgot-password'],
+      publicAuthRoutes: ['/login', '/register-organization', '/forgot-password', '/reset-password'],
       protectedAuthRoutes: ['/reset-secret', '/refresh-token', '/logout'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
     });

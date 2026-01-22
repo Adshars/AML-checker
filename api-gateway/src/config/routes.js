@@ -3,7 +3,7 @@ export const ROUTES = [
     context: '/auth',
     target: process.env.AUTH_SERVICE_URL || 'http://auth-service:3000',
     changeOrigin: true,
-    pathRewrite: { '^': '/auth' },  // Prepend /auth: /login becomes /auth/login
+    pathRewrite: { '^/auth': '/auth' },  // Keep /auth prefix: /auth/login stays /auth/login
     authRequired: false,
     limiterType: 'auth',
     protectedPaths: [

@@ -19,9 +19,11 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
     }
 }));
 
-// Axios mock (although history does not use it, index.js imports it indirectly through sanctionsController)
-jest.unstable_mockModule('axios', () => ({
-    default: { get: jest.fn() }
+// OpAdapterClient mock (index wiring creates it)
+jest.unstable_mockModule('../src/clients/OpAdapterClient.js', () => ({
+    default: class {
+        checkSanctions() { return Promise.resolve({ data: { hits_count: 0, data: [] }, duration: 10 }); }
+    }
 }));
 
 // Imports 

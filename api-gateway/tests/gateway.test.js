@@ -75,6 +75,38 @@ describe('API Gateway E2E', () => {
 		expect(res.body.ok).toBe('auth');
 	});
 
+		test('Routing: /auth/reset-password is proxied to Auth Service', async () => {
+			const app = await setupApp();
+
+			nock(AUTH_URL)
+				.post('/auth/reset-password')
+				.reply(200, { ok: 'reset' });
+
+			const res = await request(app)
+				.post('/auth/reset-password')
+				.send({ token: 't1', password: 'NewPass123!' });
+
+			expect(res.statusCode).toBe(200);
+			expect(res.body.ok).toBe('reset');
+		});
+
+		test('Routing: /auth/refresh is proxied to Auth Service when authorized', async () => {
+			const app = await setupApp();
+			const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);
+
+			nock(AUTH_URL)
+				.post('/auth/refresh')
+				.reply(200, { ok: 'refresh' });
+
+			const res = await request(app)
+				.post('/auth/refresh')
+				.set('Authorization', `Bearer ${token}`)
+				.send({ refreshToken: 'r1' });
+
+			expect(res.statusCode).toBe(200);
+			expect(res.body.ok).toBe('refresh');
+		});
+
 	test('Routing: /sanctions/* is proxied to Core Service', async () => {
 		const app = await setupApp();
 		const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);

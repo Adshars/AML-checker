@@ -28,7 +28,7 @@
 1. **API Gateway** ([api-gateway/](api-gateway/)) – Central entry point for all client requests
 	- Port: 8080 (mapped via `GATEWAY_PORT`, default 8080)
 	- Responsibilities: request routing (reverse proxy), authentication enforcement, header forwarding
-	- Routes: `/auth/*` (public) → Auth Service; `/sanctions/*` (protected) → Core Service
+	- Routes: `/auth/*` (public, except `/auth/reset-secret`) → Auth Service; `/sanctions/*` (protected) → Core Service
 	- Supports two authentication methods: JWT (user login) and API Key/Secret (B2B system-to-system)
 	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`) to downstream requests
 	- OpenAPI docs: available at http://localhost:8080/api-docs
@@ -116,7 +116,7 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 	- Real-time screening via GET `/sanctions/check?name=` against OpenSanctions data
 	- **Configurable search parameters**: `limit` (default 15), `fuzzy` (default false), `schema` (filter by entity type), `country` (filter by country code)
 	- Maps Yente results to simplified response with flags: `isSanctioned`, `isPep`
-	- Returns entity details: name, schema (Person/Company), country, birth date, birthplace, gender, nationality, position, aliases, addresses, match score
+	- Returns entity details: name, schema (Person/Company), country, birth date, birthplace, gender, nationality, position, notes, alias, address, match score
 	- Supports OFAC, UN, EU, and other sanctions lists via Yente
 	- Request tracking with `x-request-id` header for end-to-end tracing
 
@@ -437,9 +437,9 @@ curl http://localhost:3005/health                  # Core Service (debug)
 			"nationality": ["US"],
 			"country": ["US"],
 			"position": ["OFAC Officer"],
-			"description": ["U.S. OFAC Sanctions List"],
-			"aliases": ["J. Doe"],
-			"addresses": ["123 Main St, New York, NY"],
+			"notes": ["U.S. OFAC Sanctions List"],
+			"alias": ["J. Doe"],
+			"address": ["123 Main St, New York, NY"],
 			"datasets": ["ofac-sdn"]
 		}
 	]
@@ -462,7 +462,7 @@ curl http://localhost:3005/health                  # Core Service (debug)
 		{
 			"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
 			"organizationId": "<org_id>",
-			"userId": "B2B-API-KEY",
+			"userId": "API",
 			"searchQuery": "Jane Smith",
 			"hasHit": false,
 			"hitsCount": 0,

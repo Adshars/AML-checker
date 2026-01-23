@@ -19,11 +19,11 @@ Environment and Configuration
 - `JWT_SECRET` – secret key for JWT access token signing (required for login functionality).
 - `REFRESH_TOKEN_SECRET` – secret key for refresh token signing (required for token refresh functionality).
 - `FRONTEND_URL` – frontend URL for password reset links; defaults to `http://localhost:3000`.
-- Application port: 3000 (not configurable via environment variable).
+- Application port: 3000 (default in code; docker-compose may map externally).
 
 Local Setup
 1) `npm install`
-2) `node src/index.js` (optionally set `MONGO_URI` and `JWT_SECRET` environment variables)
+2) `node src/index.js` (optionally set `MONGO_URI`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `FRONTEND_URL`)
 3) `npm test` (for running integration tests)
 
 Docker Compose Setup
@@ -42,7 +42,7 @@ Endpoints
 	- Returns: user details (email, name, role, organization assignment).
 - `POST /auth/login` – authenticates user by email/password and returns access token + refresh token.
 	- Required fields: `email`, `password`.
-	- Rate limited: 10 requests per 15 minutes per IP.
+	- Rate limited: 10 requests per 15 minutes per IP (express-rate-limit in `authRoutes`).
 	- Validations: email format (Joi), password required; user existence, password match; 401 errors. Server error 500.
 	- Returns: `accessToken` valid for 15 minutes (JWT payload includes `userId`, `organizationId`, `role`); `refreshToken` valid for 7 days.
 - `POST /auth/refresh` – generates new access token using valid refresh token.

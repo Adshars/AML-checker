@@ -46,7 +46,7 @@ Endpoints
 	- No authentication required; called from Core Service which enforces organization context.
 	- Delegates to Yente API: `GET /search/default?q=<name>&limit=<limit>&fuzzy=<fuzzy>&schema=<schema>&countries=<country>` with automatic retry (3 attempts, exponential backoff).
 	- Returns: simplified response with query metadata, hit count, request ID, search parameters used, and mapped result array.
-	- Response fields per result: `id`, `name`, `schema`, `isSanctioned`, `isPep`, `score`, `birthDate`, `birthPlace`, `gender`, `nationality`, `country`, `position`, `description`, `aliases`, `addresses`, `datasets`.
+	- Response fields per result: `id`, `name`, `schema`, `isSanctioned`, `isPep`, `score`, `birthDate`, `birthPlace`, `gender`, `nationality`, `country`, `position`, `notes`, `alias`, `address`, `datasets`.
 	- Error responses: 400 (missing name parameter), 502 (Yente unavailable or malformed response after retries).
 
 Usage Examples
@@ -115,9 +115,9 @@ Response Structure
 			"nationality": ["US"],
 			"country": ["US"],
 			"position": ["OFAC Officer"],
-			"description": ["U.S. OFAC Sanctions List"],
-			"aliases": ["J. Doe", "John D."],
-			"addresses": ["123 Main St, New York, NY"],
+			"notes": ["U.S. OFAC Sanctions List"],
+			"alias": ["J. Doe", "John D."],
+			"address": ["123 Main St, New York, NY"],
 			"datasets": ["ofac-sdn", "eu-consolidated"]
 		},
 		{
@@ -133,9 +133,9 @@ Response Structure
 			"nationality": ["GB"],
 			"country": ["GB"],
 			"position": ["Government Official"],
-			"description": ["PEP - UK Government Official"],
-			"aliases": [],
-			"addresses": ["10 Downing St, London"],
+			"notes": ["PEP - UK Government Official"],
+			"alias": [],
+			"address": ["10 Downing St, London"],
 			"datasets": ["pep-gb"]
 		}
 	]
@@ -173,11 +173,11 @@ How It Works (High Level)
 - **Request Flow**: Client (Core Service) sends `GET /check?name=<entity>` with optional parameters (`limit`, `fuzzy`, `schema`, `country`) and optionally `x-request-id` header → OP-Adapter validates `name` parameter → forwards to Yente API at `/search/default` with query name and optional filters.
 - **Configurable Search**: `limit` parameter controls result count (default 15), `fuzzy` enables fuzzy matching for typos (default false), `schema` filters by entity type, and `country` filters by country code. All parameters are optional and can be combined.
 - **Retry Mechanism**: OP-Adapter uses axios-retry with automatic retry on network errors and 5xx server errors (max 3 attempts, exponential backoff: 1s → 2s → 4s). Does NOT retry on 4xx errors (invalid request). Logs retry attempts with request details.
-- **Response Mapping**: For each Yente result, OP-Adapter extracts: `id`, `caption` (mapped to `name`), `schema` (Person/Company/Organization), and checks `properties.topics` array for sanctioning flags. Extended field mapping includes personal details (birthDate, birthPlace, gender, nationality), localization (country, position), and related data (aliases, addresses, datasets).
+- **Response Mapping**: For each Yente result, OP-Adapter extracts: `id`, `caption` (mapped to `name`), `schema` (Person/Company/Organization), and checks `properties.topics` array for sanctioning flags. Extended field mapping includes personal details (birthDate, birthPlace, gender, nationality), localization (country, position), and related data (notes, alias, address, datasets).
 - **Sanctioning Flags**: 
 	- `isSanctioned`: true if `topics` array contains `'sanction'` (indicating entity is on any OFAC/UN/EU/other sanctions list).
 	- `isPep`: true if `topics` array contains `'role.pep'` (Politically Exposed Person status).
-- **Simplified Response**: OP-Adapter returns relevant fields plus metadata (source, timestamp, requestId), the executed search parameters, and hit count for easier downstream consumption and parameter tracking.
+- **Simplified Response**: OP-Adapter returns mapped entities via `SanctionEntity.fromYenteResponse()` plus metadata (source, timestamp, requestId), the executed search parameters, and hit count for easier downstream consumption and parameter tracking.
 - **Request Tracking**: If `x-request-id` header is provided, it is preserved and returned in response `meta.requestId` for end-to-end request tracking. If missing, OP-Adapter generates one automatically.
 - **Error Handling**: If Yente is unavailable (after all retries) or returns malformed data, OP-Adapter returns 502 error with error message and details.
 
@@ -192,9 +192,9 @@ Yente API Field Mapping
 - Yente `properties.nationality` → OP-Adapter `nationality` (array of nationality codes)
 - Yente `properties.country` → OP-Adapter `country` (array of country codes)
 - Yente `properties.position` → OP-Adapter `position` (array of position strings)
-- Yente `properties.notes` → OP-Adapter `description` (array of note strings)
-- Yente `properties.alias` → OP-Adapter `aliases` (array of alternate names)
-- Yente `properties.address` → OP-Adapter `addresses` (array of address strings)
+- Yente `properties.notes` → OP-Adapter `notes` (array of note strings)
+- Yente `properties.alias` → OP-Adapter `alias` (array of alternate names)
+- Yente `properties.address` → OP-Adapter `address` (array of address strings)
 - Yente `datasets` → OP-Adapter `datasets` (array of dataset identifiers)
 - Yente `score` → OP-Adapter `score` (relevance/match score 0.0-1.0)
 
@@ -211,7 +211,8 @@ Test Files
 		- Tests verify correct mapping of Yente response fields to simplified OP-Adapter format.
 		- Validates extraction of sanctioning flags (`isSanctioned`, `isPep`) from `topics` array.
 		- Handles sparse responses (missing optional fields, defaulting to null or empty arrays).
-		- Extracts first value from multi-valued properties (e.g., `birthDate`, `birthPlace`).
+		- Extracts first value from multi-valued properties (e.g., `birthDate`, `birthPlace`, `gender`).
+		- Array properties (nationality, country, position, notes, alias, address) returned as-is.
 		- Returns empty data array when Yente finds no results.
 	- **Error Handling (Yente Failures)**:
 		- Tests simulate Yente returning 500, 503, and other 5xx errors → verifies OP-Adapter returns 502 Bad Gateway.

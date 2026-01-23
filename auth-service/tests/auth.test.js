@@ -12,7 +12,13 @@ process.env.REFRESH_TOKEN_SECRET = 'test_refresh_secret';
 jest.unstable_mockModule('../src/services/authService.js', () => ({
     registerOrgService: jest.fn(),
     loginService: jest.fn(),
-    registerUserService: jest.fn()
+    registerUserService: jest.fn(),
+    validateApiKeyService: jest.fn(),
+    resetSecretService: jest.fn(),
+    refreshAccessTokenService: jest.fn(),
+    logoutService: jest.fn(),
+    requestPasswordResetService: jest.fn(),
+    resetPasswordService: jest.fn()
 }));
 
 // Mocking RefreshToken Model (Database Interaction)
@@ -55,6 +61,8 @@ describe('Auth Service Integration Tests', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockRefreshTokenSave.mockResolvedValue(true); // Default: save succeeds
+        AuthService.refreshAccessTokenService.mockResolvedValue({ accessToken: 'new-access' });
+        AuthService.logoutService.mockResolvedValue({ message: 'Logged out successfully' });
     });
 
     // Organization Registration Tests
@@ -126,7 +134,8 @@ describe('Auth Service Integration Tests', () => {
             // Mocking successful login response from service
             AuthService.loginService.mockResolvedValue({
                 user: { _id: 'u1', email: 'ok@test.pl', role: 'admin', organizationId: 'o1' },
-                token: 'mock_jwt_token' // loginService returns { user, token }
+                accessToken: 'mock_access_token',
+                refreshToken: 'mock_refresh_token'
             });
 
             const res = await request(app).post('/auth/login').send({
@@ -137,9 +146,7 @@ describe('Auth Service Integration Tests', () => {
             expect(res.body.accessToken).toBeDefined();
             // Assuming your controller creates a refresh token separately or returns the one from service
             expect(res.body.refreshToken).toBeDefined();
-            
-            // Verify if RefreshToken was saved to DB
-            expect(mockRefreshTokenSave).toHaveBeenCalled();
+            expect(AuthService.loginService).toHaveBeenCalled();
         });
 
         it('should fail login (Wrong Password) -> 401', async () => {
@@ -160,12 +167,7 @@ describe('Auth Service Integration Tests', () => {
         it('should refresh token (Success) -> 200 + new AccessToken', async () => {
             // Generate a valid crypto-signed token
             const validRefreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1h' });
-            
-            // Mock that the token exists in DB
-            mockRefreshTokenFindOne.mockResolvedValue({ token: validRefreshToken });
-            
-            // Mock user retrieval
-            mockUserFindById.mockResolvedValue({ _id: 'u1', role: 'admin', organizationId: 'o1' });
+            AuthService.refreshAccessTokenService.mockResolvedValue({ accessToken: 'new_token' });
 
             const res = await request(app).post('/auth/refresh').send({
                 refreshToken: validRefreshToken
@@ -173,13 +175,14 @@ describe('Auth Service Integration Tests', () => {
 
             expect(res.statusCode).toBe(200);
             expect(res.body.accessToken).toBeDefined();
+            expect(AuthService.refreshAccessTokenService).toHaveBeenCalledWith(validRefreshToken);
         });
 
         it('should fail (Reuse/Invalid/Logged Out) -> 403', async () => {
             // Token is valid crypto-wise, but NOT in DB (simulating user logged out)
             const validRefreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET);
-            
-            mockRefreshTokenFindOne.mockResolvedValue(null); // DB returns null
+
+            AuthService.refreshAccessTokenService.mockRejectedValue(new Error('Invalid Refresh Token (logged out?)'));
 
             const res = await request(app).post('/auth/refresh').send({
                 refreshToken: validRefreshToken
@@ -195,29 +198,27 @@ describe('Auth Service Integration Tests', () => {
     
     describe('POST /auth/logout', () => {
         it('should logout (Remove token) -> 200', async () => {
-            mockRefreshTokenDelete.mockResolvedValue(true);
+            AuthService.logoutService.mockResolvedValue({ message: 'Logged out successfully' });
 
             const res = await request(app).post('/auth/logout').send({
                 refreshToken: 'some_token'
             });
 
             expect(res.statusCode).toBe(200);
-            expect(mockRefreshTokenDelete).toHaveBeenCalled();
+            expect(AuthService.logoutService).toHaveBeenCalledWith('some_token');
         });
 
         it('should prevent refresh after logout (revoked token) -> 403', async () => {
-            // Given: user logs out and token is deleted
-            mockRefreshTokenDelete.mockResolvedValue(true);
             const refreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET);
+            
+            AuthService.logoutService.mockResolvedValue({ message: 'Logged out successfully' });
+            AuthService.refreshAccessTokenService.mockRejectedValue(new Error('Invalid Refresh Token (logged out?)'));
 
             await request(app).post('/auth/logout').send({ refreshToken });
-            expect(mockRefreshTokenDelete).toHaveBeenCalledWith({ token: refreshToken });
+            expect(AuthService.logoutService).toHaveBeenCalledWith(refreshToken);
 
-            // When: trying to refresh with revoked token
-            mockRefreshTokenFindOne.mockResolvedValue(null); // token not found (revoked)
             const res = await request(app).post('/auth/refresh').send({ refreshToken });
 
-            // Then: refresh is rejected
             expect(res.statusCode).toBe(403);
         });
     });

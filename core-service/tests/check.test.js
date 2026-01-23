@@ -2,10 +2,11 @@ import { jest } from '@jest/globals';
 
 // Define Mocks BEFORE importing the app
 
-// Axios mock
-jest.unstable_mockModule('axios', () => ({
-    default: {
-        get: jest.fn()
+// OpAdapterClient mock
+const mockCheckSanctions = jest.fn();
+jest.unstable_mockModule('../src/clients/OpAdapterClient.js', () => ({
+    default: class {
+        checkSanctions(payload) { return mockCheckSanctions(payload); }
     }
 }));
 
@@ -30,7 +31,7 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
 // We use await import to ensure mocks are already in place
 
 const request = (await import('supertest')).default;
-const axios = (await import('axios')).default;
+const { default: OpAdapterClient } = await import('../src/clients/OpAdapterClient.js');
 const AuditLog = (await import('../src/models/AuditLog.js')).default;
 const { app } = await import('../src/index.js'); // Import the app last
 
@@ -38,6 +39,10 @@ describe('GET /check Integration Test', () => {
     
     beforeEach(() => {
         jest.clearAllMocks();
+        mockCheckSanctions.mockResolvedValue({
+            data: { hits_count: 0, data: [] },
+            duration: 50
+        });
     });
 
     it('should return 400 if name is missing', async () => {
@@ -67,14 +72,18 @@ describe('GET /check Integration Test', () => {
                         score: 1.0,
                         birthDate: '1952-10-07',
                         country: ['RU'],
-                        isSanctioned: true
+                        datasets: ['ofac'],
+                        notes: ['President'],
+                        isSanctioned: true,
+                        isPep: false
                     }
                 ]
-            }
+            },
+            duration: 120
         };
 
         // Configure the mock
-        axios.get.mockResolvedValue(mockAdapterResponse);
+        mockCheckSanctions.mockResolvedValue(mockAdapterResponse);
 
         // Make the request
         const res = await request(app)
@@ -92,11 +101,14 @@ describe('GET /check Integration Test', () => {
         expect(AuditLog.create).toHaveBeenCalledTimes(1);
         expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
             organizationId: 'org-123',
+            userId: 'user-456',
             searchQuery: 'Putin',
             entityName: 'Vladimir Putin',
             entityBirthDate: '1952-10-07',
             entityCountries: 'RU',
+            entityDatasets: 'ofac',
             isSanctioned: true,
+            isPep: false,
             hasHit: true,
             hitsCount: 1
         }));

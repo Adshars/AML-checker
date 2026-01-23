@@ -27,18 +27,18 @@ const logger = winston.createLogger({
       maxFiles: '3d', // Keep logs for 3 days
       maxSize: '20m',
       format: logFormat
+    }),
+
+    // Separate error logger
+    new winston.transports.DailyRotateFile({
+      filename: 'logs/%DATE%-error.log',
+      datePattern: 'YYYY-MM-DD',
+      level: 'error',
+      maxFiles: '3d', // Keep error logs for 3 days
+      maxSize: '20m',
+      format: logFormat
     })
   ]
 });
 
-// Separate error logger
-new winston.transports.DailyRotateFile({
-    filename: 'logs/%DATE%-error.log',
-    datePattern: 'YYYY-MM-DD',
-    level: 'error',
-    maxFiles: '3d', // Keep error logs for 3 days
-    maxSize: '20m',
-    format: logFormat
-  });
-
-  export default logger;
+export default logger;

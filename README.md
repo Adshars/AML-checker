@@ -27,17 +27,21 @@
 
 1. **API Gateway** ([api-gateway/](api-gateway/)) – Central entry point for all client requests
 	- Port: 8080 (mapped via `GATEWAY_PORT`, default 8080)
+	- **Architecture**: Class-based design (`GatewayServer`, `AuthMiddleware`) with dependency injection
 	- Responsibilities: request routing (reverse proxy), authentication enforcement, header forwarding
-	- Routes: `/auth/*` (public, except `/auth/reset-secret`) → Auth Service; `/sanctions/*` (protected) → Core Service
+	- **Route Security**: Protected endpoints (e.g., `/auth/register-user`) defined before public wildcards to ensure proper matching
+	- Routes: `/auth/*` (public routes: login, register-org, forgot-password; protected routes: register-user [admin only], reset-secret [admin only]) → Auth Service; `/sanctions/*` (protected) → Core Service
 	- Supports two authentication methods: JWT (user login) and API Key/Secret (B2B system-to-system)
-	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`) to downstream requests
+	- **Performance**: API Key validation cached for 60 seconds (node-cache) - 60x faster than uncached validation
+	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) to downstream requests
 	- OpenAPI docs: available at http://localhost:8080/api-docs
 
 2. **Auth Service** ([auth-service/](auth-service/)) – User and organization management
 	- Port: 3000 (mapped via `PORT_AUTH`, default 3002)
 	- Database: MongoDB 6 (Mongoose 9 ORM)
-	- Responsibilities: organization registration with API key generation, user registration, user login with JWT access + refresh tokens, password reset flow, API key validation (internal endpoint for API Gateway)
-	- Endpoints: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/reset-secret` (admin only), `/auth/internal/validate-api-key`, `/health`
+	- Responsibilities: organization registration with API key generation, user registration (admin-only), user login with JWT access + refresh tokens, password reset flow, API key validation (internal endpoint for API Gateway)
+	- **Security**: `/auth/register-user` requires admin authentication (defense in depth: gateway + service validation)
+	- Endpoints: `/auth/register-organization`, `/auth/register-user` (protected), `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/reset-secret` (admin only), `/auth/internal/validate-api-key`, `/health`
 	- Generates JWT tokens: `accessToken` (valid 15 minutes) and `refreshToken` (valid 7 days)
 	- Generates API keys (`pk_live_...`) and secrets (`sk_live_...`); secrets hashed with bcryptjs
 	- Supports three user roles: `superadmin`, `admin`, `user`
@@ -63,7 +67,17 @@
 	- Data: Downloaded from manifest (can be full OpenSanctions dataset or scoped like `us_ofac_sdn`)
 	- Manages: compliance datasets (OFAC, UN, EU, etc.), PEP lists, corporate registries
 
-6. **Data Stores**:
+6. **Frontend** ([frontend/](frontend/)) – React web application
+	- Framework: React 18 with Vite build system
+	- UI Library: react-bootstrap (responsive components)
+	- Routing: react-router-dom v6 with nested routes
+	- **Architecture**: MainLayout component with top navigation bar wrapping all authenticated pages
+	- Pages: Login (public), Check (sanctions screening), History (audit log), Users (admin panel), Settings
+	- **Security**: Role-based navigation - Users page visible only for admin/superadmin roles
+	- Authentication: JWT tokens stored in localStorage, AuthContext for global state management
+	- Language: English UI
+
+7. **Data Stores**:
 	- **MongoDB** (port 27017 mapped via `MONGO_PORT`, default 27017) – Auth Service data (organizations, users, API keys)
 	- **PostgreSQL** (port 5432 mapped via `POSTGRES_PORT`, default 5432) – Core Service audit logs
 	- **Elasticsearch** (port 9200) – Yente data (sanctions lists, PEP data)
@@ -80,12 +94,14 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 ## Technologies Used
 - **Runtime**: Node.js 18, ES Modules
 - **API Framework**: Express 5 (multiple microservices)
+- **Frontend**: React 18 (Vite), react-router-dom v6, react-bootstrap, AuthContext
 - **Databases**: 
 	- MongoDB 6 (Mongoose 9 ORM) for Auth Service
 	- PostgreSQL 15 (Sequelize 6 ORM) for Core Service
 	- Elasticsearch 8.11 for Yente
 - **Sanctions Data**: OpenSanctions Yente 5.1 (local instance)
 - **Authentication**: bcryptjs (password/secret hashing), jsonwebtoken (JWT), API Key validation
+- **Caching**: node-cache (in-memory caching for API key validation; 60s TTL)
 - **Validation**: joi (request payload validation for email format, password strength)
 - **Rate Limiting**: express-rate-limit (per-IP request throttling for auth and API endpoints)
 - **HTTP/Networking**: axios (inter-service calls), CORS middleware, http-proxy-middleware (reverse proxy)
@@ -105,9 +121,13 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 	- **Request validation** using Joi: email format validation, password minimum 8 characters for registration and password reset
 
 - **API Gateway & Authentication**:
-	- Central API Gateway routing public (`/auth`) and protected (`/sanctions`) endpoints
+	- **Class-based architecture**: GatewayServer and AuthMiddleware classes with dependency injection
+	- Central API Gateway routing public and protected endpoints
 	- Two authentication methods: JWT (user login) and API Key/Secret (B2B)
+	- **Defense in depth security**: Protected endpoints require authentication at gateway level + role validation at service level
+	- **Performance optimization**: API Key validation cached for 60 seconds (60x faster) using node-cache
 	- **Rate limiting**: 10 requests per 15 minutes for auth endpoints, 100 requests per 15 minutes for API endpoints (per IP address)
+	- **Route security**: `/auth/register-user` protected (admin-only), defined before public wildcards for proper Express matching
 	- Automatic context header injection (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) for downstream services
 	- Organization-based isolation: users can only access their organization's data
 	- Superadmin access: superadmin users can access all organizations' audit logs
@@ -129,8 +149,20 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 
 - **Resilience & Performance**:
 	- Automatic retry mechanism in OP Adapter (3 retries, exponential backoff) for Yente API calls
+	- API Key validation caching in API Gateway (60s TTL) reduces load on Auth Service
 	- Health checks for all services with database connection status
 	- Docker health checks for container orchestration
+
+- **Web Frontend**:
+	- React-based single-page application with professional layout
+	- **MainLayout**: Top navigation bar with role-based menu items (Users page visible only for admins)
+	- **Authentication flow**: Login page → JWT token storage → protected routes with automatic redirect
+	- **Entity Screening Panel**: Real-time sanctions checking with visual result cards (CLEAN/HIT status)
+	- **Audit History**: Paginated view of organization's sanctions checks
+	- **User Management**: Admin panel for adding users to organization (admin-only)
+	- **Settings Page**: Account configuration (stub)
+	- Responsive design with react-bootstrap components
+	- English UI with clear labeling and user feedback
 
 ## Testing
 
@@ -276,9 +308,10 @@ curl -X POST http://localhost:8080/auth/register-organization \
 - `organization.apiKey` (format: `pk_live_...`)
 - `organization.apiSecret` (format: `sk_live_...`; returned **only once** – save securely!)
 
-### 2. Register Additional User
+### 2. Register Additional User (Admin Only)
 ```bash
 curl -X POST http://localhost:8080/auth/register-user \
+	-H "Authorization: Bearer <ACCESS_TOKEN>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"email": "user@acme.test",
@@ -287,6 +320,8 @@ curl -X POST http://localhost:8080/auth/register-user \
 		"lastName": "Doe",
 		"organizationId": "<ORG_ID>"
 	}'
+```
+**Note**: This endpoint requires authentication. Only users with `admin` or `superadmin` role can register new users.
 ```
 
 ### 3. User Login (Get JWT Tokens)

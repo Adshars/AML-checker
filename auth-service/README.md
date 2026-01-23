@@ -36,9 +36,10 @@ Endpoints
 	- Required fields: `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName`.
 	- Validations: required fields (Joi), email format, password minimum 8 characters; duplicate org name, duplicate email; 400 errors. Server error 500.
 	- Returns: organization details with `apiKey` (format: `pk_live_...`) and `apiSecret` (format: `sk_live_...`) visible only once; admin user with role `admin`.
-- `POST /auth/register-user` – adds user to existing organization with `user` role.
+- `POST /auth/register-user` – adds user to existing organization with `user` role. **REQUIRES AUTHENTICATION** (admin only).
+	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway).
 	- Required fields: `email`, `password`, `firstName`, `lastName`, `organizationId`.
-	- Validations: required fields (Joi), email format, password minimum 8 characters; organizationId existence, duplicate email; 400/404 errors; server error 500.
+	- Validations: authentication context, admin role check (403); required fields (Joi), email format, password minimum 8 characters; organizationId existence, duplicate email; 400/404 errors; server error 500.
 	- Returns: user details (email, name, role, organization assignment).
 - `POST /auth/login` – authenticates user by email/password and returns access token + refresh token.
 	- Required fields: `email`, `password`.
@@ -116,6 +117,21 @@ curl -X POST http://localhost:3002/auth/login \
 	}'
 ```
 Returns both `accessToken` (15 min) and `refreshToken` (7 days).
+
+- User registration (requires **admin authentication**):
+```bash
+curl -X POST http://localhost:3002/auth/register-user \
+	-H "Authorization: Bearer <ADMIN_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "user@acme.test",
+		"password": "Str0ngPass!",
+		"firstName": "Jane",
+		"lastName": "Doe",
+		"organizationId": "<ORG_ID>"
+	}'
+```
+Only users with `admin` or `superadmin` role can register new users to the organization.
 
 - Refresh access token:
 ```bash

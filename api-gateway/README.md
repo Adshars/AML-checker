@@ -8,6 +8,7 @@ Stack and Dependencies
 - http-proxy-middleware (request routing and proxying)
 - jsonwebtoken (JWT token verification)
 - axios (HTTP client for validation requests)
+- node-cache (in-memory caching for API key validation; 60s TTL)
 - cors (cross-origin request handling), dotenv
 - swagger-ui-express + yamljs (serves OpenAPI docs at /api-docs)
 - winston + winston-daily-rotate-file (structured logging with file rotation)
@@ -23,7 +24,8 @@ Environment and Configuration
 - Application port in container: 8080; mapped via `PORT` variable (default 8080).
 
 Rate Limiting
-- **Auth Endpoints Rate Limit**: 10 requests per 15 minutes per IP address. Applies to authentication routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/reset-secret`, `/auth/logout`.
+- **Auth Endpoints Rate Limit**: 10 requests per 15 minutes per IP address. Applies to all authentication routes: `/auth/login`, `/auth/register-organization`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
+- **Protected Auth Endpoints**: `/auth/register-user`, `/auth/reset-secret` (require authentication + rate limiting).
 - **API Endpoints Rate Limit**: 100 requests per 15 minutes per IP address. Applies to protected API routes: `/sanctions/*`.
 - Rate limit status is returned in response headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).
 - When limit is exceeded, the gateway returns `429 Too Many Requests` error with message: `"Too many requests from this IP, please try again later."`
@@ -38,28 +40,37 @@ Docker Compose Setup
 - Gateway will be available at http://localhost:8080
 - OpenAPI docs available at http://localhost:8080/api-docs
 
+Architecture
+- **Class-Based Design**: `GatewayServer` class encapsulates all gateway logic (middleware, rate limiters, proxies, route setup).
+- **AuthMiddleware**: Standalone class that validates JWT tokens and API Key credentials. Uses node-cache for 60-second TTL caching of API key validation results (60x performance improvement).
+- **Route Security**: Protected routes (like `/auth/register-user`) are defined **before** public wildcard routes to ensure Express matches them first.
+- **Header Forwarding**: Authentication context (`x-org-id`, `x-user-id`, `x-role`) is extracted by AuthMiddleware and forwarded to downstream services via proxy `onProxyReq` callbacks.
+- **Defense in Depth**: Protected endpoints require authentication at gateway level + additional validation at service level (e.g., role checks).
+
 Endpoints
 - `GET /health` – returns gateway status (`{ service, status }`).
 - `GET /api-docs` – Swagger UI for the gateway's OpenAPI spec.
 - `ALL /auth/*` – proxied to Auth Service (explicit routes configured)
-	- Public routes: `/auth/register-organization`, `/auth/register-user`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
-	- Protected routes: `/auth/reset-secret` (requires authentication middleware).
+	- **Public routes** (no auth required): `/auth/register-organization`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
+	- **Protected routes** (requires authentication): `/auth/register-user` (admin only), `/auth/reset-secret` (admin only).
 - `ALL /sanctions/*` – proxied to Core Service (requires authentication)
 	- Requires valid JWT token or API Key + API Secret.
-	- Authenticated requests include `x-org-id`, `x-user-id` (if available), `x-auth-type`, and `x-role` headers.
+	- Authenticated requests include `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers.
 	- Available endpoints: `/sanctions/check`, `/sanctions/history`.
 
 Authentication Middleware
-The gateway validates two authentication scenarios:
+The gateway validates two authentication scenarios and caches API key validation results for performance:
 
 1. **API Key Authentication** (System-to-System)
 	- Headers: `x-api-key`, `x-api-secret`
-	- Validates credentials with Auth Service `/auth/internal/validate-api-key` endpoint.
+	- **Caching**: Results cached for 60 seconds using node-cache (in-memory store)
+	- Cache hit: validates credential exists and is valid without calling Auth Service
+	- Cache miss: calls Auth Service `/auth/internal/validate-api-key` endpoint (2000ms timeout)
 	- On success: sets `x-org-id` and `x-auth-type: api-key` headers. User ID and role are not available for API Key auth.
 
 2. **JWT Authentication** (User Login)
 	- Header: `Authorization: Bearer <token>`
-	- Verifies JWT signature using `JWT_SECRET`.
+	- Verifies JWT signature locally using `JWT_SECRET` (no external call, instant validation)
 	- On success: sets `x-org-id`, `x-user-id` (if present), `x-auth-type: jwt`, and `x-role` headers.
 
 Headers Forwarding to Downstream Services
@@ -99,15 +110,17 @@ curl -X POST http://localhost:8080/auth/login \
 	}'
 ```
 
-- User registration (via gateway):
+- User registration (via gateway) - **REQUIRES ADMIN AUTHENTICATION**:
 ```bash
 curl -X POST http://localhost:8080/auth/register-user \
+	-H "Authorization: Bearer <ADMIN_TOKEN>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"email": "user@acme.test",
 		"password": "Str0ngPass!",
 		"firstName": "Jane",
-		"lastName": "Doe"
+		"lastName": "Doe",
+		"organizationId": "<ORG_ID>"
 	}'
 ```
 

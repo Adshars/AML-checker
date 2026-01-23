@@ -26,11 +26,11 @@ const LoginPage = () => {
 
     try {
       await login(email, password);
-      // Success - redirect to dashboard
-      navigate('/dashboard');
+      // Success - redirect to check page (FIXED)
+      navigate('/check');
     } catch (err) {
       // Error - display error message
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      setError(err.response?.data?.error || err.response?.data?.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
@@ -52,7 +52,7 @@ const LoginPage = () => {
 
             <Form onSubmit={handleSubmit}>
               <Form.Group className="mb-3" controlId="formEmail">
-                <Form.Label>Email</Form.Label>
+                <Form.Label>Email address</Form.Label>
                 <Form.Control
                   type="email"
                   placeholder="Enter email"

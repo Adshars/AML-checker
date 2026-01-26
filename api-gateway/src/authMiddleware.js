@@ -93,6 +93,11 @@ export default class AuthMiddleware {
    * Attaches auth context to BOTH req.auth (for code reference) and req.headers (for proxy forwarding)
    */
   async validate(req, res, next) {
+    // FIX: Allow CORS Preflight requests to pass without auth
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+
     try {
       req.requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 

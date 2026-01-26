@@ -46,4 +46,36 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * Fetch audit history with query params
+ * @param {Object} params - e.g. { page, limit, search, startDate, endDate, hasHit }
+ * @returns {Promise<Object>} response data
+ */
+export const getHistory = (params = {}) => {
+  const searchParams = new URLSearchParams();
+
+  const entries = {
+    page: params.page,
+    limit: params.limit,
+    search: params.search,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  };
+
+  Object.entries(entries).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      searchParams.append(key, value);
+    }
+  });
+
+  if (params.hasHit === true || params.hasHit === false || params.hasHit === 'true' || params.hasHit === 'false') {
+    searchParams.append('hasHit', String(params.hasHit));
+  }
+
+  const query = searchParams.toString();
+  const url = query ? `/sanctions/history?${query}` : '/sanctions/history';
+
+  return api.get(url).then((response) => response.data);
+};
+
 export default api;

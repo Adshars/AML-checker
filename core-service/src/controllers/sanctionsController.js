@@ -16,11 +16,12 @@ export default class SanctionsController {
     const requestId = req.headers['x-request-id'] || `core-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const orgID = req.headers['x-org-id'];
     const userID = req.headers['x-user-id'];
+    const userEmail = req.headers['x-user-email'];
 
     const { name, limit, fuzzy, schema, country } = req.query;
     const queryName = name?.trim();
 
-    logger.info('Received sanctions check request', { requestId, orgID, userID, queryName });
+    logger.info('Received sanctions check request', { requestId, orgID, userID, userEmail, queryName });
 
     if (!queryName) {
       logger.warn('Validation failed: Missing name parameter', { requestId, orgID });
@@ -41,6 +42,7 @@ export default class SanctionsController {
         country,
         orgID,
         userID,
+        userEmail,
         requestId,
       });
 

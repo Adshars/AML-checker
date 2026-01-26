@@ -13,7 +13,11 @@ const AuditLog = sequelize.define('AuditLog', {
   },
   userId: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
+  },
+  userEmail: {
+    type: DataTypes.STRING,
+    allowNull: true,
   },
   searchQuery: {
     type: DataTypes.STRING,

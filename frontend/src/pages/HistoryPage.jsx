@@ -90,9 +90,18 @@ const HistoryPage = () => {
     setSelectedLog(null);
   };
 
-  const renderResultBadge = (hasHit) => (
-    <Badge bg={hasHit ? 'danger' : 'success'}>{hasHit ? 'HIT' : 'CLEAN'}</Badge>
-  );
+  const renderResultBadge = (log) => {
+    if (log.isSanctioned === true) {
+      return <Badge bg="danger">HIT SANCTION</Badge>;
+    }
+    if (log.isPep === true) {
+      return <Badge bg="warning" text="dark">HIT PEP</Badge>;
+    }
+    if (log.hasHit === true) {
+      return <Badge bg="danger">HIT</Badge>;
+    }
+    return <Badge bg="success">CLEAN</Badge>;
+  };
 
   const renderUserCell = (userId, userEmail) => {
     if (userId === 'API') {
@@ -217,7 +226,7 @@ const HistoryPage = () => {
                       <td>{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
                       <td>{renderUserCell(log.userId, log.userEmail)}</td>
                       <td>{log.searchQuery || '—'}</td>
-                      <td>{renderResultBadge(log.hasHit)}</td>
+                      <td>{renderResultBadge(log)}</td>
                       <td>
                         <Button variant="outline-primary" size="sm" onClick={() => openDetails(log)}>
                           Details

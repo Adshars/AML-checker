@@ -249,6 +249,29 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+export const changePassword = async (req, res) => {
+  try {
+    const userId = req.headers['x-user-id'];
+    const { currentPassword, newPassword } = req.body;
+
+    if (!userId || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const result = await AuthService.changePasswordService(userId, currentPassword, newPassword);
+    return res.status(200).json(result);
+  } catch (error) {
+    if (error.message === 'Invalid current password') {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error.message === 'User not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    logger.error('Change password error', { userId: req.headers['x-user-id'], error: error.message });
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
 // Refresh Token and logout section
 export const refreshAccessToken = async (req, res) => {
   const { refreshToken } = req.body;

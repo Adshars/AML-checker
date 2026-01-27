@@ -35,5 +35,6 @@ router.post('/reset-secret', authController.resetOrganizationSecret);
 // Password Reset Flows
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
+router.post('/change-password', authController.changePassword);
 
 export default router;

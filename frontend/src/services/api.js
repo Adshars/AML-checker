@@ -108,4 +108,13 @@ export const deleteUser = (userId) => {
   return api.delete(`/users/${userId}`).then((response) => response.data);
 };
 
+/**
+ * Change password for the authenticated user
+ * @param {{ currentPassword: string, newPassword: string }} data
+ * @returns {Promise<Object>} response data
+ */
+export const changePassword = (data) => {
+  return api.post('/auth/change-password', data).then((response) => response.data);
+};
+
 export default api;

@@ -1,34 +1,35 @@
 API Gateway
 ===========
 
-Central reverse proxy and authentication gateway for the AML Checker platform. Routes requests to microservices (Auth Service, Core Service), enforces authentication on protected routes via JWT tokens or API keys, and forwards authentication context (organization ID, user ID, auth type) to downstream services.
+Central reverse proxy and authentication gateway for the AML Checker platform. Routes requests to microservices (Auth Service, Core Service), enforces authentication on protected routes via JWT tokens or API keys, and forwards authentication context (organization ID, user ID, auth type, user email) to downstream services.
 
 Stack and Dependencies
-- Node.js 18, Express 5, ES Modules
-- http-proxy-middleware (request routing and proxying)
-- jsonwebtoken (JWT token verification)
-- axios (HTTP client for validation requests)
-- node-cache (in-memory caching for API key validation; 60s TTL)
-- cors (cross-origin request handling), dotenv
-- swagger-ui-express + yamljs (serves OpenAPI docs at /api-docs)
-- winston + winston-daily-rotate-file (structured logging with file rotation)
-- express-rate-limit (request rate limiting per IP)
-- jest + supertest (dev dependencies for E2E testing)
-- nock (dev dependency for mocking HTTP requests)
-- cross-env (dev dependency for cross-platform environment variables)
+- **Node.js 18+, Express 5, ES Modules**
+- **http-proxy-middleware** v3.0.5 – request routing and proxying to upstream services
+- **jsonwebtoken** v9.0.3 – JWT token verification (local, no external calls)
+- **axios** v1.13.2 – HTTP client for API Key validation requests to Auth Service
+- **node-cache** v5.1.2 – in-memory caching for API key validation (60s TTL, ~60x performance gain)
+- **cors** v2.8.5 – cross-origin request handling
+- **dotenv** v17.2.3 – environment variable management
+- **swagger-ui-express** v5.0.0 + **yamljs** v0.3.0 – OpenAPI documentation at `/api-docs`
+- **winston** v3.19.0 + **winston-daily-rotate-file** v5.0.0 – structured logging with daily rotation
+- **express-rate-limit** v8.2.1 – request rate limiting per IP address
+- **jest** v30.2.0, **supertest** v7.2.2 (dev) – E2E testing framework
+- **nock** v14.0.10 (dev) – HTTP request mocking
+- **cross-env** v10.1.0 (dev) – cross-platform environment variables
 
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
 - `CORE_SERVICE_URL` – address of Core Service; defaults to `http://core-service:3000` in Docker network.
 - `JWT_SECRET` – secret key for JWT token verification (must match Auth Service's `JWT_SECRET` for valid token verification).
-- Application port in container: 8080; mapped via `PORT` variable (default 8080).
+- `PORT` – application port (default 8080).
+- `NODE_ENV` – environment (set to `test` during tests to prevent server startup).
 
 Rate Limiting
-- **Auth Endpoints Rate Limit**: 10 requests per 15 minutes per IP address. Applies to all authentication routes: `/auth/login`, `/auth/register-organization`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
-- **Protected Auth Endpoints**: `/auth/register-user`, `/auth/reset-secret` (require authentication + rate limiting).
-- **API Endpoints Rate Limit**: 100 requests per 15 minutes per IP address. Applies to protected API routes: `/sanctions/*`.
-- Rate limit status is returned in response headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).
-- When limit is exceeded, the gateway returns `429 Too Many Requests` error with message: `"Too many requests from this IP, please try again later."`
+- **Auth Endpoints**: 20 requests per 15 minutes per IP. Applies to all `/auth/*` routes (login, registration, refresh, etc.).
+- **API Endpoints**: 100 requests per 15 minutes per IP. Applies to `/sanctions/*` and `/users/*` routes.
+- When limit is exceeded: HTTP 429 response with message "Too many requests from this IP, please try again later."
+- Rate limit metadata is returned in response headers: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`.
 
 Local Setup
 1) `npm install`
@@ -41,50 +42,76 @@ Docker Compose Setup
 - OpenAPI docs available at http://localhost:8080/api-docs
 
 Architecture
-- **Class-Based Design**: `GatewayServer` class encapsulates all gateway logic (middleware, rate limiters, proxies, route setup).
-- **AuthMiddleware**: Standalone class that validates JWT tokens and API Key credentials. Uses node-cache for 60-second TTL caching of API key validation results (60x performance improvement).
-- **Route Security**: Protected routes (like `/auth/register-user`) are defined **before** public wildcard routes to ensure Express matches them first.
-- **Header Forwarding**: Authentication context (`x-org-id`, `x-user-id`, `x-role`) is extracted by AuthMiddleware and forwarded to downstream services via proxy `onProxyReq` callbacks.
-- **Defense in Depth**: Protected endpoints require authentication at gateway level + additional validation at service level (e.g., role checks).
+- **Class-Based Design**: `GatewayServer` class (src/GatewayServer.js) encapsulates all gateway logic: global middleware, rate limiters, proxy setup, and route configuration.
+- **AuthMiddleware Class**: Standalone (src/authMiddleware.js) validates JWT tokens and API Key credentials with automatic in-memory caching.
+- **Route Configuration**: Routes defined in src/config/routes.js (currently used for reference; route setup is in GatewayServer.setupRoutes()).
+- **Protected Routes Order**: Protected routes are registered **before** their wildcard counterparts to ensure Express matches specific routes first (e.g., `/auth/register-user` before `/auth/*`).
+- **Proxy Middleware**: Uses http-proxy-middleware with custom onProxyReq callbacks to inject authentication headers (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) into upstream requests.
+- **API Key Caching**: Gateway caches successful API Key validations for 60 seconds in-memory using node-cache, reducing Auth Service calls by ~60x.
+- **Request Tracking**: Each request receives a unique `x-request-id` for end-to-end request tracing and audit logging.
+- **Logging**: Structured logging via Winston with daily rotating files (logs folder), console output, separate error logs.
 
 Endpoints
-- `GET /health` – returns gateway status (`{ service, status }`).
-- `GET /api-docs` – Swagger UI for the gateway's OpenAPI spec.
-- `ALL /auth/*` – proxied to Auth Service (explicit routes configured)
-	- **Public routes** (no auth required): `/auth/register-organization`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/refresh`, `/auth/logout`.
-	- **Protected routes** (requires authentication): `/auth/register-user` (admin only), `/auth/reset-secret` (admin only).
-- `ALL /sanctions/*` – proxied to Core Service (requires authentication)
-	- Requires valid JWT token or API Key + API Secret.
-	- Authenticated requests include `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers.
-	- Available endpoints: `/sanctions/check`, `/sanctions/history`.
+- `GET /health` – returns gateway status (`{ service: "api-gateway", status: "UP" }`). No auth required.
+- `GET /api-docs` – Swagger UI for the gateway's OpenAPI specification (swagger.yaml).
+
+**Auth Service Proxy** (`ALL /auth/*`):
+- **Public routes** (no auth required, rate limited to 20 req/15min):
+  - `POST /auth/register-organization` – organization registration
+  - `POST /auth/login` – user login
+  - `POST /auth/forgot-password` – password reset request
+  - `POST /auth/reset-password` – password reset with token
+  - `POST /auth/refresh` – JWT token refresh
+  - `POST /auth/logout` – logout and revoke refresh token
+- **Protected routes** (auth required, rate limited to 20 req/15min):
+  - `POST /auth/register-user` – register new user (admin only)
+  - `POST /auth/reset-secret` – reset API secret (admin only)
+  - `POST /auth/change-password` – change password (authenticated users)
+
+**Core Service Proxy** (`ALL /sanctions/*`):
+- `GET /sanctions/check` – perform sanctions check against a name/entity
+- `GET /sanctions/history` – fetch historical sanctions checks for organization
+- **All routes require authentication** (JWT or API Key), rate limited to 100 req/15min
+- Authenticated requests include `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-role` headers
+
+**Users Management Proxy** (`ALL /users/*`):
+- All routes proxied to Auth Service with `/users` prefix
+- **All routes require authentication** (JWT or API Key), rate limited to 100 req/15min
+- Examples: `GET /users`, `POST /users`, etc.
+- Authenticated requests include `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-role` headers
 
 Authentication Middleware
-The gateway validates two authentication scenarios and caches API key validation results for performance:
+The AuthMiddleware (src/authMiddleware.js) validates two authentication scenarios with automatic caching:
 
-1. **API Key Authentication** (System-to-System)
-	- Headers: `x-api-key`, `x-api-secret`
-	- **Caching**: Results cached for 60 seconds using node-cache (in-memory store)
-	- Cache hit: validates credential exists and is valid without calling Auth Service
-	- Cache miss: calls Auth Service `/auth/internal/validate-api-key` endpoint (2000ms timeout)
-	- On success: sets `x-org-id` and `x-auth-type: api-key` headers. User ID and role are not available for API Key auth.
+**1. API Key Authentication** (System-to-System):
+- Headers: `x-api-key`, `x-api-secret`
+- **Caching**: Validation results cached for 60 seconds in-memory (node-cache)
+  - Cache hit: credential validation done locally without Auth Service call
+  - Cache miss: POST request to `{AUTH_SERVICE_URL}/auth/internal/validate-api-key` with 2000ms timeout
+- On success: Sets `x-org-id`, `x-auth-type: api-key` headers. User ID and role not available for API Key auth.
+- Response structure: `{ valid: true, organizationId: "org-id" }`
 
-2. **JWT Authentication** (User Login)
-	- Header: `Authorization: Bearer <token>`
-	- Verifies JWT signature locally using `JWT_SECRET` (no external call, instant validation)
-	- On success: sets `x-org-id`, `x-user-id` (if present), `x-auth-type: jwt`, and `x-role` headers.
+**2. JWT Authentication** (User Login):
+- Header: `Authorization: Bearer <jwt-token>`
+- **Local verification**: JWT signature verified instantly using `JWT_SECRET` (no external API call)
+- JWT payload requirements: `userId`, `organizationId`, `role`, `email`
+- On success: Sets `x-org-id`, `x-user-id`, `x-auth-type: jwt`, `x-user-email`, `x-role` headers.
 
-Headers Forwarding to Downstream Services
-- When proxying requests, the gateway forwards `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers to downstream services for authorization, auditing, and request tracking.
+**CORS Preflight**: OPTIONS requests skip authentication (allowed without credentials).
 
-If neither authentication method is valid, returns 401/403 error.
+**Auth Failures**:
+- Invalid/missing credentials: 401 Unauthorized
+- Invalid JWT signature or expired: 401 Unauthorized + error message
+- Invalid API Key/Secret: 401 Unauthorized
 
 Usage Examples
 - Health check:
 ```bash
 curl http://localhost:8080/health
 ```
+Returns: `{"service":"api-gateway","status":"UP"}`
 
-- Organization registration (via gateway):
+- Organization registration (public):
 ```bash
 curl -X POST http://localhost:8080/auth/register-organization \
 	-H "Content-Type: application/json" \
@@ -100,7 +127,7 @@ curl -X POST http://localhost:8080/auth/register-organization \
 	}'
 ```
 
-- User login (via gateway):
+- User login (public):
 ```bash
 curl -X POST http://localhost:8080/auth/login \
 	-H "Content-Type: application/json" \
@@ -109,11 +136,12 @@ curl -X POST http://localhost:8080/auth/login \
 		"password": "Str0ngPass!"
 	}'
 ```
+Returns: `{"token":"<jwt>","refreshToken":"<token>","organizationId":"<id>","role":"admin"}`
 
-- User registration (via gateway) - **REQUIRES ADMIN AUTHENTICATION**:
+- User registration (protected, admin only):
 ```bash
 curl -X POST http://localhost:8080/auth/register-user \
-	-H "Authorization: Bearer <ADMIN_TOKEN>" \
+	-H "Authorization: Bearer <ADMIN_JWT>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"email": "user@acme.test",
@@ -124,102 +152,190 @@ curl -X POST http://localhost:8080/auth/register-user \
 	}'
 ```
 
-- User logout (via gateway):
+- Change password (protected):
 ```bash
-curl -X POST http://localhost:8080/auth/logout \
+curl -X POST http://localhost:8080/auth/change-password \
+	-H "Authorization: Bearer <JWT>" \
 	-H "Content-Type: application/json" \
 	-d '{
-		"refreshToken": "<REFRESH_TOKEN>"
+		"currentPassword": "OldPass123!",
+		"newPassword": "NewPass123!"
 	}'
 ```
 
-- Request to protected endpoint with JWT:
+- Forgot password (public):
 ```bash
-curl -X GET http://localhost:8080/sanctions/check \
-	-H "Authorization: Bearer <JWT_TOKEN>" \
+curl -X POST http://localhost:8080/auth/forgot-password \
+	-H "Content-Type: application/json" \
+	-d '{"email":"user@acme.test"}'
+```
+
+- Refresh JWT token (public):
+```bash
+curl -X POST http://localhost:8080/auth/refresh \
+	-H "Content-Type: application/json" \
+	-d '{"refreshToken":"<REFRESH_TOKEN>"}'
+```
+
+- Sanctions check (protected, JWT):
+```bash
+curl -X GET http://localhost:8080/sanctions/check?name=John%20Doe \
+	-H "Authorization: Bearer <JWT>" \
 	-H "Content-Type: application/json"
 ```
 
-- Request to protected endpoint with API Key:
+- Sanctions check (protected, API Key):
 ```bash
-curl -X GET http://localhost:8080/sanctions/check \
-	-H "x-api-key: <API_KEY>" \
-	-H "x-api-secret: <API_SECRET>" \
+curl -X GET http://localhost:8080/sanctions/check?name=John%20Doe \
+	-H "x-api-key: pk_live_xxxxx" \
+	-H "x-api-secret: sk_live_yyyyy" \
 	-H "Content-Type: application/json"
 ```
 
-Response Structure
-- `/health`:
-```json
-{ "service": "api-gateway", "status": "UP" }
+- Sanctions history (protected):
+```bash
+curl -X GET http://localhost:8080/sanctions/history \
+	-H "Authorization: Bearer <JWT>"
 ```
 
-- Protected endpoint request (example):
-	- Request forwarded with additional headers: `x-org-id`, `x-user-id`, `x-auth-type`
-	- Response returned from upstream service
+- Logout (public):
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+	-H "Content-Type: application/json" \
+	-d '{"refreshToken":"<REFRESH_TOKEN>"}'
+```
+
+Response Headers (Forwarded to Downstream Services)
+- `x-request-id` – unique request identifier for end-to-end tracing
+- `x-org-id` – organization ID from JWT payload or API Key validation
+- `x-user-id` – user ID from JWT payload (not present for API Key auth)
+- `x-user-email` – user email from JWT payload or "api@system" for API Key auth
+- `x-auth-type` – authentication method used: "jwt" or "api-key"
+- `x-role` – user role from JWT payload (not present for API Key auth)
 
 Error Responses
-- `401 Unauthorized` – No authentication provided.
-- `403 Forbidden` – Invalid or expired JWT token; invalid API Key/Secret.
-- `429 Too Many Requests` – Rate limit exceeded for the IP address.
-- `500 Internal Server Error` – Authentication middleware or upstream service error.
+- **401 Unauthorized** – No valid credentials provided, or credentials are invalid/expired
+  - Examples: Missing Authorization header, invalid JWT signature, invalid API Key
+  - Response: `{"error":"Unauthorized: <reason>"}`
+- **404 Not Found** – Route does not exist
+- **429 Too Many Requests** – Rate limit exceeded for the IP address
+  - Response: `{"error":"Too many requests from this IP, please try again later."}`
+  - Headers: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
+- **502 Bad Gateway** – Upstream service (Auth or Core) is unavailable
+  - Response: `{"error":"<service> service unavailable"}`
+- **500 Internal Server Error** – Gateway internal error
 
 How It Works (High Level)
-- **Request Flow**: Client request arrives → gateway generates `x-request-id` and logs request details → rate limiting middleware checks request quota for IP → authentication middleware validates credentials (API Key or JWT) → validated request forwarded to downstream service with auth context headers (`x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) → response returned to client.
-- **Rate Limiting**: The gateway uses `express-rate-limit` middleware to enforce per-IP request limits. Authentication routes are limited to 10 requests per 15 minutes, while protected API routes are limited to 100 requests per 15 minutes. Rate limit information is included in response headers.
-- **API Docs**: Swagger UI served at `/api-docs`, loaded from `swagger.yaml`.
-- **Public Routes** (`/auth/*`): No authentication required; direct proxy to Auth Service for registration, login, and other public endpoints.
-- **Protected Routes** (`/auth/reset-secret`, `/sanctions/*`): Authentication middleware validates JWT token or API Key/Secret before proxying request; downstream service receives auth context for authorization.
-- **API Key Validation**: Gateway calls Auth Service `/auth/internal/validate-api-key` endpoint to verify credentials and retrieve organization ID.
-- **JWT Verification**: Gateway verifies JWT signature locally using `JWT_SECRET` and extracts user, organization, and role information from token payload.
-- **Header Forwarding**: Downstream services receive `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, and `x-role` headers for access control, audit logging, and request tracing.
-- **Logging**: All requests are logged with structured logging (winston) including method, URL, request ID, and client IP.
+- **Request Flow**:
+  1. Client sends HTTP request to gateway (with JWT or API Key headers)
+  2. Global middleware: CORS, request ID generation, request logging
+  3. Rate limiting middleware: Check request quota per IP (20 req/15min for /auth/*, 100 req/15min for others)
+  4. Authentication middleware: Validate JWT signature or API Key (with caching)
+  5. Proxy middleware: Forward request to upstream service with auth context headers
+  6. Response: Upstream service response returned to client with rate limit headers
+  
+- **Rate Limiting**: express-rate-limit tracks requests per IP. Auth routes (10-20 req/15min), API routes (100 req/15min).
+  
+- **JWT Verification**: Instant local verification using `JWT_SECRET`. No external API call.
+  
+- **API Key Validation**: 
+  - If cached (< 60s old): Use cache hit (no Auth Service call)
+  - If not cached: POST to Auth Service `/auth/internal/validate-api-key`, cache result for 60s
+  
+- **Header Forwarding**: Proxy middleware injects `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-role` into upstream request headers.
+  
+- **Logging**: Winston logger (console + daily rotating files in logs/). Logs request details (method, URL, ID, IP), auth outcomes, proxy errors.
+  
+- **Public vs Protected Routes**: Public routes (login, registration, forgot-password) require no auth. Protected routes (register-user, reset-secret, sanctions/*, users/*) require valid JWT or API Key.
 
 Testing
 -------
 
-End-to-End (E2E) tests for API Gateway verify routing to microservices, rate limiting enforcement, and authentication context forwarding. Tests use Jest with Supertest for HTTP testing and nock for mocking upstream service responses.
+End-to-End (E2E) tests verify gateway routing, rate limiting, authentication, and header forwarding. Tests use Jest with Supertest for HTTP testing and nock for mocking upstream responses.
 
-Test Files
-- `tests/gateway.test.js` – comprehensive E2E tests for gateway infrastructure.
-	- **Rate Limiting (Auth & API)**:
-		- Tests verify that `/auth/*` endpoints are rate-limited to 10 requests per 15 minutes per IP.
-		- Tests verify that `/sanctions/*` endpoints are rate-limited to 100 requests per 15 minutes per IP.
-		- 101st request after limit is reached returns 429 Too Many Requests.
-	- **Request Routing**:
-		- Tests verify that `/auth/*` requests are correctly proxied to Auth Service.
-		- Tests verify that `/sanctions/*` requests are correctly proxied to Core Service.
-		- Mock responses from upstream services are validated.
-	- **Authentication Context**:
-		- Tests use JWT tokens to verify that authenticated requests include `x-org-id`, `x-user-id`, and `x-role` headers forwarded to downstream services.
-	- Mocks: nock (HTTP request interception and mocking).
+**Test File**: `tests/gateway.test.js`
 
-Running Tests
-- Command: `npm test` (runs all E2E tests with verbose output)
-- Uses Jest with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
-- Tests run in isolated environment with mocked upstream services (no real Auth/Core Service connection required)
-- Environment: `NODE_ENV=test` prevents server startup; supertest provides HTTP client without requiring listening port
+**Test Suites**:
 
-Test Coverage
-- **Infrastructure**: Tests verify correct routing of requests to upstream services based on URL path.
-- **Rate Limiting**: Tests ensure rate limits are enforced per IP address for both auth and API endpoints.
-- **Request/Response**: Tests validate that requests are proxied correctly and upstream responses are returned to client.
-- **Headers**: Tests verify that authentication context headers are forwarded to downstream services.
+1. **API Gateway E2E** (core functionality)
+   - Rate limiting enforcement on /sanctions/* (101st request returns 429)
+   - Request routing to Auth Service (/auth/login, /auth/reset-password, /auth/refresh, /auth/change-password, /auth/forgot-password)
+   - Request routing to Core Service (/sanctions/*)
 
-Example Test Execution
+2. **API Gateway - Authentication & Authorization**
+   - Invalid JWT token returns 401
+   - Missing Authorization header on protected routes returns 401
+   - Valid API Key and Secret pass authentication
+   - Invalid API Key returns 401
+
+3. **API Gateway - Protected Routes Enforcement**
+   - /auth/register-user requires authentication (401 without)
+   - /auth/reset-secret requires authentication (401 without)
+   - /auth/change-password requires authentication (401 without)
+   - /sanctions/* requires authentication (401 without)
+   - /users/* requires authentication (401 without)
+
+4. **API Gateway - CORS & Headers**
+   - OPTIONS preflight requests allowed without authentication (204)
+   - Auth context headers injected to proxy requests (x-org-id, x-user-id, x-auth-type, x-role)
+
+5. **API Gateway - Health Check**
+   - /health returns 200 with service status
+   - /health does not require authentication
+
+6. **API Gateway - Error Handling**
+   - Upstream service errors (5xx) are properly forwarded
+
+**Test Execution**:
 ```bash
 npm test
 ```
 
-Expected output:
+**Environment**:
+- NODE_ENV=test (prevents server startup)
+- Uses supertest for HTTP client (no listening port required)
+- nock mocks upstream Auth and Core services
+- JWT_SECRET and service URLs configured for test isolation
+
+**Test Tools**:
+- jest v30.2.0 – test runner with ES Modules support (cross-env NODE_OPTIONS=--experimental-vm-modules)
+- supertest v7.2.2 – HTTP assertion library for testing Express routes
+- nock v14.0.10 – HTTP request interceptor and mocker
+
+**Example Test Output**:
 ```
 PASS  tests/gateway.test.js
   API Gateway E2E
     ✓ Rate limiting: 101st request to /sanctions returns 429
     ✓ Routing: /auth/login is proxied to Auth Service
+    ✓ Routing: /auth/reset-password is proxied to Auth Service
+    ✓ Routing: /auth/refresh is proxied to Auth Service when authorized
     ✓ Routing: /sanctions/* is proxied to Core Service
+    ✓ Routing: /auth/change-password is proxied to Auth Service
+    ✓ Routing: /auth/forgot-password is proxied to Auth Service
+  API Gateway - Authentication & Authorization
+    ✓ Auth: Invalid JWT token returns 401
+    ✓ Auth: Missing Authorization header on protected route returns 401
+    ✓ Auth: Valid API Key and Secret passes authentication
+    ✓ Auth: Invalid API Key returns 401
+  API Gateway - Protected Routes Enforcement
+    ✓ Protected: /auth/register-user requires authentication
+    ✓ Protected: /auth/reset-secret requires authentication
+    ✓ Protected: /auth/change-password requires authentication
+    ✓ Protected: /sanctions/* requires authentication
+    ✓ Protected: /users/* requires authentication
+  API Gateway - CORS & Headers
+    ✓ CORS: OPTIONS preflight request allowed without auth
+    ✓ Headers: Auth context headers injected to proxy request
+  API Gateway - Health Check
+    ✓ Health: /health endpoint returns UP status
+    ✓ Health: /health does not require authentication
+  API Gateway - Error Handling
+    ✓ Error: Upstream service error is handled
 
 Test Suites: 1 passed, 1 total
-Tests:       3 passed, 3 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        7.4 s
 ```
 

@@ -78,4 +78,34 @@ export const getHistory = (params = {}) => {
   return api.get(url).then((response) => response.data);
 };
 
+/**
+ * Users Management API Methods (Admin Only)
+ */
+
+/**
+ * Get all users in the organization
+ * @returns {Promise<Object>} response data with users array
+ */
+export const getUsers = () => {
+  return api.get('/users').then((response) => response.data);
+};
+
+/**
+ * Create a new user in the organization
+ * @param {Object} userData - { email, password, firstName, lastName, role? }
+ * @returns {Promise<Object>} response data with created user
+ */
+export const createUser = (userData) => {
+  return api.post('/users', userData).then((response) => response.data);
+};
+
+/**
+ * Delete a user from the organization
+ * @param {string} userId - User ID to delete
+ * @returns {Promise<Object>} response data
+ */
+export const deleteUser = (userId) => {
+  return api.delete(`/users/${userId}`).then((response) => response.data);
+};
+
 export default api;

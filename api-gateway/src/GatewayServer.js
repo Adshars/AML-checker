@@ -148,6 +148,24 @@ export default class GatewayServer {
         }
       },
     });
+
+    // Users Management Proxy
+    this.usersProxy = createProxyMiddleware({
+      target: AUTH_SERVICE_URL,
+      changeOrigin: true,
+      // Express strips the "/users" prefix when hitting this proxy; map it back
+      pathRewrite: (path) => path.replace(/^\//, '/users/'),
+      onProxyReq: (proxyReq, req) => {
+        injectHeaders(proxyReq, req);
+        logger.debug('Proxying to Users Management', { requestId: req.requestId, path: req.path });
+      },
+      onError: (err, req, res) => {
+        logger.error('Users Management Proxy Error', { requestId: req.requestId, error: err.message });
+        if (!res.headersSent) {
+          res.status(502).json({ error: 'Users management service unavailable' });
+        }
+      },
+    });
   }
 
   /**
@@ -214,10 +232,20 @@ export default class GatewayServer {
       this.sanctionsProxy
     );
 
+    // ==================== PROTECTED USERS MANAGEMENT ROUTES ====================
+    // Auth required (admin only), rate limited
+
+    this.app.use('/users',
+      this.authMiddleware.middleware,
+      this.apiLimiter,
+      this.usersProxy
+    );
+
     logger.info('All routes configured', {
       protectedAuthRoutes: ['/register-user', '/reset-secret'],
       publicAuthRoutes: ['/login', '/register-organization', '/forgot-password', '/reset-password', '/refresh', '/logout'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
+      protectedUsersRoutes: ['/users (wildcard)'],
     });
   }
 

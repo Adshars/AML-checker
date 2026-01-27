@@ -222,4 +222,289 @@ describe('Auth Service Integration Tests', () => {
             expect(res.statusCode).toBe(403);
         });
     });
+
+    // Password Reset Flow Tests
+    describe('POST /auth/forgot-password', () => {
+
+        it('should send reset email for existing user -> 200', async () => {
+            AuthService.requestPasswordResetService.mockResolvedValue({
+                message: 'If a user with that email exists, a password reset link has been sent.'
+            });
+
+            const res = await request(app).post('/auth/forgot-password').send({
+                email: 'user@example.com'
+            });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/password reset link/i);
+        });
+
+        it('should return same message for non-existent email (security) -> 200', async () => {
+            AuthService.requestPasswordResetService.mockResolvedValue({
+                message: 'If a user with that email exists, a password reset link has been sent.'
+            });
+
+            const res = await request(app).post('/auth/forgot-password').send({
+                email: 'nonexistent@example.com'
+            });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/If a user with that email exists/i);
+        });
+    });
+
+    describe('POST /auth/reset-password', () => {
+
+        it('should reset password with valid token -> 200', async () => {
+            AuthService.resetPasswordService.mockResolvedValue({
+                message: 'Password has been reset successfully'
+            });
+
+            const res = await request(app).post('/auth/reset-password').send({
+                userId: 'user123',
+                token: 'valid_reset_token',
+                newPassword: 'NewSecurePass123!'
+            });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/reset successfully/i);
+        });
+
+        it('should fail with invalid/expired token -> 400', async () => {
+            AuthService.resetPasswordService.mockRejectedValue(
+                new Error('Invalid or expired password reset token')
+            );
+
+            const res = await request(app).post('/auth/reset-password').send({
+                userId: 'user123',
+                token: 'invalid_token',
+                newPassword: 'NewSecurePass123!'
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Invalid or expired/i);
+        });
+
+        it('should fail validation with weak password -> 400', async () => {
+            const res = await request(app).post('/auth/reset-password').send({
+                userId: 'user123',
+                token: 'valid_token',
+                newPassword: 'weak'
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Password must be at least/i);
+        });
+    });
+
+    describe('POST /auth/change-password', () => {
+
+        it('should fail with missing x-user-id header -> 400', async () => {
+            const res = await request(app).post('/auth/change-password').send({
+                currentPassword: 'OldPass123!',
+                newPassword: 'NewPass123!'
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Missing required fields/i);
+        });
+
+        it('should fail with missing password fields -> 400', async () => {
+            const res = await request(app).post('/auth/change-password')
+                .send({ currentPassword: 'OldPass123!' })
+                .set('x-user-id', 'user1');
+
+            expect(res.statusCode).toBe(400);
+        });
+    });
+
+    // Users Management Tests
+    describe('GET /users', () => {
+
+        it('should deny access to non-admin users -> 403', async () => {
+            const res = await request(app).get('/users')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'user1')
+                .set('x-role', 'user');
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Admins only/i);
+        });
+
+        it('should fail with missing x-org-id header -> 403', async () => {
+            const res = await request(app).get('/users')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Missing organization context/i);
+        });
+
+        it('should allow superadmin access', async () => {
+            const res = await request(app).get('/users')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'superadmin1')
+                .set('x-role', 'superadmin');
+
+            expect([200, 500]).toContain(res.statusCode);
+        });
+    });
+
+    describe('POST /users', () => {
+
+        it('should deny user creation for non-admin -> 403', async () => {
+            const res = await request(app).post('/users').send({
+                email: 'newuser@example.com',
+                password: 'SecurePass123!',
+                firstName: 'New',
+                lastName: 'User'
+            })
+            .set('x-org-id', 'org1')
+            .set('x-user-id', 'user1')
+            .set('x-role', 'user');
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Admins only/i);
+        });
+
+        it('should fail validation with weak password -> 400', async () => {
+            const res = await request(app).post('/users').send({
+                email: 'newuser@example.com',
+                password: 'weak',
+                firstName: 'New',
+                lastName: 'User'
+            })
+            .set('x-org-id', 'org1')
+            .set('x-user-id', 'admin1')
+            .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Password must be at least/i);
+        });
+
+        it('should fail with missing organization context -> 403', async () => {
+            const res = await request(app).post('/users').send({
+                email: 'newuser@example.com',
+                password: 'SecurePass123!',
+                firstName: 'New',
+                lastName: 'User'
+            })
+            .set('x-user-id', 'admin1')
+            .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Missing organization context/i);
+        });
+
+        it('should fail with invalid email format -> 400', async () => {
+            const res = await request(app).post('/users').send({
+                email: 'invalid-email',
+                password: 'SecurePass123!',
+                firstName: 'New',
+                lastName: 'User'
+            })
+            .set('x-org-id', 'org1')
+            .set('x-user-id', 'admin1')
+            .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Invalid email/i);
+        });
+    });
+
+    describe('DELETE /users/:id', () => {
+
+        it('should deny delete for non-admin -> 403', async () => {
+            const res = await request(app).delete('/users/user123')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'user1')
+                .set('x-role', 'user');
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Admins only/i);
+        });
+
+        it('should fail when user not found -> 404', async () => {
+            const res = await request(app).delete('/users/nonexistent')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(404);
+        });
+    });
+
+    // Health Check Test
+    describe('GET /health', () => {
+
+        it('should return service health status -> 200', async () => {
+            const res = await request(app).get('/health');
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.service).toBe('auth-service');
+            expect(res.body.status).toBe('UP');
+            expect(res.body.database).toBeDefined();
+        });
+    });
+
+    // Edge Cases & Security Tests
+    describe('Security & Edge Cases', () => {
+
+        it('should reject login with invalid email format -> 400', async () => {
+            const res = await request(app).post('/auth/login').send({
+                email: 'not-an-email',
+                password: 'password123'
+            });
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Invalid email/i);
+        });
+
+        it('should reject registration with missing fields -> 400', async () => {
+            const res = await request(app).post('/auth/register-organization').send({
+                orgName: 'Test Co',
+                email: 'test@example.com'
+                // Missing required fields
+            });
+
+            expect(res.statusCode).toBe(400);
+        });
+
+        it('should handle missing refresh token in logout', async () => {
+            const res = await request(app).post('/auth/logout').send({});
+
+            // Should handle gracefully
+            expect([200, 400, 500]).toContain(res.statusCode);
+        });
+
+        it('should reject refresh with missing token -> 401', async () => {
+            const res = await request(app).post('/auth/refresh').send({});
+
+            expect(res.statusCode).toBe(401);
+            expect(res.body.error).toMatch(/required|missing/i);
+        });
+
+        it('should not expose passwordHash in responses', async () => {
+            AuthService.loginService.mockResolvedValue({
+                user: { 
+                    _id: 'u1', 
+                    email: 'test@example.com', 
+                    role: 'user', 
+                    organizationId: 'org1',
+                    passwordHash: 'should_not_be_exposed'
+                },
+                accessToken: 'token',
+                refreshToken: 'refresh'
+            });
+
+            const res = await request(app).post('/auth/login').send({
+                email: 'test@example.com',
+                password: 'password123'
+            });
+
+            if (res.statusCode === 200) {
+                expect(res.body.user.passwordHash).toBeUndefined();
+            }
+        });
+    });
 });

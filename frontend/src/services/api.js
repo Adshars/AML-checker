@@ -117,4 +117,22 @@ export const changePassword = (data) => {
   return api.post('/auth/change-password', data).then((response) => response.data);
 };
 
+/**
+ * Request password reset link
+ * @param {string} email
+ * @returns {Promise<Object>} response data
+ */
+export const requestPasswordReset = (email) => {
+  return api.post('/auth/forgot-password', { email }).then((response) => response.data);
+};
+
+/**
+ * Confirm password reset with token
+ * @param {{ userId: string, token: string, newPassword: string }} data
+ * @returns {Promise<Object>} response data
+ */
+export const confirmPasswordReset = (data) => {
+  return api.post('/auth/reset-password', data).then((response) => response.data);
+};
+
 export default api;

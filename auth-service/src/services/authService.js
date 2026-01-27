@@ -240,7 +240,7 @@ export const requestPasswordResetService = async (email, requestId) => {
     }).save();
 
     // Create reset link
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost';
     const link = `${frontendUrl}/reset-password?token=${resetToken}&id=${user._id}`;
 
     // Send email

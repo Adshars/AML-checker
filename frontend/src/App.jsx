@@ -6,6 +6,7 @@ import CheckPage from './pages/CheckPage';
 import HistoryPage from './pages/HistoryPage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import MainLayout from './components/MainLayout';
 
 // Protected Route Component - requires authentication
@@ -32,6 +33,7 @@ function App() {
 
         {/* Public route - Login */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Protected routes with MainLayout */}
         <Route

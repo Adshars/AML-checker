@@ -1,11 +1,13 @@
 import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Container, Card, Form, Button, Alert } from 'react-bootstrap';
+import { Container, Card, Form, Button, Alert, InputGroup } from 'react-bootstrap';
+import { Eye, EyeSlash } from 'react-bootstrap-icons';
 import { AuthContext } from '../context/AuthContext';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -65,14 +67,24 @@ const LoginPage = () => {
 
               <Form.Group className="mb-3" controlId="formPassword">
                 <Form.Label>Password</Form.Label>
-                <Form.Control
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
-                  required
-                />
+                <InputGroup>
+                  <Form.Control
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    required
+                  />
+                  <Button
+                    variant="outline-secondary"
+                    onClick={() => setShowPassword(!showPassword)}
+                    type="button"
+                    disabled={loading}
+                  >
+                    {showPassword ? <EyeSlash /> : <Eye />}
+                  </Button>
+                </InputGroup>
               </Form.Group>
 
               <Button

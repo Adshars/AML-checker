@@ -26,8 +26,13 @@ describe('ScreeningPanel', () => {
   it('should show validation error for empty name', async () => {
     render(<ScreeningPanel />);
 
-    const submitButton = screen.getByRole('button', { name: /check/i });
-    fireEvent.click(submitButton);
+    const form = screen.getByRole('button', { name: /check/i }).closest('form');
+    const inputField = screen.getByLabelText(/entity name/i);
+    
+    // Remove HTML5 validation to test JS validation
+    inputField.removeAttribute('required');
+    
+    fireEvent.submit(form);
 
     await waitFor(() => {
       expect(screen.getByText(/name field is required/i)).toBeInTheDocument();

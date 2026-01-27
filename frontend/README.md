@@ -140,12 +140,16 @@ Test Files
 	- Mocks: `authService` (getCurrentUser, login, logout).
 - `tests/ScreeningPanel.test.jsx` – Entity screening component (11 tests).
 	- **Form Rendering** (1 test): Renders form with input field and submit button.
-	- **Validation** (2 tests): Shows validation error for empty name; trims whitespace and rejects empty input after trim.
+	- **Validation** (2 tests): Shows validation error for empty name (bypasses HTML5 validation to test JS logic); trims whitespace and rejects empty input after trim.
 	- **API Interaction** (1 test): Calls `coreService.checkEntity` with trimmed name parameter.
 	- **Loading State** (1 test): Shows loading spinner during API call.
 	- **Results Display** (2 tests): Displays CLEAN result with success Alert; displays HIT result with danger Alert and entity list.
 	- **Data Normalization** (1 test): Normalizes different API response structures (`data`, `results`, `hits` fields).
-Key Components and Services
+	- **Error Handling** (2 tests): Displays error message from `response.data.message`; handles error without response.data (fallback to `error.message`).
+	- **Modal Interaction** (1 test): Opens modal when entity clicked; displays entity details in modal.
+	- Mocks: `coreService.checkEntity`.
+
+Running Tests
 
 ScreeningPanel Component (components/ScreeningPanel.jsx)
 - Entity screening form with validation (trim whitespace, required field).
@@ -205,9 +209,8 @@ Data Models
     ✓ should open modal when entity is clicked
 
 Test Files  4 passed (4)
-Test Files  4 passed (4)
      Tests  27 passed (27)
-  Duration  3.36s
+  Duration  3.03s
 ```
 
 Key Components and Services

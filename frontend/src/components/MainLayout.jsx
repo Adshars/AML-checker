@@ -37,6 +37,11 @@ const MainLayout = () => {
                   Users
                 </Nav.Link>
               )}
+              {isAdmin && (
+                <Nav.Link as={NavLink} to="/developer">
+                  Developer
+                </Nav.Link>
+              )}
               <Nav.Link as={NavLink} to="/settings">
                 Settings
               </Nav.Link>

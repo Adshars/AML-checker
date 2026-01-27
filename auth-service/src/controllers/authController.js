@@ -1,5 +1,8 @@
 import * as AuthService from '../services/authService.js';
 import logger from '../utils/logger.js';
+import bcrypt from 'bcryptjs';
+import User from '../models/User.js';
+import Organization from '../models/Organization.js';
 import { registerOrgSchema, registerUserSchema, loginSchema, resetPasswordSchema } from '../utils/validationSchemas.js';
 
 // Registration organisation and admin user
@@ -185,6 +188,7 @@ export const resetOrganizationSecret = async (req, res) => {
     const orgId = req.headers['x-org-id'];
     const role = req.headers['x-role'];
     const userId = req.headers['x-user-id'];
+    const { password } = req.body || {};
 
     if (!orgId || !userId) {
       logger.warn('Unauthorized reset secret attempt', { ip: req.ip });
@@ -194,6 +198,24 @@ export const resetOrganizationSecret = async (req, res) => {
     if (role !== 'admin') {
       logger.warn('Forbidden reset secret attempt', { userId, orgId, role, ip: req.ip });
       return res.status(403).json({ error: 'Forbidden: Admins only' });
+    }
+
+    if (!password) {
+      logger.warn('Reset secret missing password', { userId, orgId });
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
+    // Verify user's password before allowing reset
+    const user = await User.findById(userId);
+    if (!user) {
+      logger.warn('Reset secret user not found', { userId, orgId });
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      logger.warn('Reset secret incorrect password', { userId, orgId });
+      return res.status(403).json({ error: 'Incorrect password' });
     }
 
     logger.info('Initiating API Secret reset', { orgId, requestedBy: userId });
@@ -210,6 +232,27 @@ export const resetOrganizationSecret = async (req, res) => {
   } catch (error) {
     logger.error('Reset Secret Server Error', { orgId: req.headers['x-org-id'], error: error.message });
     res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Get Organization Public API Key (Admin context required via gateway)
+export const getOrganizationKeys = async (req, res) => {
+  try {
+    const orgId = req.headers['x-org-id'];
+    const userId = req.headers['x-user-id'];
+    if (!orgId || !userId) {
+      return res.status(401).json({ error: 'Unauthorized: Missing context' });
+    }
+
+    const org = await Organization.findById(orgId);
+    if (!org) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+
+    return res.json({ apiKey: org.apiKey });
+  } catch (error) {
+    logger.error('Get Organization Keys Error', { error: error.message });
+    return res.status(500).json({ error: 'Server error' });
   }
 };
 

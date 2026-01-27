@@ -118,6 +118,20 @@ export const changePassword = (data) => {
 };
 
 /**
+ * Get organization's public API key
+ */
+export const getOrganizationKeys = () => {
+  return api.get('/auth/organization/keys').then((response) => response.data);
+};
+
+/**
+ * Reset organization's API secret (requires password confirmation)
+ */
+export const resetOrganizationSecret = (password) => {
+  return api.post('/auth/reset-secret', { password }).then((response) => response.data);
+};
+
+/**
  * Request password reset link
  * @param {string} email
  * @returns {Promise<Object>} response data

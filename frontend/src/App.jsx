@@ -7,6 +7,7 @@ import HistoryPage from './pages/HistoryPage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import DeveloperPage from './pages/DeveloperPage';
 import MainLayout from './components/MainLayout';
 
 // Protected Route Component - requires authentication
@@ -47,6 +48,7 @@ function App() {
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/developer" element={<DeveloperPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

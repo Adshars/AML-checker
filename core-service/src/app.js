@@ -16,6 +16,7 @@ export const createApp = () => {
   // Routes
   app.get('/health', sanctionsController.getHealth);
   app.get('/check', sanctionsController.checkSanctions);
+  app.get('/stats', sanctionsController.getStats);
   app.get('/history', HistoryController.getHistory);
 
   return app;

@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import { AdapterError } from '../services/SanctionsCoreService.js';
+import AuditLog from '../models/AuditLog.js';
 
 export default class SanctionsController {
   constructor({ sanctionsCoreService }) {
@@ -61,6 +62,40 @@ export default class SanctionsController {
         requestId,
         error: error.message,
       });
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  };
+
+  getStats = async (req, res) => {
+    const orgID = req.headers['x-org-id'];
+    
+    if (!orgID) {
+      logger.warn('getStats: Missing organization ID');
+      return res.status(400).json({ error: 'Missing organization ID' });
+    }
+
+    try {
+      const totalChecks = await AuditLog.count({ where: { organizationId: orgID } });
+      const sanctionHits = await AuditLog.count({ where: { organizationId: orgID, isSanctioned: true } });
+      const pepHits = await AuditLog.count({ where: { organizationId: orgID, isPep: true } });
+
+      const recentLogs = await AuditLog.findAll({
+        where: { organizationId: orgID },
+        order: [['createdAt', 'DESC']],
+        limit: 100,
+        attributes: ['id', 'searchQuery', 'isSanctioned', 'isPep', 'createdAt'],
+      });
+
+      logger.info('Stats retrieved successfully', { orgID, totalChecks });
+
+      return res.status(200).json({
+        totalChecks,
+        sanctionHits,
+        pepHits,
+        recentLogs,
+      });
+    } catch (error) {
+      logger.error('Error retrieving stats', { orgID, error: error.message });
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   };

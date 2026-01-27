@@ -149,4 +149,12 @@ export const confirmPasswordReset = (data) => {
   return api.post('/auth/reset-password', data).then((response) => response.data);
 };
 
+/**
+ * Get dashboard statistics
+ * @returns {Promise<Object>} response data with stats
+ */
+export const getDashboardStats = () => {
+  return api.get('/sanctions/stats').then((response) => response.data);
+};
+
 export default api;

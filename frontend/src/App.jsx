@@ -2,6 +2,7 @@ import { useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
 import CheckPage from './pages/CheckPage';
 import HistoryPage from './pages/HistoryPage';
 import UsersPage from './pages/UsersPage';
@@ -29,8 +30,8 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Root - redirect to check page */}
-        <Route path="/" element={<Navigate to="/check" replace />} />
+        {/* Root - redirect to dashboard */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         {/* Public route - Login */}
         <Route path="/login" element={<LoginPage />} />
@@ -44,6 +45,7 @@ function App() {
             </ProtectedRoute>
           }
         >
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/check" element={<CheckPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/users" element={<UsersPage />} />

@@ -45,7 +45,7 @@ const LoginPage = () => {
     try {
       await login(email, password);
       // Success - redirect to check page (FIXED)
-      navigate('/check');
+      navigate('/dashboard');
     } catch (err) {
       // Error - display error message
       setError(err.response?.data?.error || err.response?.data?.message || 'Invalid email or password');

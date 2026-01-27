@@ -36,9 +36,12 @@ export const registerOrgSchema = Joi.object({
 export const registerUserSchema = Joi.object({
   firstName: textRule,
   lastName: textRule,
-  organizationId: textRule,
+  organizationId: Joi.string().optional(), // Optional - will be enforced from admin context
   email: emailRule,
-  password: passwordRule
+  password: passwordRule,
+  role: Joi.string().valid('user', 'admin', 'superadmin').optional().messages({
+    'any.only': 'Role must be one of: user, admin, superadmin'
+  })
 });
 
 // Login Schema

@@ -27,7 +27,7 @@ export default class SanctionsCoreService {
     return { service: 'core-service', status: 'UP', database: dbStatus };
   }
 
-  async checkSanctions({ name, limit, fuzzy, schema, country, orgID, userID, requestId }) {
+  async checkSanctions({ name, limit, fuzzy, schema, country, orgID, userID, userEmail, requestId }) {
     let adapterResponse;
     let adapterLatency;
 
@@ -69,9 +69,17 @@ export default class SanctionsCoreService {
     };
 
     try {
+      logger.debug('Creating AuditLog entry', {
+        requestId,
+        userId: userID,
+        userEmail: userEmail,
+        searchQuery: name,
+        hasHit: hasHit,
+      });
       await AuditLog.create({
         organizationId: orgID,
         userId: userID || 'API',
+        userEmail: userEmail || null,
         searchQuery: name,
         hasHit: hasHit,
         hitsCount: adapterResponse.hits_count || 0,
@@ -85,7 +93,7 @@ export default class SanctionsCoreService {
         isSanctioned: bestMatch?.isSanctioned || false,
         isPep: bestMatch?.isPep || false,
       });
-      logger.info('Audit log saved successfully', { requestId, orgID, hasHit });
+      logger.info('Audit log saved successfully', { requestId, orgID, hasHit, userEmail });
     } catch (dbError) {
       logger.error('Failed to save Audit Log', { requestId, error: dbError.message });
     }

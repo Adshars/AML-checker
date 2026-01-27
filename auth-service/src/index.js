@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import authRoutes from './routes/authRoutes.js';
+import usersRoutes from './routes/usersRoutes.js';
 import logger from './utils/logger.js';
 
 export const app = express();
@@ -23,6 +24,9 @@ app.get('/health', (req, res) => {
 
 // Auth Routes
 app.use('/auth', authRoutes);
+
+// Users Management Routes (Admin Only)
+app.use('/users', usersRoutes);
 
 // Start the server after connecting to the database
 if (process.env.NODE_ENV !== 'test') {

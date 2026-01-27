@@ -47,6 +47,7 @@ export default class AuthMiddleware {
           orgId: response.data.organizationId,
           authType: 'api-key',
           userId: null,
+          email: null,
           role: null
         };
 
@@ -75,11 +76,12 @@ export default class AuthMiddleware {
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      logger.debug('JWT Verified', { requestId: req.requestId, userId: decoded.userId, orgId: decoded.organizationId });
+      logger.debug('JWT Verified', { requestId: req.requestId, userId: decoded.userId, orgId: decoded.organizationId, email: decoded.email });
       return {
         orgId: decoded.organizationId,
         authType: 'jwt',
         userId: decoded.userId,
+        email: decoded.email,
         role: decoded.role
       };
     } catch (error) {
@@ -93,6 +95,11 @@ export default class AuthMiddleware {
    * Attaches auth context to BOTH req.auth (for code reference) and req.headers (for proxy forwarding)
    */
   async validate(req, res, next) {
+    // FIX: Allow CORS Preflight requests to pass without auth
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+
     try {
       req.requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -103,6 +110,7 @@ export default class AuthMiddleware {
         // CRITICAL: Attach to req.headers for proxy forwarding
         req.headers['x-org-id'] = authResult.orgId;
         req.headers['x-auth-type'] = authResult.authType;
+        req.headers['x-user-email'] = 'api@system';
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
         
@@ -117,6 +125,7 @@ export default class AuthMiddleware {
         // CRITICAL: Attach to req.headers for proxy forwarding
         req.headers['x-org-id'] = authResult.orgId;
         req.headers['x-auth-type'] = authResult.authType;
+        if (authResult.email) req.headers['x-user-email'] = authResult.email;
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
         

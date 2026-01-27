@@ -148,15 +148,48 @@ export default class GatewayServer {
         }
       },
     });
+
+    // Users Management Proxy
+    this.usersProxy = createProxyMiddleware({
+      target: AUTH_SERVICE_URL,
+      changeOrigin: true,
+      // Express strips the "/users" prefix when hitting this proxy; map it back
+      pathRewrite: (path) => path.replace(/^\//, '/users/'),
+      onProxyReq: (proxyReq, req) => {
+        injectHeaders(proxyReq, req);
+        logger.debug('Proxying to Users Management', { requestId: req.requestId, path: req.path });
+      },
+      onError: (err, req, res) => {
+        logger.error('Users Management Proxy Error', { requestId: req.requestId, error: err.message });
+        if (!res.headersSent) {
+          res.status(502).json({ error: 'Users management service unavailable' });
+        }
+      },
+    });
   }
 
   /**
    * Setup explicit routes in correct order:
-   * 1. Public Auth Routes
-   * 2. Protected Auth Routes
+   * 1. Protected Auth Routes (must be BEFORE public /auth wildcard)
+   * 2. Public Auth Routes
    * 3. Protected Sanctions Routes
    */
   setupRoutes() {
+    // ==================== PROTECTED AUTH ROUTES ====================
+    // Auth REQUIRED - rate limited
+
+    this.app.post('/auth/register-user',
+      this.authLimiter,
+      this.authMiddleware.middleware,  // ✅ REQUIRE AUTHENTICATION
+      this.authProxy
+    );
+
+    this.app.post('/auth/reset-secret',
+      this.authLimiter,
+      this.authMiddleware.middleware,
+      this.authProxy
+    );
+
     // ==================== PUBLIC AUTH ROUTES ====================
     // No auth required, rate limited
 
@@ -166,11 +199,6 @@ export default class GatewayServer {
     );
 
     this.app.post('/auth/register-organization',
-      this.authLimiter,
-      this.authProxy
-    );
-
-    this.app.post('/auth/register-user',
       this.authLimiter,
       this.authProxy
     );
@@ -195,15 +223,6 @@ export default class GatewayServer {
       this.authProxy
     );
 
-    // ==================== PROTECTED AUTH ROUTES ====================
-    // Auth required, rate limited
-
-    this.app.post('/auth/reset-secret',
-      this.authLimiter,
-      this.authMiddleware.middleware,
-      this.authProxy
-    );
-
     // ==================== PROTECTED SANCTIONS ROUTES ====================
     // Auth required, stricter rate limit
 
@@ -213,10 +232,20 @@ export default class GatewayServer {
       this.sanctionsProxy
     );
 
+    // ==================== PROTECTED USERS MANAGEMENT ROUTES ====================
+    // Auth required (admin only), rate limited
+
+    this.app.use('/users',
+      this.authMiddleware.middleware,
+      this.apiLimiter,
+      this.usersProxy
+    );
+
     logger.info('All routes configured', {
-      publicAuthRoutes: ['/login', '/register-organization', '/register-user', '/forgot-password', '/reset-password', '/refresh', '/logout'],
-      protectedAuthRoutes: ['/reset-secret'],
+      protectedAuthRoutes: ['/register-user', '/reset-secret'],
+      publicAuthRoutes: ['/login', '/register-organization', '/forgot-password', '/reset-password', '/refresh', '/logout'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
+      protectedUsersRoutes: ['/users (wildcard)'],
     });
   }
 

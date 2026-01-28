@@ -30,8 +30,8 @@
 	- Port: 8080 (mapped via `GATEWAY_PORT`, default 8080)
 	- **Architecture**: Class-based design (`GatewayServer`, `AuthMiddleware`) with dependency injection
 	- Responsibilities: request routing (reverse proxy), authentication enforcement, header forwarding
-	- **Route Security**: Protected endpoints (e.g., `/auth/register-user`) defined before public wildcards to ensure proper matching
-	- Routes: `/auth/*` (public routes: login, register-org, forgot-password; protected routes: register-user [admin only], reset-secret [admin only]) → Auth Service; `/sanctions/*` (protected) → Core Service
+	- **Route Security**: Protected endpoints (e.g., `/auth/register-user`, `/auth/register-organization`) defined before public wildcards to ensure proper matching
+	- Routes: `/auth/*` (public routes: login, forgot-password; protected routes: register-organization [superadmin only], register-user [admin only], reset-secret [admin only]) → Auth Service; `/sanctions/*` (protected) → Core Service
 	- Supports two authentication methods: JWT (user login) and API Key/Secret (B2B system-to-system)
 	- **Performance**: API Key validation cached for 60 seconds (node-cache) - 60x faster than uncached validation
 	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) to downstream requests
@@ -104,7 +104,7 @@ All client requests go through **API Gateway** (port 8080). Below is a complete 
 
 | Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
 |--------|----------|---------------|---------------|-------------|----------------|
-| POST | `/auth/register-organization` | ❌ No | - | Register new organization with admin user | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
+| POST | `/auth/register-organization` | ✅ JWT | superadmin | Register new organization with admin user (SuperAdmin only) | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
 | POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Add user to organization | `email`, `password`, `firstName`, `lastName`, `organizationId` |
 | POST | `/auth/login` | ❌ No | - | User login (returns JWT tokens) | `email`, `password` |
 | POST | `/auth/refresh` | ❌ No | - | Refresh access token | `refreshToken` |
@@ -132,7 +132,7 @@ All client requests go through **API Gateway** (port 8080). Below is a complete 
 | GET | `/sanctions/check` | ✅ JWT or API Key | - | Check entity against sanctions/PEP lists; creates audit log | `name` (required), `limit` (1-100, default 15), `fuzzy` (true/false), `schema` (Person/Company/etc), `country` (ISO code) |
 | GET | `/sanctions/history` | ✅ JWT or API Key | - | Retrieve audit logs with pagination and advanced filtering | `page` (default 1), `limit` (default 20), `search` (text), `hasHit` (true/false), `startDate` (ISO), `endDate` (ISO), `userId` (UUID), `orgId` (superadmin only) |
 | GET | `/sanctions/stats` | ✅ JWT or API Key | - | Get aggregated statistics for organization | - |
-| GET | `/sanctions/health` | ❌ No | - | Health check | - |
+| GET | `/sanctions/health` | ✅ JWT or API Key | - | Core Service health check | - |
 
 ### API Gateway Endpoints
 
@@ -595,14 +595,15 @@ To view sent emails during development:
 ### Quick Navigation
 
 1. **First Time Setup**: [Create SuperAdmin Account](#initial-setup-creating-the-first-superadmin)
-2. **SuperAdmin Tasks**: Register new organizations → Manage API credentials
+2. **SuperAdmin Tasks**: Login as SuperAdmin → Register new organizations → Manage API credentials
 3. **Admin Tasks**: Create users in organization → Delete users → Reset API secret
 4. **User Tasks**: Login → Perform sanctions screening → View audit history
 5. **API Integration**: Use API keys for system-to-system (B2B) authentication
 
-### 1. Register Organization (SuperAdmin Portal or API)
+### 1. Register Organization (SuperAdmin Only)
 ```bash
 curl -X POST http://localhost:8080/auth/register-organization \
+	-H "Authorization: Bearer <SUPERADMIN_JWT_TOKEN>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"orgName": "ACME Corp",

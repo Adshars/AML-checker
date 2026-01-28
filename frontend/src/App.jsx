@@ -2,6 +2,7 @@ import { useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
+import SuperAdminPage from './pages/SuperAdminPage';
 import DashboardPage from './pages/DashboardPage';
 import CheckPage from './pages/CheckPage';
 import HistoryPage from './pages/HistoryPage';
@@ -12,7 +13,7 @@ import DeveloperPage from './pages/DeveloperPage';
 import MainLayout from './components/MainLayout';
 
 // Protected Route Component - requires authentication
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, requiredRole = null }) => {
   const { user, loading } = useContext(AuthContext);
 
   if (loading) {
@@ -23,6 +24,11 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
+  if (requiredRole && user.role !== requiredRole) {
+    // Redirect to appropriate page based on role
+    return <Navigate to={user.role === 'superadmin' ? '/superadmin' : '/dashboard'} replace />;
+  }
+
   return children;
 };
 
@@ -30,12 +36,22 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Root - redirect to dashboard */}
+        {/* Root - redirect to dashboard or superadmin */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         {/* Public route - Login */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+        {/* SuperAdmin route */}
+        <Route
+          path="/superadmin"
+          element={
+            <ProtectedRoute requiredRole="superadmin">
+              <SuperAdminPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Protected routes with MainLayout */}
         <Route

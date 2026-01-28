@@ -157,4 +157,13 @@ export const getDashboardStats = () => {
   return api.get('/sanctions/stats').then((response) => response.data);
 };
 
+/**
+ * Register a new organization (SuperAdmin only)
+ * @param {Object} data - Organization registration data
+ * @returns {Promise<Object>} response data with organization and admin user
+ */
+export const registerOrganization = (data) => {
+  return api.post('/auth/register-organization', data).then((response) => response.data);
+};
+
 export default api;

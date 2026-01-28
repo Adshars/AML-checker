@@ -4,21 +4,21 @@ import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Organization from '../models/Organization.js';
 import { registerOrgSchema, registerUserSchema, loginSchema, resetPasswordSchema } from '../utils/validationSchemas.js';
+import { sendWelcomeEmail } from '../utils/emailSender.js';
 
 // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
   const requestId = `reg-${Date.now()}`;
 
-  // --- New security feature ---
-  // Only SuperAdmin can create new organizations
-  /*
+  // Security: Only SuperAdmin can create new organizations
   const requesterRole = req.headers['x-role'];
   if (requesterRole !== 'superadmin') {
-      logger.warn('Unauthorized org registration attempt', { requestId });
-      return res.status(403).json({ error: 'Only SuperAdmin can create organizations' });
+      logger.warn('Unauthorized org registration attempt', { 
+        requestId, 
+        role: requesterRole 
+      });
+      return res.status(403).json({ error: 'Only SuperAdmin can register organizations' });
   }
-  */
-  // ---------------------------------
 
   try {
     const { error } = registerOrgSchema.validate(req.body);
@@ -28,6 +28,14 @@ export const registerOrganization = async (req, res) => {
     }
 
     const result = await AuthService.registerOrgService(req.body);
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(result.newUser.email, result.newUser.firstName, 'admin')
+      .catch(err => logger.warn('Failed to send welcome email', { 
+        requestId,
+        error: err.message,
+        recipient: result.newUser.email
+      }));
 
     logger.info('Organization registered successfully', {
       requestId,
@@ -86,6 +94,14 @@ export const registerUser = async (req, res) => {
     }
 
     const newUser = await AuthService.registerUserService(req.body);
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(newUser.email, newUser.firstName, newUser.role)
+      .catch(err => logger.warn('Failed to send welcome email', { 
+        requestId,
+        error: err.message,
+        recipient: newUser.email
+      }));
 
     res.status(201).json({
       message: 'User registered successfully',

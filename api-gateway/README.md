@@ -52,33 +52,73 @@ Architecture
 - **Logging**: Structured logging via Winston with daily rotating files (logs folder), console output, separate error logs.
 
 Endpoints
-- `GET /health` – returns gateway status (`{ service: "api-gateway", status: "UP" }`). No auth required.
-- `GET /api-docs` – Swagger UI for the gateway's OpenAPI specification (swagger.yaml).
+-------------
 
-**Auth Service Proxy** (`ALL /auth/*`):
-- **Public routes** (no auth required, rate limited to 20 req/15min):
-  - `POST /auth/register-organization` – organization registration
-  - `POST /auth/login` – user login
-  - `POST /auth/forgot-password` – password reset request
-  - `POST /auth/reset-password` – password reset with token
-  - `POST /auth/refresh` – JWT token refresh
-  - `POST /auth/logout` – logout and revoke refresh token
-- **Protected routes** (auth required, rate limited to 20 req/15min):
-  - `POST /auth/register-user` – register new user (admin only)
-  - `POST /auth/reset-secret` – reset API secret (admin only)
-  - `POST /auth/change-password` – change password (authenticated users)
+### Gateway Endpoints
 
-**Core Service Proxy** (`ALL /sanctions/*`):
-- `GET /sanctions/check` – perform sanctions check against a name/entity
-- `GET /sanctions/history` – fetch historical sanctions checks for organization
-- **All routes require authentication** (JWT or API Key), rate limited to 100 req/15min
-- Authenticated requests include `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-role` headers
+| Method | Endpoint | Auth Required | Rate Limit | Description |
+|--------|----------|---------------|------------|-------------|
+| GET | `/health` | ❌ No | None | Returns gateway status: `{ service: "api-gateway", status: "UP" }` |
+| GET | `/api-docs` | ❌ No | None | Swagger UI for OpenAPI specification (swagger.yaml) |
 
-**Users Management Proxy** (`ALL /users/*`):
-- All routes proxied to Auth Service with `/users` prefix
-- **All routes require authentication** (JWT or API Key), rate limited to 100 req/15min
-- Examples: `GET /users`, `POST /users`, etc.
-- Authenticated requests include `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-role` headers
+### Auth Service Proxy (PUBLIC Routes)
+
+All public routes are rate limited to **20 requests per 15 minutes per IP**.
+
+| Method | Endpoint | Auth Required | Proxied To | Description |
+|--------|----------|---------------|------------|-------------|
+| POST | `/auth/login` | ❌ No | Auth Service | User login (returns JWT access token + refresh token) |
+| POST | `/auth/forgot-password` | ❌ No | Auth Service | Request password reset email with token |
+| POST | `/auth/reset-password` | ❌ No | Auth Service | Reset password using token from email |
+| POST | `/auth/refresh` | ❌ No | Auth Service | Refresh JWT access token using refresh token |
+| POST | `/auth/logout` | ❌ No | Auth Service | Logout and revoke refresh token from database |
+
+### Auth Service Proxy (PROTECTED Routes)
+
+All protected routes require **JWT authentication** and are rate limited to **20 requests per 15 minutes per IP**.
+
+| Method | Endpoint | Auth Required | Role Required | Proxied To | Description |
+|--------|----------|---------------|---------------|------------|-------------|
+| POST | `/auth/register-organization` | ✅ JWT | superadmin | Auth Service | Register new organization with admin user (SuperAdmin only) |
+| POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Auth Service | Register new user in organization |
+| POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Auth Service | Reset organization's API secret |
+| POST | `/auth/change-password` | ✅ JWT | - | Auth Service | Change user's password (requires current password) |
+| GET | `/auth/organization/keys` | ✅ JWT | - | Auth Service | Get organization's public API key |
+| GET | `/auth/organization/keys` | ✅ JWT | - | Auth Service | Get organization's public API key |
+
+### Sanctions Service Proxy (Core Service)
+
+All sanctions routes require **JWT or API Key authentication** and are rate limited to **100 requests per 15 minutes per IP**.
+
+| Method | Endpoint | Auth Required | Proxied To | Description | Query Parameters |
+|--------|----------|---------------|------------|-------------|-----------------|
+| GET | `/sanctions/check` | ✅ JWT or API Key | Core Service | Check entity against sanctions/PEP lists | `name` (required), `limit`, `fuzzy`, `schema`, `country` |
+| GET | `/sanctions/history` | ✅ JWT or API Key | Core Service | Retrieve audit logs with pagination and filtering | `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId`, `orgId` |
+| GET | `/sanctions/stats` | ✅ JWT or API Key | Core Service | Get aggregated statistics for organization | - |
+| GET | `/sanctions/health` | ❌ No | Core Service | Health check for Core Service | - |
+
+### Users Management Proxy (Auth Service)
+
+All users management routes require **JWT authentication (admin/superadmin roles)** and are rate limited to **100 requests per 15 minutes per IP**.
+
+| Method | Endpoint | Auth Required | Role Required | Proxied To | Description |
+|--------|----------|---------------|---------------|------------|-------------|
+| GET | `/users` | ✅ JWT | admin/superadmin | Auth Service | List all users in organization |
+| POST | `/users` | ✅ JWT | admin/superadmin | Auth Service | Create new user in organization |
+| DELETE | `/users/:id` | ✅ JWT | admin/superadmin | Auth Service | Delete user from organization (prevents self-deletion) |
+
+### Context Headers (Injected by Gateway)
+
+After successful authentication, the gateway automatically injects these headers into all proxied requests:
+
+| Header | Source | Description |
+|--------|--------|-------------|
+| `x-request-id` | Gateway | Unique request identifier for end-to-end tracing |
+| `x-org-id` | JWT payload or API Key validation | Organization ID (UUID) |
+| `x-user-id` | JWT payload | User ID (UUID) - not present for API Key auth |
+| `x-user-email` | JWT payload | User email or `"api@system"` for API Key auth |
+| `x-auth-type` | Gateway | Authentication method: `"jwt"` or `"api-key"` |
+| `x-role` | JWT payload | User role: `"superadmin"`, `"admin"`, or `"user"` - not present for API Key auth |
 
 Authentication Middleware
 The AuthMiddleware (src/authMiddleware.js) validates two authentication scenarios with automatic caching:
@@ -111,9 +151,10 @@ curl http://localhost:8080/health
 ```
 Returns: `{"service":"api-gateway","status":"UP"}`
 
-- Organization registration (public):
+- Organization registration (protected, SuperAdmin only):
 ```bash
 curl -X POST http://localhost:8080/auth/register-organization \
+	-H "Authorization: Bearer <SUPERADMIN_JWT>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"orgName": "ACME Corp",

@@ -43,9 +43,17 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      await login(email, password);
-      // Success - redirect to check page (FIXED)
-      navigate('/dashboard');
+      const response = await login(email, password);
+      
+      // Get role from response or from stored user data
+      const userRole = response?.user?.role || response?.role;
+      
+      // Route based on role
+      if (userRole === 'superadmin') {
+        navigate('/superadmin');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       // Error - display error message
       setError(err.response?.data?.error || err.response?.data?.message || 'Invalid email or password');

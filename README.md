@@ -30,8 +30,8 @@
 	- Port: 8080 (mapped via `GATEWAY_PORT`, default 8080)
 	- **Architecture**: Class-based design (`GatewayServer`, `AuthMiddleware`) with dependency injection
 	- Responsibilities: request routing (reverse proxy), authentication enforcement, header forwarding
-	- **Route Security**: Protected endpoints (e.g., `/auth/register-user`) defined before public wildcards to ensure proper matching
-	- Routes: `/auth/*` (public routes: login, register-org, forgot-password; protected routes: register-user [admin only], reset-secret [admin only]) → Auth Service; `/sanctions/*` (protected) → Core Service
+	- **Route Security**: Protected endpoints (e.g., `/auth/register-user`, `/auth/register-organization`) defined before public wildcards to ensure proper matching
+	- Routes: `/auth/*` (public routes: login, forgot-password; protected routes: register-organization [superadmin only], register-user [admin only], reset-secret [admin only]) → Auth Service; `/sanctions/*` (protected) → Core Service
 	- Supports two authentication methods: JWT (user login) and API Key/Secret (B2B system-to-system)
 	- **Performance**: API Key validation cached for 60 seconds (node-cache) - 60x faster than uncached validation
 	- Adds context headers (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`) to downstream requests
@@ -50,9 +50,9 @@
 3. **Core Service** ([core-service/](core-service/)) – Sanctions checking and audit logging
 	- Port: 3000 (mapped to 3005 for debug; accessed via API Gateway on production)
 	- Database: PostgreSQL 15 (Sequelize 6 ORM)
-	- Responsibilities: forward sanctions queries to OP Adapter, log audit trail, return history
+	- Responsibilities: forward sanctions queries to OP Adapter, log audit trail, return history and statistics
 	- Enforces organization-based data isolation: users see only their organization's logs
-	- Endpoints: `/check` (sanctions check with audit), `/history` (audit log), `/health`
+	- Endpoints: `/check` (sanctions check with audit), `/history` (audit log with advanced filtering), `/stats` (aggregated statistics), `/health`
 
 4. **OP Adapter** ([op-adapter/](op-adapter/)) – OpenSanctions Yente wrapper
 	- Port: 3000 (mapped to 3001)
@@ -104,24 +104,35 @@ All client requests go through **API Gateway** (port 8080). Below is a complete 
 
 | Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
 |--------|----------|---------------|---------------|-------------|----------------|
-| POST | `/auth/register-organization` | ❌ No | - | Register new organization with admin user | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
+| POST | `/auth/register-organization` | ✅ JWT | superadmin | Register new organization with admin user (SuperAdmin only) | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
 | POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Add user to organization | `email`, `password`, `firstName`, `lastName`, `organizationId` |
 | POST | `/auth/login` | ❌ No | - | User login (returns JWT tokens) | `email`, `password` |
 | POST | `/auth/refresh` | ❌ No | - | Refresh access token | `refreshToken` |
 | POST | `/auth/logout` | ❌ No | - | Revoke refresh token | `refreshToken` |
 | POST | `/auth/forgot-password` | ❌ No | - | Request password reset (sends email) | `email` |
 | POST | `/auth/reset-password` | ❌ No | - | Reset password with token | `userId`, `token`, `newPassword` |
+| POST | `/auth/change-password` | ✅ JWT | - | Change user password | `currentPassword`, `newPassword` |
 | POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Regenerate organization API secret | - |
+| GET | `/auth/organization/keys` | ✅ JWT | - | Get organization API keys | - |
 | POST | `/auth/internal/validate-api-key` | ❌ Internal | - | Validate API key (used by Gateway) | `apiKey`, `apiSecret` |
 | GET | `/auth/health` | ❌ No | - | Health check | - |
+
+### User Management Endpoints (Auth Service via `/users/*`)
+
+| Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
+|--------|----------|---------------|---------------|-------------|----------------|
+| GET | `/users` | ✅ JWT | admin/superadmin | List all users in organization | - |
+| POST | `/users` | ✅ JWT | admin/superadmin | Create new user in organization | `email`, `password`, `firstName`, `lastName` |
+| DELETE | `/users/:id` | ✅ JWT | admin/superadmin | Delete user from organization | `id` (user ID in URL) |
 
 ### Sanctions Endpoints (Core Service via `/sanctions/*`)
 
 | Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
 |--------|----------|---------------|---------------|-------------|----------------|
-| GET | `/sanctions/check` | ✅ JWT or API Key | - | Check entity against sanctions/PEP lists | `name` (required), `limit` (1-100, default 15), `fuzzy` (true/false), `schema` (Person/Company/etc), `country` (ISO code) |
-| GET | `/sanctions/history` | ✅ JWT or API Key | - | Retrieve audit logs with filtering | `page` (default 1), `limit` (default 20), `search` (text), `hasHit` (true/false), `startDate` (ISO), `endDate` (ISO), `userId` (UUID), `orgId` (superadmin only) |
-| GET | `/sanctions/health` | ❌ No | - | Health check | - |
+| GET | `/sanctions/check` | ✅ JWT or API Key | - | Check entity against sanctions/PEP lists; creates audit log | `name` (required), `limit` (1-100, default 15), `fuzzy` (true/false), `schema` (Person/Company/etc), `country` (ISO code) |
+| GET | `/sanctions/history` | ✅ JWT or API Key | - | Retrieve audit logs with pagination and advanced filtering | `page` (default 1), `limit` (default 20), `search` (text), `hasHit` (true/false), `startDate` (ISO), `endDate` (ISO), `userId` (UUID), `orgId` (superadmin only) |
+| GET | `/sanctions/stats` | ✅ JWT or API Key | - | Get aggregated statistics for organization | - |
+| GET | `/sanctions/health` | ✅ JWT or API Key | - | Core Service health check | - |
 
 ### API Gateway Endpoints
 
@@ -188,6 +199,7 @@ The API Gateway automatically adds these headers to downstream service requests 
 - **Caching**: node-cache (in-memory caching for API key validation; 60s TTL)
 - **Validation**: joi (request payload validation for email format, password strength)
 - **Rate Limiting**: express-rate-limit (per-IP request throttling for auth and API endpoints)
+- **Email Service**: nodemailer (SMTP email sending), Ethereal Email (free SMTP for testing/development)
 - **HTTP/Networking**: axios (inter-service calls), CORS middleware, http-proxy-middleware (reverse proxy)
 - **Infrastructure**: Docker Compose 3.8, environment variables (.env)
 - **Development**: nodemon (watch mode), Vitest (frontend testing)
@@ -202,7 +214,13 @@ The API Gateway automatically adds these headers to downstream service requests 
 	- Password reset flow: request reset via `/forgot-password` (sends email with token), reset password with token via `/reset-password`
 	- API key validation for system-to-system (B2B) authentication
 	- Reset organization API secret (`/reset-secret` admin-only endpoint)
+	- **User Management (Admin)**: List users (`GET /users`), create users (`POST /users`), delete users (`DELETE /users/:id`) with organization isolation and self-deletion prevention
 	- **Request validation** using Joi: email format validation, password minimum 8 characters for registration and password reset
+	- **Welcome Emails**: 
+		- Sent automatically when registering new organization (welcome email to admin with login instructions and API credentials)
+		- Sent automatically when creating new user in organization (welcome email to new user with login instructions)
+		- Sent automatically when registering user via SuperAdmin panel (welcome email with login credentials)
+		- Uses nodemailer with Ethereal SMTP for testing/development (non-blocking, logged but doesn't fail API calls if email fails)
 
 - **API Gateway & Authentication**:
 	- **Class-based architecture**: GatewayServer and AuthMiddleware classes with dependency injection
@@ -242,9 +260,11 @@ The API Gateway automatically adds these headers to downstream service requests 
 	- **MainLayout**: Top navigation bar with role-based menu items (Users page visible only for admins)
 	- **Authentication flow**: Login page → JWT token storage → protected routes with automatic redirect
 	- **Entity Screening Panel**: Real-time sanctions checking with visual result cards (CLEAN/HIT status)
-	- **Audit History**: Paginated view of organization's sanctions checks
-	- **User Management**: Admin panel for adding users to organization (admin-only)
-	- **Settings Page**: Account configuration (stub)
+	- **Audit History**: Paginated view of organization's sanctions checks with advanced filtering (search, date range, hit status, user)
+	- **Dashboard**: Analytics with charts displaying total checks, sanction hits, PEP hits, and recent activity
+	- **User Management**: Admin panel for listing users, creating users, and deleting users from organization (admin-only) with self-deletion prevention
+	- **Settings Page**: Change password functionality and account configuration
+	- **Developer Page**: API key management and developer tools
 	- Responsive design with react-bootstrap components
 	- English UI with clear labeling and user feedback
 
@@ -310,6 +330,7 @@ For detailed information about each test suite, see the Testing section in indiv
 ### Requirements
 - Docker + Docker Compose (for containerized stack)
 - Node.js 18 (optional; for running services locally without Docker)
+- MongoDB CLI (`mongosh`) for initial SuperAdmin setup (can be run inside container)
 
 ### Quick Start
 1. Clone the repository:
@@ -346,6 +367,115 @@ curl http://localhost:8000/health          # Yente (or YENTE_PORT)
 Open Swagger UI for Gateway:
 http://localhost:8080/api-docs
 
+### Initial Setup (Creating the First SuperAdmin)
+
+By default, public registration is disabled for security reasons. To access the system, you must manually create the initial SuperAdmin account directly in the MongoDB database (Seeding).
+
+**Follow these steps to create your "God Mode" account:**
+
+#### 1. Access the MongoDB Container
+Open your terminal and enter the MongoDB container:
+```bash
+docker exec -it mongo-1 mongosh
+```
+
+#### 2. Switch to the Auth Database
+Select the database used by the Auth Service:
+```javascript
+use auth_db
+```
+
+#### 3. Run the Seeding Script
+Copy and paste the following JavaScript code into the mongosh terminal. This will create a system organization and the SuperAdmin user:
+
+**Default Credentials:**
+- Email: `super@admin.com`
+- Password: `admin123`
+
+```javascript
+// 1. Generate a new Organization ID
+var orgId = new ObjectId();
+
+// 2. Create the System Organization
+db.organizations.insertOne({
+    _id: orgId,
+    name: "AML System Corp",
+    country: "Global",
+    city: "System",
+    address: "Root Level",
+    apiKey: "sys-" + Math.random().toString(36).substring(7),
+    createdAt: new Date(),
+    updatedAt: new Date()
+});
+
+// 3. Create the SuperAdmin User
+db.users.insertOne({
+    email: "super@admin.com",
+    // Bcrypt hash for password: "admin123"
+    passwordHash: "$2a$10$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa",
+    firstName: "System",
+    lastName: "SuperAdmin",
+    role: "superadmin",
+    organizationId: orgId,
+    createdAt: new Date()
+});
+
+print("✅ SuperAdmin created successfully!");
+```
+
+#### 4. Verify SuperAdmin Creation
+```javascript
+// List all users to verify
+db.users.find();
+```
+
+You should see the SuperAdmin user with `role: "superadmin"`.
+
+#### 5. Login to System
+1. Navigate to http://localhost:5173 (or your frontend URL)
+2. Click on **Login**
+3. Enter the default credentials:
+   - Email: `super@admin.com`
+   - Password: `admin123`
+4. You will be redirected to the **SuperAdmin Portal** where you can register other organizations
+
+#### 6. Change Default Password (Important!)
+After logging in with the default SuperAdmin account:
+1. Go to **Settings** page
+2. Click **Change Password**
+3. Enter the current password (`admin123`)
+4. Set a strong new password
+5. Save the changes
+
+**Important Security Notes:**
+- ⚠️ Change the default SuperAdmin password immediately in production
+- ⚠️ The SuperAdmin can register organizations and create other admins - use this account carefully
+- 🔒 Store SuperAdmin credentials in a secure password manager
+- 📋 Consider creating additional SuperAdmin accounts for backup/rotation purposes
+
+#### Troubleshooting
+
+**MongoDB connection refused?**
+Make sure MongoDB container is running: `docker compose ps`
+
+**Cannot find mongosh command?**
+Install MongoDB Shell: https://www.mongodb.com/try/download/shell or use MongoDB Compass GUI.
+
+**Wrong password hash?**
+The provided hash is for password `admin123` using bcryptjs with 10 rounds. To use a different password, generate a bcrypt hash:
+```bash
+# Using Node.js
+node -e "console.log(require('bcryptjs').hashSync('yourpassword', 10))"
+```
+
+**Need to reset SuperAdmin account?**
+Delete the user and organization from MongoDB and re-run the seeding script:
+```javascript
+db.users.deleteMany({ email: "super@admin.com" });
+db.organizations.deleteMany({ name: "AML System Corp" });
+// Then re-run seeding script above
+```
+
 ### Environment Variables (.env)
 See [.env.example](.env.example) for template. Key variables:
 
@@ -377,11 +507,103 @@ Services use Docker volumes:
 
 Data persists across container restarts. To reset: `docker compose down -v` (warning: deletes all data).
 
+### Email Service Configuration
+
+The system sends emails via **nodemailer** for password resets and welcome notifications. By default, development environments use **Ethereal Email** (free, disposable SMTP service for testing).
+
+#### Default Configuration (Development)
+
+For development/testing, the Auth Service automatically uses Ethereal Email (no configuration needed):
+- Emails are sent but not to real addresses (safe for testing)
+- Ethereal creates test email accounts on demand
+- Email preview URLs are logged in the terminal
+- See logs for links to view sent emails
+
+Example log output:
+```
+✉️  Password reset email sent successfully
+   Preview URL: https://ethereal.email/message/...
+```
+
+#### Production Email Configuration
+
+For production, configure real SMTP credentials in `.env`:
+
+```bash
+# Real SMTP Server (Gmail, SendGrid, AWS SES, etc.)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=noreply@yourdomain.com
+```
+
+Then update `auth-service/src/utils/emailSender.js` to use environment variables instead of Ethereal.
+
+#### Email Templates
+
+The system sends emails for:
+
+1. **Welcome Email (Organization Registration)**
+   - Triggered: When SuperAdmin registers new organization via `/auth/register-organization`
+   - Recipient: Organization admin
+   - Content: Login credentials, API key management instructions, next steps
+   - Subject: "Welcome to AML Checker"
+
+2. **Welcome Email (User Registration)**
+   - Triggered: When admin creates new user via `/auth/register-user` or `/users`
+   - Recipient: New user
+   - Content: Login credentials, password change instructions
+   - Subject: "Welcome to AML Checker"
+
+3. **Password Reset Email**
+   - Triggered: When user requests password reset via `/auth/forgot-password`
+   - Recipient: User email
+   - Content: Reset link with token, token valid for 1 hour
+   - Subject: "Password Reset Request"
+
+#### Testing Emails
+
+To view sent emails during development:
+
+1. Run the application
+2. Perform an action that sends email (register organization, reset password, etc.)
+3. Check terminal logs for Ethereal preview URL
+4. Click the link to view the email in browser (HTML rendering)
+5. Inspect email content, links, formatting
+
+#### Troubleshooting
+
+**Emails not sending?**
+- Check logs: `docker compose logs auth-service`
+- Verify SMTP credentials (development uses Ethereal, no config needed)
+- Check network connectivity to SMTP server (production)
+- Ensure sender email address is valid
+
+**Email links broken?**
+- Verify `FRONTEND_URL` environment variable is set to your frontend URL
+- Example: `FRONTEND_URL=http://localhost:5173`
+- Password reset links use this URL to construct reset token link
+
+**Want to disable emails?**
+- For testing purposes, emails are non-blocking (API calls succeed even if email fails)
+- Email errors are logged but don't affect user experience
+- To disable, remove the `sendWelcomeEmail()` and `sendPasswordResetEmail()` calls from controllers
+
 ## Usage
 
-### 1. Register Organization (Admin Setup)
+### Quick Navigation
+
+1. **First Time Setup**: [Create SuperAdmin Account](#initial-setup-creating-the-first-superadmin)
+2. **SuperAdmin Tasks**: Login as SuperAdmin → Register new organizations → Manage API credentials
+3. **Admin Tasks**: Create users in organization → Delete users → Reset API secret
+4. **User Tasks**: Login → Perform sanctions screening → View audit history
+5. **API Integration**: Use API keys for system-to-system (B2B) authentication
+
+### 1. Register Organization (SuperAdmin Only)
 ```bash
 curl -X POST http://localhost:8080/auth/register-organization \
+	-H "Authorization: Bearer <SUPERADMIN_JWT_TOKEN>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"orgName": "ACME Corp",
@@ -522,7 +744,59 @@ curl -X GET "http://localhost:8080/sanctions/history?page=2&limit=50" \
 	-H "Authorization: Bearer <JWT_TOKEN>"
 
 # Combined filters (search + date range + pagination)
-curl -X GET "http://localhost:8080/sanctions/history?search=John&startDate=2025-12-01T00:00:00Z&hasHit=true&page=1&limit=10" \
+cur
+
+### 9. Get Organization Statistics
+```bash
+curl10. User Management (Admin Only)
+```bash
+# List all users in organization
+curl -X GET http://localhost:8080/users \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+
+# Create new user in organization
+curl -X POST http://localhost:8080/users \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "newuser@acme.test",
+		"password": "Str0ngPass!",
+		"firstName": "Alice",
+		"lastName": "Johnson"
+	}'
+
+# Delete user from organization (prevents self-deletion)
+curl -X DELETE http://localhost:8080/users/<USER_ID> \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+```
+
+### 11. Change Password
+```bash
+curl -X POST http://localhost:8080/auth/change-password \
+	-H "Authorization: Bearer <JWT_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"currentPassword": "OldPassword123",
+		"newPassword": "NewStr0ngPass!"
+	}'
+```
+
+### 12. Get Organization API Keys
+```bash
+curl -X GET http://localhost:8080/auth/organization/keys \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+```
+**Response includes**:
+- `apiKey` – public API key (format: `pk_live_...`)
+
+###  -X GET http://localhost:8080/sanctions/stats \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+```
+**Response includes**:
+- `totalChecks` – total number of sanctions checks for organization
+- `sanctionHits` – number of checks with sanctioned entities
+- `pepHits` – number of checks with PEP entities
+- `recentLogs` – last 100 audit logs with basic detailsl -X GET "http://localhost:8080/sanctions/history?search=John&startDate=2025-12-01T00:00:00Z&hasHit=true&page=1&limit=10" \
 	-H "Authorization: Bearer <JWT_TOKEN>"
 ```
 
@@ -542,15 +816,23 @@ curl http://localhost:3005/health                  # Core Service (debug)
 		"timestamp": "2025-12-28T10:30:45.123Z",
 		"requestId": "req-1735386645123-a1b2c3d4"
 	},
-	"query": "John Doe",
-	"search_params": {
-		"limit": 15,
-		"fuzzy": false,
-		"schema": null
-	},
-	"hits_count": 2,
-	"data": [
+	"quentityName": "John Doe",
+			"entityScore": 0.98,
+			"isSanctioned": true,
+			"isPep": false,
+			"createdAt": "2025-12-28T10:30:00Z"
+		},
 		{
+			"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+			"organizationId": "<org_id>",
+			"userId": "API",
+			"searchQuery": "Jane Smith",
+			"hasHit": false,
+			"hitsCount": 0,
+			"entityName": null,
+			"entityScore": null,
+			"isSanctioned": false,
+			"isPep": false
 			"id": "ocbid-8f7ac0e8b79e67a42c6de10d8a2c7b3f",
 			"name": "John Doe",
 			"schema": "Person",
@@ -595,6 +877,42 @@ curl http://localhost:3005/health                  # Core Service (debug)
 			"createdAt": "2025-12-28T10:25:00Z"
 		}
 	],
+
+### Response Example (Organization Statistics)
+```json
+{
+	"totalChecks": 150,
+	"sanctionHits": 25,
+	"pepHits": 10,
+	"recentLogs": [
+		{
+			"id": "550e8400-e29b-41d4-a716-446655440000",
+			"searchQuery": "John Doe",
+			"isSanctioned": true,
+			"isPep": false,
+			"createdAt": "2025-12-28T10:30:00Z"
+		},
+		{
+			"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+			"searchQuery": "Jane Smith",
+			"isSanctioned": false,
+			"isPep": false,
+			"createdAt": "2025-12-28T10:25:00Z"
+		}
+	]
+}
+```
+
+## Acknowledgements
+- OpenSanctions project ([opensanctions.org](https://www.opensanctions.org/)) for providing comprehensive sanctions and PEP data.
+- Yente API ([github.com/opensanctions/yente](https://github.com/opensanctions/yente)) for the local sanctions API implementation.
+- All open-source libraries and frameworks used in this project.
+
+## Contact
+Created by Adam Węglewski - feel free to contact me!
+
+## License
+This project is open source and available under the [MIT License](LICENSE).
 	"meta": {
 		"totalItems": 150,
 		"totalPages": 8,

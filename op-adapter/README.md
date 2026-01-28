@@ -33,23 +33,142 @@ Docker Compose Run
 - Automatically connects to Yente container at `http://yente:${YENTE_PORT}`.
 
 Endpoints
-- `GET /health` – health check endpoint; returns service status and mode.
-	- Query parameters: none.
-	- No authentication required.
-	- Returns: `{ status: "UP", service: "op-adapter", mode: "ES Modules + Retry" }`.
-- `GET /check` – main sanctions verification endpoint (used by Core Service).
-	- Query parameters:
-		- `name` (required) – person or entity name to check against sanctions/PEP lists; trimmed before processing.
-		- `limit` (optional, default: 15, range: 1-100) – maximum number of results returned; automatically clamped to valid range (negative/zero → 1, >100 → 100).
-		- `fuzzy` (optional, default: false) – enable fuzzy search to handle typos and variations; accepts 'true'/'false' string or boolean.
-		- `schema` (optional) – filter by entity type (e.g., 'Person', 'Company', 'Organization'); if omitted, searches all types.
-		- `country` (optional) – filter by country code (e.g., 'US', 'GB'); if omitted, searches all countries.
-	- Optional header: `x-request-id` (request tracking ID; auto-generated format `req-{timestamp}-{random}` if missing, returned in response).
-	- No authentication required; called from Core Service which enforces organization context.
-	- Delegates to Yente API: `GET /search/default?q=<name>&limit=<limit>&fuzzy=<fuzzy>&schema=<schema>&countries=<country>` with automatic retry (3 attempts, exponential backoff).
-	- Returns: simplified response with query metadata, hit count, request ID, search parameters used, and mapped result array.
-	- Response fields per result: `id`, `name`, `schema`, `isSanctioned`, `isPep`, `score`, `birthDate`, `birthPlace`, `gender`, `nationality`, `country`, `position`, `notes`, `alias`, `address`, `datasets`.
-	- Error responses: 400 (missing name parameter), 502 (Yente unavailable after retries; includes error details in development mode), 500 (unexpected internal error).
+---------
+
+### Service Endpoints
+
+| Method | Endpoint | Auth Required | Description |
+|--------|----------|---------------|-------------|
+| GET | `/health` | ❌ No | Returns service status and mode |
+
+### Sanctions Verification Endpoints
+
+| Method | Endpoint | Auth Required | Description | Query Parameters | Optional Headers |
+|--------|----------|---------------|-------------|------------------|------------------|
+| GET | `/check` | ❌ No | Check entity against sanctions/PEP lists; delegates to Yente API with retry | `name` (required)<br>`limit` (optional, default: 15, range: 1-100)<br>`fuzzy` (optional, default: false)<br>`schema` (optional)<br>`country` (optional) | `x-request-id` (request tracking) |
+
+### Endpoint Details
+
+#### `/health` - Health Check
+**Purpose:** Service health verification and status monitoring.
+
+**Response:**
+```json
+{ 
+  "status": "UP", 
+  "service": "op-adapter", 
+  "mode": "ES Modules + Retry" 
+}
+```
+
+---
+
+#### `/check` - Sanctions Check
+**Purpose:** Query OpenSanctions data via Yente API; map results to simplified format; return entity sanctions/PEP status.
+
+**Query Parameters:**
+- `name` (required) - Person or entity name to check; trimmed before processing; returns 400 if missing/empty
+- `limit` (optional, default: 15, range: 1-100) - Maximum results returned; automatically clamped to valid range:
+  - Negative values or 0 → 1
+  - Values > 100 → 100
+  - Invalid/non-numeric → 15 (default)
+- `fuzzy` (optional, default: false) - Enable fuzzy search for typos and variations; accepts:
+  - Boolean: `true`/`false`
+  - String: `"true"`/`"false"` (case-insensitive)
+  - Other values → `false`
+- `schema` (optional) - Filter by entity type (e.g., `Person`, `Company`, `Organization`); if omitted, searches all types
+- `country` (optional) - Filter by country code (e.g., `US`, `GB`, `RU`); if omitted, searches all countries
+
+**Optional Headers:**
+- `x-request-id` - Request tracking ID; if absent, auto-generated in format `req-{timestamp}-{random7chars}`; returned in response `meta.requestId`
+
+**Yente API Delegation:**
+- Forwards to: `GET /search/default?q={name}&limit={limit}&fuzzy={fuzzy}&schema={schema}&countries={country}`
+- Retry mechanism: 3 attempts with exponential backoff (1s → 2s → 4s)
+- Timeout per request: 5000ms
+- Retries on: network errors, 5xx server errors
+- No retry on: 4xx client errors (invalid request)
+
+**Response Structure:**
+```json
+{
+  "meta": {
+    "source": "OpenSanctions (Local Yente)",
+    "timestamp": "2025-12-28T10:30:45.123Z",
+    "requestId": "req-1735386645123-a1b2c3d4"
+  },
+  "query": "John Doe",
+  "search_params": {
+    "limit": 15,
+    "fuzzy": false,
+    "schema": null,
+    "country": null
+  },
+  "hits_count": 2,
+  "data": [
+    {
+      "id": "ocbid-8f7ac0e8b79e67a42c6de10d8a2c7b3f",
+      "name": "John Doe",
+      "schema": "Person",
+      "isSanctioned": true,
+      "isPep": false,
+      "score": 0.98,
+      "birthDate": "1970-01-01",
+      "birthPlace": "New York",
+      "gender": "M",
+      "nationality": ["US"],
+      "country": ["US"],
+      "position": ["OFAC Officer"],
+      "notes": ["U.S. OFAC Sanctions List"],
+      "alias": ["J. Doe", "John D."],
+      "address": ["123 Main St, New York, NY"],
+      "datasets": ["ofac-sdn", "eu-consolidated"]
+    }
+  ]
+}
+```
+
+**Response Fields (per entity):**
+- `id` - Entity identifier from Yente
+- `name` - Entity name (mapped from Yente `caption`)
+- `schema` - Entity type: `Person`, `Company`, `Organization`, etc.
+- `isSanctioned` - Boolean flag; `true` if entity on sanctions list (OFAC/UN/EU/etc.)
+- `isPep` - Boolean flag; `true` if Politically Exposed Person
+- `score` - Relevance/match score (0.0-1.0)
+- `birthDate` - Birth date (first value from Yente or null)
+- `birthPlace` - Birth place (first value from Yente or null)
+- `gender` - Gender (first value from Yente or null)
+- `nationality` - Array of nationality codes
+- `country` - Array of country codes
+- `position` - Array of position/role strings
+- `notes` - Array of note/description strings
+- `alias` - Array of alternate names
+- `address` - Array of address strings
+- `datasets` - Array of dataset identifiers (e.g., `ofac-sdn`, `eu-consolidated`)
+
+**Sanctioning Flags (derived from Yente `properties.topics`):**
+- `isSanctioned: true` - Entity found in `topics` array with `"sanction"` value
+- `isPep: true` - Entity found in `topics` array with `"role.pep"` value
+
+**Error Responses:**
+- **400 Bad Request** - Missing or empty `name` parameter
+  ```json
+  { "error": "Missing name parameter" }
+  ```
+
+- **502 Bad Gateway** - Yente unavailable after 3 retry attempts
+  ```json
+  {
+    "error": "Sanctions Service Unavailable",
+    "details": "connect ECONNREFUSED 127.0.0.1:8000"
+  }
+  ```
+  Note: `details` field only present in development mode (`NODE_ENV=development`)
+
+- **500 Internal Server Error** - Unexpected error during processing
+  ```json
+  { "error": "Internal Server Error" }
+  ```
 
 Usage Examples
 - Health:

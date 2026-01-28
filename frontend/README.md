@@ -60,6 +60,7 @@ frontend/
 │   │   ├── LoginPage.jsx             # User authentication form
 │   │   ├── ResetPasswordPage.jsx     # Password reset form
 │   │   ├── SettingsPage.jsx          # User account settings
+│   │   ├── SuperAdminPage.jsx        # Organization registration (superadmin)
 │   │   └── UsersPage.jsx             # User management (admin)
 │   ├── services/               # API service layer
 │   │   ├── api.js                    # Axios instance + interceptors
@@ -77,18 +78,22 @@ frontend/
 ```
 
 Routes and Features
-- `/` – redirects to `/login` if not authenticated; to `/check` if authenticated.
-- `/login` – user authentication form (LoginPage); calls `POST /auth/login` via API Gateway; stores JWT tokens in localStorage; redirects to `/check` on success.
-- `/check` – entity sanctions screening interface (CheckPage with ScreeningPanel); form validates input (trim whitespace, required field); calls `POST /sanctions/check`; displays CLEAN/HIT results with entity details modal; shows loading spinner during API call.
-- `/history` – search history with pagination and filters (HistoryPage); filters by date range, entity name, hit status, user ID; calls `GET /sanctions/history`; displays paginated results table.
+- `/` – redirects to `/dashboard` if authenticated; to `/login` if not authenticated.
+- `/login` – user authentication form (LoginPage); calls `POST /auth/login` via API Gateway; stores JWT tokens in localStorage; redirects based on role (superadmin → `/superadmin`, others → `/dashboard`) on success.
+- `/superadmin` – organization registration form (SuperAdminPage, superadmin role only); create new organizations with admin user; calls `POST /auth/register-organization`; displays API credentials after creation; includes logout button.
 - `/dashboard` – statistics and analytics dashboard (DashboardPage); displays charts (Recharts) for total checks, sanction hits, PEP hits; calls `GET /sanctions/stats`.
+- `/check` – entity sanctions screening interface (CheckPage with ScreeningPanel); form validates input (trim whitespace, required field); calls `GET /sanctions/check`; displays CLEAN/HIT results with entity details modal; shows loading spinner during API call.
+- `/history` – search history with pagination and filters (HistoryPage); filters by date range, entity name, hit status, user ID; calls `GET /sanctions/history`; displays paginated results table.
 - `/users` – user management interface (UsersPage, admin role only); lists all users; create new user form; delete user functionality; calls `GET /users`, `POST /users`, `DELETE /users/:id`.
 - `/settings` – user account settings (SettingsPage); change password form; calls `POST /auth/change-password`.
+- `/developer` – developer tools and utilities (DeveloperPage); API key management, documentation links.
+- `/reset-password` – password reset form (ResetPasswordPage); validates token and allows setting new password; calls `POST /auth/reset-password`.
 
 Protected Routes
-- All routes except `/login` require JWT authentication; redirected to `/login` if token missing/expired.
-- `/users` route restricted to admin role; non-admin users redirected to `/check`.
-- Role-based access enforced via AuthContext and route guards in App.jsx.
+- All routes except `/login` and `/reset-password` require JWT authentication; redirected to `/login` if token missing/expired.
+- `/superadmin` route restricted to superadmin role; non-superadmin users redirected based on their role.
+- `/users` route restricted to admin role; non-admin users redirected to `/dashboard`.
+- Role-based access enforced via AuthContext and ProtectedRoute guards in App.jsx.
 
 API Integration (via API Gateway)
 ---------------------------------
@@ -104,6 +109,7 @@ API Integration (via API Gateway)
 | POST | `/auth/change-password` | `api.js` | Change authenticated user's password | `{ currentPassword, newPassword }` | `{ message }` |
 | POST | `/auth/forgot-password` | `api.js` | Request password reset email with token | `{ email }` | `{ message }` |
 | POST | `/auth/reset-password` | `api.js` | Reset password using token from email | `{ userId, token, newPassword }` | `{ message }` |
+| POST | `/auth/register-organization` | `api.js` | Register new organization with admin (superadmin only) | `{ orgName, email, password, firstName, lastName, ... }` | `{ organization, adminUser, apiKey, apiSecret }` |
 | GET | `/auth/organization/keys` | `api.js` | Get organization's public API key | - | `{ apiKey }` |
 | POST | `/auth/reset-secret` | `api.js` | Reset organization API secret (requires password) | `{ password }` | `{ apiKey, apiSecret }` |
 
@@ -141,7 +147,7 @@ API Integration (via API Gateway)
 **`api.js` (Base API Module):**
 - Axios instance with `baseURL` from `VITE_API_URL`
 - Request/response interceptors for authentication
-- Common API methods: `getHistory()`, `getUsers()`, `createUser()`, `deleteUser()`, `changePassword()`, `getOrganizationKeys()`, `resetOrganizationSecret()`, `requestPasswordReset()`, `confirmPasswordReset()`, `getDashboardStats()`
+- Common API methods: `getHistory()`, `getUsers()`, `createUser()`, `deleteUser()`, `changePassword()`, `getOrganizationKeys()`, `resetOrganizationSecret()`, `requestPasswordReset()`, `confirmPasswordReset()`, `getDashboardStats()`, `registerOrganization()`
 
 **`authService.js` (Authentication Service):**
 - `login(email, password)` - authenticates user, saves tokens to localStorage
@@ -149,7 +155,7 @@ API Integration (via API Gateway)
 - `getCurrentUser()` - retrieves and parses user from localStorage
 
 **`coreService.js` (Core Service):**
-- `checkEntity(params)` - sanctions check with query parameters
+- `checkEntity(params)` - sanctions check with query parameters; calls `GET /sanctions/check` with params
 
 ### API Response Handling
 
@@ -181,13 +187,14 @@ API Integration (via API Gateway)
 ```
 
 How It Works (High Level)
-- **Authentication Flow**: User submits login form → `authService.login()` calls `POST /auth/login` via API Gateway → receives JWT tokens and user object → stores in localStorage → updates AuthContext state → redirects to `/check`.
+- **Authentication Flow**: User submits login form → `authService.login()` calls `POST /auth/login` via API Gateway → receives JWT tokens and user object → stores in localStorage → updates AuthContext state → redirects based on role (superadmin to `/superadmin`, others to `/dashboard`).
 - **Logout Flow**: User clicks logout → `authService.logout()` calls `POST /auth/logout` (invalidates refresh token on server) → clears localStorage (token, refreshToken, user) even on API failure → updates AuthContext state → redirects to `/login`.
-- **Protected Route Access**: User navigates to protected route → AuthContext checks localStorage for user/token → if missing, redirects to `/login` → if present, renders requested page component.
+- **Protected Route Access**: User navigates to protected route → AuthContext checks localStorage for user/token → if missing, redirects to `/login` → if present, renders requested page component; ProtectedRoute checks `requiredRole` and redirects if role mismatch.
 - **API Request Flow**: Component calls API service method → axios interceptor adds `Authorization: Bearer <token>` header from localStorage → request sent to API Gateway → response returned → if 401, interceptor clears localStorage and redirects to `/login`.
-- **Entity Screening Flow**: User enters entity name in ScreeningPanel → form validates (trim whitespace, required field) → calls `coreService.checkEntity()` → `POST /sanctions/check` via API Gateway → receives response with CLEAN/HIT status → normalizes data (handles different API response structures: `data`, `results`, `hits` fields) → displays results (Alert component for CLEAN, ListGroup for HIT entities) → user clicks entity to open details modal.
+- **Entity Screening Flow**: User enters entity name in ScreeningPanel → form validates (trim whitespace, required field) → calls `coreService.checkEntity()` → `GET /sanctions/check` via API Gateway → receives response with CLEAN/HIT status → normalizes data (handles different API response structures: `data`, `results`, `hits` fields) → displays results (Alert component for CLEAN, ListGroup for HIT entities) → user clicks entity to open details modal.
 - **History Viewing Flow**: User navigates to `/history` → HistoryPage mounts → calls `api.get('/sanctions/history')` with pagination/filters → receives paginated data with metadata → displays table with filters (search, date range, hit status) → user applies filters → updates query parameters → refetches data.
 - **Dashboard Flow**: User navigates to `/dashboard` → DashboardPage mounts → calls `api.get('/sanctions/stats')` → receives aggregated statistics (totalChecks, sanctionHits, pepHits, recentLogs) → renders charts (Recharts) and statistics cards.
+- **SuperAdmin Flow**: SuperAdmin logs in → redirected to `/superadmin` → fills organization registration form → calls `registerOrganization()` → `POST /auth/register-organization` → receives organization data with API credentials → displays success message with copyable credentials → can logout via button in header.
 - **Token Persistence**: On page load/refresh → AuthContext useEffect reads localStorage → calls `authService.getCurrentUser()` → parses user JSON → updates state → user remains logged in across sessions.
 
 Testing
@@ -252,7 +259,7 @@ api Service (services/api.js)
 
 coreService (services/coreService.js)
 - Sanctions check API calls via API Gateway.
-- `checkEntity({ name, fuzzy, limit })`: calls `api.post('/sanctions/check', { name, fuzzy, limit })` → returns response.data with CLEAN/HIT status and entity array.
+- `checkEntity({ name, fuzzy, limit })`: calls `api.get('/sanctions/check', { params })` → returns response.data with CLEAN/HIT status and entity array.
 
 Data Models
 - **User** (localStorage + AuthContext): `{ id, email, firstName, lastName, role, organizationId }` (JWT payload stored as JSON string).
@@ -294,6 +301,7 @@ ScreeningPanel Component (components/ScreeningPanel.jsx)
 - Form submission: validates empty input → calls `coreService.checkEntity({ name: trimmedName, fuzzy: true, limit: 10 })` → normalizes API response (handles `data`, `results`, `hits` fields) → updates results state.
 - Results display: CLEAN status shows success Alert; HIT status shows danger Alert with ListGroup of entities; each entity clickable to open Modal with full details.
 - Error handling: displays validation errors (Name field is required); displays API errors from `response.data.message` or `error.message`; shows loading Spinner during API call.
+- Note: Uses GET method with query parameters via coreService.checkEntity().
 
 AuthContext (context/AuthContext.jsx)
 - Global authentication state provider using React Context API.

@@ -67,7 +67,6 @@ All public routes are rate limited to **20 requests per 15 minutes per IP**.
 
 | Method | Endpoint | Auth Required | Proxied To | Description |
 |--------|----------|---------------|------------|-------------|
-| POST | `/auth/register-organization` | ❌ No | Auth Service | Register new organization with admin user |
 | POST | `/auth/login` | ❌ No | Auth Service | User login (returns JWT access token + refresh token) |
 | POST | `/auth/forgot-password` | ❌ No | Auth Service | Request password reset email with token |
 | POST | `/auth/reset-password` | ❌ No | Auth Service | Reset password using token from email |
@@ -80,9 +79,11 @@ All protected routes require **JWT authentication** and are rate limited to **20
 
 | Method | Endpoint | Auth Required | Role Required | Proxied To | Description |
 |--------|----------|---------------|---------------|------------|-------------|
+| POST | `/auth/register-organization` | ✅ JWT | superadmin | Auth Service | Register new organization with admin user (SuperAdmin only) |
 | POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Auth Service | Register new user in organization |
 | POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Auth Service | Reset organization's API secret |
 | POST | `/auth/change-password` | ✅ JWT | - | Auth Service | Change user's password (requires current password) |
+| GET | `/auth/organization/keys` | ✅ JWT | - | Auth Service | Get organization's public API key |
 | GET | `/auth/organization/keys` | ✅ JWT | - | Auth Service | Get organization's public API key |
 
 ### Sanctions Service Proxy (Core Service)
@@ -150,9 +151,10 @@ curl http://localhost:8080/health
 ```
 Returns: `{"service":"api-gateway","status":"UP"}`
 
-- Organization registration (public):
+- Organization registration (protected, SuperAdmin only):
 ```bash
 curl -X POST http://localhost:8080/auth/register-organization \
+	-H "Authorization: Bearer <SUPERADMIN_JWT>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"orgName": "ACME Corp",

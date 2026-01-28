@@ -199,6 +199,7 @@ The API Gateway automatically adds these headers to downstream service requests 
 - **Caching**: node-cache (in-memory caching for API key validation; 60s TTL)
 - **Validation**: joi (request payload validation for email format, password strength)
 - **Rate Limiting**: express-rate-limit (per-IP request throttling for auth and API endpoints)
+- **Email Service**: nodemailer (SMTP email sending), Ethereal Email (free SMTP for testing/development)
 - **HTTP/Networking**: axios (inter-service calls), CORS middleware, http-proxy-middleware (reverse proxy)
 - **Infrastructure**: Docker Compose 3.8, environment variables (.env)
 - **Development**: nodemon (watch mode), Vitest (frontend testing)
@@ -215,6 +216,11 @@ The API Gateway automatically adds these headers to downstream service requests 
 	- Reset organization API secret (`/reset-secret` admin-only endpoint)
 	- **User Management (Admin)**: List users (`GET /users`), create users (`POST /users`), delete users (`DELETE /users/:id`) with organization isolation and self-deletion prevention
 	- **Request validation** using Joi: email format validation, password minimum 8 characters for registration and password reset
+	- **Welcome Emails**: 
+		- Sent automatically when registering new organization (welcome email to admin with login instructions and API credentials)
+		- Sent automatically when creating new user in organization (welcome email to new user with login instructions)
+		- Sent automatically when registering user via SuperAdmin panel (welcome email with login credentials)
+		- Uses nodemailer with Ethereal SMTP for testing/development (non-blocking, logged but doesn't fail API calls if email fails)
 
 - **API Gateway & Authentication**:
 	- **Class-based architecture**: GatewayServer and AuthMiddleware classes with dependency injection
@@ -324,6 +330,7 @@ For detailed information about each test suite, see the Testing section in indiv
 ### Requirements
 - Docker + Docker Compose (for containerized stack)
 - Node.js 18 (optional; for running services locally without Docker)
+- MongoDB CLI (`mongosh`) for initial SuperAdmin setup (can be run inside container)
 
 ### Quick Start
 1. Clone the repository:
@@ -360,6 +367,115 @@ curl http://localhost:8000/health          # Yente (or YENTE_PORT)
 Open Swagger UI for Gateway:
 http://localhost:8080/api-docs
 
+### Initial Setup (Creating the First SuperAdmin)
+
+By default, public registration is disabled for security reasons. To access the system, you must manually create the initial SuperAdmin account directly in the MongoDB database (Seeding).
+
+**Follow these steps to create your "God Mode" account:**
+
+#### 1. Access the MongoDB Container
+Open your terminal and enter the MongoDB container:
+```bash
+docker exec -it mongo-1 mongosh
+```
+
+#### 2. Switch to the Auth Database
+Select the database used by the Auth Service:
+```javascript
+use auth_db
+```
+
+#### 3. Run the Seeding Script
+Copy and paste the following JavaScript code into the mongosh terminal. This will create a system organization and the SuperAdmin user:
+
+**Default Credentials:**
+- Email: `super@admin.com`
+- Password: `admin123`
+
+```javascript
+// 1. Generate a new Organization ID
+var orgId = new ObjectId();
+
+// 2. Create the System Organization
+db.organizations.insertOne({
+    _id: orgId,
+    name: "AML System Corp",
+    country: "Global",
+    city: "System",
+    address: "Root Level",
+    apiKey: "sys-" + Math.random().toString(36).substring(7),
+    createdAt: new Date(),
+    updatedAt: new Date()
+});
+
+// 3. Create the SuperAdmin User
+db.users.insertOne({
+    email: "super@admin.com",
+    // Bcrypt hash for password: "admin123"
+    passwordHash: "$2a$10$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa",
+    firstName: "System",
+    lastName: "SuperAdmin",
+    role: "superadmin",
+    organizationId: orgId,
+    createdAt: new Date()
+});
+
+print("✅ SuperAdmin created successfully!");
+```
+
+#### 4. Verify SuperAdmin Creation
+```javascript
+// List all users to verify
+db.users.find();
+```
+
+You should see the SuperAdmin user with `role: "superadmin"`.
+
+#### 5. Login to System
+1. Navigate to http://localhost:5173 (or your frontend URL)
+2. Click on **Login**
+3. Enter the default credentials:
+   - Email: `super@admin.com`
+   - Password: `admin123`
+4. You will be redirected to the **SuperAdmin Portal** where you can register other organizations
+
+#### 6. Change Default Password (Important!)
+After logging in with the default SuperAdmin account:
+1. Go to **Settings** page
+2. Click **Change Password**
+3. Enter the current password (`admin123`)
+4. Set a strong new password
+5. Save the changes
+
+**Important Security Notes:**
+- ⚠️ Change the default SuperAdmin password immediately in production
+- ⚠️ The SuperAdmin can register organizations and create other admins - use this account carefully
+- 🔒 Store SuperAdmin credentials in a secure password manager
+- 📋 Consider creating additional SuperAdmin accounts for backup/rotation purposes
+
+#### Troubleshooting
+
+**MongoDB connection refused?**
+Make sure MongoDB container is running: `docker compose ps`
+
+**Cannot find mongosh command?**
+Install MongoDB Shell: https://www.mongodb.com/try/download/shell or use MongoDB Compass GUI.
+
+**Wrong password hash?**
+The provided hash is for password `admin123` using bcryptjs with 10 rounds. To use a different password, generate a bcrypt hash:
+```bash
+# Using Node.js
+node -e "console.log(require('bcryptjs').hashSync('yourpassword', 10))"
+```
+
+**Need to reset SuperAdmin account?**
+Delete the user and organization from MongoDB and re-run the seeding script:
+```javascript
+db.users.deleteMany({ email: "super@admin.com" });
+db.organizations.deleteMany({ name: "AML System Corp" });
+// Then re-run seeding script above
+```
+
 ### Environment Variables (.env)
 See [.env.example](.env.example) for template. Key variables:
 
@@ -391,9 +507,100 @@ Services use Docker volumes:
 
 Data persists across container restarts. To reset: `docker compose down -v` (warning: deletes all data).
 
+### Email Service Configuration
+
+The system sends emails via **nodemailer** for password resets and welcome notifications. By default, development environments use **Ethereal Email** (free, disposable SMTP service for testing).
+
+#### Default Configuration (Development)
+
+For development/testing, the Auth Service automatically uses Ethereal Email (no configuration needed):
+- Emails are sent but not to real addresses (safe for testing)
+- Ethereal creates test email accounts on demand
+- Email preview URLs are logged in the terminal
+- See logs for links to view sent emails
+
+Example log output:
+```
+✉️  Password reset email sent successfully
+   Preview URL: https://ethereal.email/message/...
+```
+
+#### Production Email Configuration
+
+For production, configure real SMTP credentials in `.env`:
+
+```bash
+# Real SMTP Server (Gmail, SendGrid, AWS SES, etc.)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=noreply@yourdomain.com
+```
+
+Then update `auth-service/src/utils/emailSender.js` to use environment variables instead of Ethereal.
+
+#### Email Templates
+
+The system sends emails for:
+
+1. **Welcome Email (Organization Registration)**
+   - Triggered: When SuperAdmin registers new organization via `/auth/register-organization`
+   - Recipient: Organization admin
+   - Content: Login credentials, API key management instructions, next steps
+   - Subject: "Welcome to AML Checker"
+
+2. **Welcome Email (User Registration)**
+   - Triggered: When admin creates new user via `/auth/register-user` or `/users`
+   - Recipient: New user
+   - Content: Login credentials, password change instructions
+   - Subject: "Welcome to AML Checker"
+
+3. **Password Reset Email**
+   - Triggered: When user requests password reset via `/auth/forgot-password`
+   - Recipient: User email
+   - Content: Reset link with token, token valid for 1 hour
+   - Subject: "Password Reset Request"
+
+#### Testing Emails
+
+To view sent emails during development:
+
+1. Run the application
+2. Perform an action that sends email (register organization, reset password, etc.)
+3. Check terminal logs for Ethereal preview URL
+4. Click the link to view the email in browser (HTML rendering)
+5. Inspect email content, links, formatting
+
+#### Troubleshooting
+
+**Emails not sending?**
+- Check logs: `docker compose logs auth-service`
+- Verify SMTP credentials (development uses Ethereal, no config needed)
+- Check network connectivity to SMTP server (production)
+- Ensure sender email address is valid
+
+**Email links broken?**
+- Verify `FRONTEND_URL` environment variable is set to your frontend URL
+- Example: `FRONTEND_URL=http://localhost:5173`
+- Password reset links use this URL to construct reset token link
+
+**Want to disable emails?**
+- For testing purposes, emails are non-blocking (API calls succeed even if email fails)
+- Email errors are logged but don't affect user experience
+- To disable, remove the `sendWelcomeEmail()` and `sendPasswordResetEmail()` calls from controllers
+
 ## Usage
 
-### 1. Register Organization (Admin Setup)
+### Quick Navigation
+
+1. **First Time Setup**: [Create SuperAdmin Account](#initial-setup-creating-the-first-superadmin)
+2. **SuperAdmin Tasks**: Register new organizations → Manage API credentials
+3. **Admin Tasks**: Create users in organization → Delete users → Reset API secret
+4. **User Tasks**: Login → Perform sanctions screening → View audit history
+5. **API Integration**: Use API keys for system-to-system (B2B) authentication
+
+### 1. Register Organization (SuperAdmin Portal or API)
 ```bash
 curl -X POST http://localhost:8080/auth/register-organization \
 	-H "Content-Type: application/json" \

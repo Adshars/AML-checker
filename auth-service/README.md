@@ -45,7 +45,6 @@ Endpoints
 
 | Method | Endpoint | Rate Limit | Description | Required Fields |
 |--------|----------|------------|-------------|-----------------|
-| POST | `/auth/register-organization` | None | Register new organization with admin user; generates API key/secret | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
 | POST | `/auth/login` | 50 req/15min | User login; returns JWT access token (15min) + refresh token (7d) | `email`, `password` |
 | POST | `/auth/refresh` | None | Generate new access token using valid refresh token | `refreshToken` |
 | POST | `/auth/logout` | None | Revoke refresh token from database | `refreshToken` |
@@ -56,7 +55,8 @@ Endpoints
 
 | Method | Endpoint | Auth Required | Role Required | Description | Required Fields |
 |--------|----------|---------------|---------------|-------------|-----------------|
-| POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Add user to organization (role forced to 'user') | `email`, `password`, `firstName`, `lastName`, `organizationId` |
+| POST | `/auth/register-organization` | ✅ JWT | superadmin | Register new organization with admin user; generates API key/secret; sends welcome email to admin | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
+| POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Add user to organization (role forced to 'user'); sends welcome email | `email`, `password`, `firstName`, `lastName`, `organizationId` |
 | POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Reset organization's API secret; requires password confirmation | `password` |
 | POST | `/auth/change-password` | ✅ JWT | - | Change authenticated user's password | `currentPassword`, `newPassword` |
 | GET | `/auth/organization/keys` | ✅ JWT | - | Get organization's public API key | - |
@@ -74,7 +74,7 @@ All users management endpoints require **JWT authentication** with **admin or su
 | Method | Endpoint | Description | Required Fields | Security Features |
 |--------|----------|-------------|-----------------|-------------------|
 | GET | `/users` | List all regular users in organization | - | Returns only users with role='user' (hides admins); organization data isolation |
-| POST | `/users` | Create new user in organization | `email`, `password`, `firstName`, `lastName` | **Role forced to 'user'** (prevents admin creation); organizationId auto-assigned from admin context |
+| POST | `/users` | Create new user in organization; sends welcome email | `email`, `password`, `firstName`, `lastName` | **Role forced to 'user'** (prevents admin creation); organizationId auto-assigned from admin context |
 | DELETE | `/users/:id` | Delete user from organization | - | Prevents self-deletion; organization data isolation; only superadmins can delete admins |
 
 ### Endpoint Details
@@ -112,9 +112,10 @@ Usage Examples
 curl http://localhost:3002/health
 ```
 
-- Organization + admin registration:
+- Organization + admin registration (requires **SuperAdmin authentication**):
 ```bash
 curl -X POST http://localhost:3002/auth/register-organization \
+	-H "Authorization: Bearer <SUPERADMIN_JWT>" \
 	-H "Content-Type: application/json" \
 	-d '{
 		"orgName": "ACME Corp",
@@ -127,6 +128,7 @@ curl -X POST http://localhost:3002/auth/register-organization \
 		"lastName": "Smith"
 	}'
 ```
+Registers organization and creates admin user. **Sends welcome email to admin with login instructions.**
 
 - User login:
 ```bash
@@ -152,7 +154,7 @@ curl -X POST http://localhost:3002/auth/register-user \
 		"organizationId": "<ORG_ID>"
 	}'
 ```
-Only users with `admin` or `superadmin` role can register new users to the organization.
+Only users with `admin` or `superadmin` role can register new users to the organization. **Sends welcome email to new user with login instructions.**
 
 - Refresh access token:
 ```bash
@@ -242,7 +244,7 @@ curl -X POST http://localhost:8080/users \
 		"lastName": "Johnson"
 	}'
 ```
-Creates user with role='user' in admin's organization.
+Creates user with role='user' in admin's organization. **Sends welcome email to new user with login instructions.**
 
 - Delete user from organization (admin only):
 ```bash
@@ -304,8 +306,8 @@ Response Structure (examples)
 ```
 
 How It Works (High Level)
-- `register-organization`: validates required fields, checks for duplicate org name and email, generates `apiKey` (format: `pk_live_<random>`) and `apiSecret` (format: `sk_live_<random>`), hashes apiSecret and password using bcryptjs (salt 10), saves Organization with hashed secret, creates admin User associated with organization, returns organization and user details with **plaintext apiSecret visible only once**.
-- `register-user`: validates required fields and checks organizationId existence, verifies email uniqueness, hashes password using bcryptjs (salt 10), saves User with role `user` and association to organization.
+- `register-organization`: validates required fields, checks for duplicate org name and email, generates `apiKey` (format: `pk_live_<random>`) and `apiSecret` (format: `sk_live_<random>`), hashes apiSecret and password using bcryptjs (salt 10), saves Organization with hashed secret, creates admin User associated with organization, **sends welcome email to admin (non-blocking)**, returns organization and user details with **plaintext apiSecret visible only once**.
+- `register-user`: validates required fields and checks organizationId existence, verifies email uniqueness, hashes password using bcryptjs (salt 10), saves User with role `user` and association to organization, **sends welcome email to new user (non-blocking)**.
 - `login`: finds user by email, compares password against hash using bcryptjs, generates `accessToken` (15 min, payload `{ userId, organizationId, role }`) signed with `JWT_SECRET`, generates `refreshToken` (7 days) signed with `REFRESH_TOKEN_SECRET`, stores refreshToken in DB, returns both tokens and user info. **Rate limited to 50 requests per 15 minutes per IP.**
 - `refresh`: validates refreshToken exists in DB (not revoked) and passes cryptographic verification, fetches user (for current role), generates new `accessToken` (15 min).
 - `logout`: deletes refreshToken from database; user cannot refresh access token after this call.
@@ -316,7 +318,7 @@ How It Works (High Level)
 - `getOrganizationKeys`: requires authentication via `x-org-id` and `x-user-id` headers (from API Gateway), finds organization by ID, returns public `apiKey` (not secret).
 - `/auth/internal/validate-api-key`: finds organization by apiKey, compares provided plaintext apiSecret against stored hash using bcryptjs, returns organization ID and name on success (used by API Gateway for B2B authentication).
 - `GET /users`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), queries User collection filtered by organizationId and role='user' (hides admins/superadmins), returns array of users with passwordHash excluded.
-- `POST /users`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), **forces role to 'user'** (prevents role elevation), validates email uniqueness, hashes password using bcryptjs (salt 10), creates User with forced organizationId from admin's context, returns created user details.
+- `POST /users`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), **forces role to 'user'** (prevents role elevation), validates email uniqueness, hashes password using bcryptjs (salt 10), creates User with forced organizationId from admin's context, **sends welcome email to new user (non-blocking)**, returns created user details.
 - `DELETE /users/:id`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), prevents self-deletion, verifies user belongs to admin's organization (data isolation), only superadmins can delete admin users, deletes user from database.
 - `/health`: reports service status and Mongoose connection state (1 = Connected, other = Disconnected).
 
@@ -339,6 +341,7 @@ Data Models
 Implemented Features
 - ✅ **Rate Limiting**: `/login` endpoint limited to 50 requests per 15 minutes per IP (express-rate-limit).
 - ✅ **Password Reset Flow**: `forgot-password` (send email) and `reset-password` (token-based reset) with 1-hour token expiration.
+- ✅ **Welcome Emails**: Automatic welcome email sent to newly registered users (organization admins, regular users) with login instructions and role information via nodemailer (non-blocking).
 - ✅ **Password Change**: `/change-password` endpoint for authenticated users to change their password with current password verification.
 - ✅ **Token Refresh/Revocation**: `refresh` endpoint for new access tokens; `logout` endpoint revokes refresh tokens from database.
 - ✅ **Role-Based Access Control (RBAC)**: `superadmin`, `admin`, and `user` roles supported; `/reset-secret` requires `admin` role; users management requires `admin` or `superadmin` role.

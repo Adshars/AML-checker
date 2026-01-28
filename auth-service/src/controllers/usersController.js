@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import logger from '../utils/logger.js';
 import { registerUserSchema } from '../utils/validationSchemas.js';
+import { sendWelcomeEmail } from '../utils/emailSender.js';
 
 /**
  * Get all users for the authenticated admin's organization
@@ -113,6 +114,14 @@ export const createUser = async (req, res) => {
     });
 
     await newUser.save();
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(newUser.email, newUser.firstName, newUser.role)
+      .catch(err => logger.warn('Failed to send welcome email from usersController', { 
+        requestId,
+        error: err.message,
+        recipient: newUser.email
+      }));
 
     logger.info('User created successfully', { 
       requestId, 

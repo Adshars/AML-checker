@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Organization from '../models/Organization.js';
 import { registerOrgSchema, registerUserSchema, loginSchema, resetPasswordSchema } from '../utils/validationSchemas.js';
+import { sendWelcomeEmail } from '../utils/emailSender.js';
 
 // Registration organisation and admin user
 export const registerOrganization = async (req, res) => {
@@ -27,6 +28,14 @@ export const registerOrganization = async (req, res) => {
     }
 
     const result = await AuthService.registerOrgService(req.body);
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(result.newUser.email, result.newUser.firstName, 'admin')
+      .catch(err => logger.warn('Failed to send welcome email', { 
+        requestId,
+        error: err.message,
+        recipient: result.newUser.email
+      }));
 
     logger.info('Organization registered successfully', {
       requestId,
@@ -85,6 +94,14 @@ export const registerUser = async (req, res) => {
     }
 
     const newUser = await AuthService.registerUserService(req.body);
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(newUser.email, newUser.firstName, newUser.role)
+      .catch(err => logger.warn('Failed to send welcome email', { 
+        requestId,
+        error: err.message,
+        recipient: newUser.email
+      }));
 
     res.status(201).json({
       message: 'User registered successfully',

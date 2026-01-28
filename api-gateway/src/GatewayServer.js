@@ -72,7 +72,7 @@ export default class GatewayServer {
   setupRateLimiters() {
     this.authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 10,
+      max: 20,
       message: { error: 'Too many auth requests from this IP, please try again later.' },
       standardHeaders: true,
       legacyHeaders: false,
@@ -190,6 +190,12 @@ export default class GatewayServer {
       this.authProxy
     );
 
+    this.app.post('/auth/change-password',
+      this.authLimiter,
+      this.authMiddleware.middleware,
+      this.authProxy
+    );
+
     // ==================== PUBLIC AUTH ROUTES ====================
     // No auth required, rate limited
 
@@ -242,7 +248,7 @@ export default class GatewayServer {
     );
 
     logger.info('All routes configured', {
-      protectedAuthRoutes: ['/register-user', '/reset-secret'],
+      protectedAuthRoutes: ['/register-user', '/reset-secret', '/change-password'],
       publicAuthRoutes: ['/login', '/register-organization', '/forgot-password', '/reset-password', '/refresh', '/logout'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
       protectedUsersRoutes: ['/users (wildcard)'],

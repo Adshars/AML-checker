@@ -248,7 +248,171 @@ describe('OP-Adapter Integration Tests', () => {
     });
 
     // ========================================
-    // 4. PARAMETER PASSING TESTS
+    // 3. LIMIT VALIDATION & EDGE CASES TESTS
+    // ========================================
+
+    describe('Limit Validation - Edge Cases and Boundary Testing', () => {
+
+        it('should clamp negative limit to 1', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&limit=-5');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 1
+            }));
+        });
+
+        it('should clamp limit of 0 to 1', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&limit=0');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 1
+            }));
+        });
+
+        it('should clamp limit exceeding MAX_LIMIT (100) to 100', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&limit=150');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 100
+            }));
+        });
+
+        it('should clamp extremely large limit (1000) to 100', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&limit=1000');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 100
+            }));
+        });
+
+        it('should accept valid limit at boundary (1)', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&limit=1');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 1
+            }));
+        });
+
+        it('should accept valid limit at upper boundary (100)', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&limit=100');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                limit: 100
+            }));
+        });
+    });
+
+    // ========================================
+    // 4. BOOLEAN CONVERSION (toBoolean) TESTS
+    // ========================================
+
+    describe('Boolean Conversion - toBoolean Helper Edge Cases', () => {
+
+        it('should convert string "true" to boolean true', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&fuzzy=true');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                fuzzy: true
+            }));
+        });
+
+        it('should convert string "false" to boolean false', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&fuzzy=false');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                fuzzy: false
+            }));
+        });
+
+        it('should treat non-true string values as false', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&fuzzy=yes');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                fuzzy: false
+            }));
+        });
+
+        it('should treat empty fuzzy parameter as false', async () => {
+            const successResponse = {
+                data: { results: [] }
+            };
+
+            mockSearch.mockResolvedValue(successResponse);
+
+            await request(app)
+                .get('/check?name=Putin&fuzzy=');
+
+            expect(mockSearch).toHaveBeenCalledWith(expect.objectContaining({
+                fuzzy: false
+            }));
+        });
+    });
+
+    // ========================================
+    // 5. PARAMETER PASSING TESTS
     // ========================================
 
     describe('Parameter Passing - Query Parameter Forwarding to Yente', () => {
@@ -402,7 +566,7 @@ describe('OP-Adapter Integration Tests', () => {
     });
 
     // ========================================
-    // 5. RESPONSE STRUCTURE TESTS
+    // 6. RESPONSE STRUCTURE TESTS
     // ========================================
 
     describe('Response Structure - Adapter Response Format', () => {
@@ -489,7 +653,7 @@ describe('OP-Adapter Integration Tests', () => {
     });
 
     // ========================================
-    // 6. HEALTH CHECK ENDPOINT TESTS
+    // 7. HEALTH CHECK ENDPOINT TESTS
     // ========================================
 
     describe('Health Check Endpoint', () => {

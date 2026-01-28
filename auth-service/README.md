@@ -43,7 +43,7 @@ Endpoints
 	- Returns: user details (email, name, role, organization assignment).
 - `POST /auth/login` – authenticates user by email/password and returns access token + refresh token.
 	- Required fields: `email`, `password`.
-	- Rate limited: 10 requests per 15 minutes per IP (express-rate-limit in `authRoutes`).
+	- Rate limited: 50 requests per 15 minutes per IP (express-rate-limit in `authRoutes`).
 	- Validations: email format (Joi), password required; user existence, password match; 401 errors. Server error 500.
 	- Returns: `accessToken` valid for 15 minutes (JWT payload includes `userId`, `organizationId`, `role`); `refreshToken` valid for 7 days.
 - `POST /auth/refresh` – generates new access token using valid refresh token.
@@ -63,14 +63,40 @@ Endpoints
 	- Validations: token existence and validity; new password minimum 8 characters (Joi); 400 errors. Server error 500.
 	- Hashes new password and updates user record; deletes used reset token.
 	- Returns: reset success message.
-- `POST /auth/reset-secret` – resets organization's API secret (admin only, requires authentication).
-	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway).
-	- Validations: authentication context, admin role check; 401/403 errors. Server error 500.
+- `POST /auth/reset-secret` – resets organization's API secret (admin only, requires authentication and password confirmation).
+	- Requires: valid JWT token with `admin` role (via `x-role` header from API Gateway); `password` field in request body (user's current password for verification).
+	- Validations: authentication context, admin role check, password verification against user's hash; 401/403/404 errors. Server error 500.
 	- Returns: organization `apiKey` and new `apiSecret` (plaintext, visible only once).
+- `GET /auth/organization/keys` – retrieves organization's public API key (requires authentication).
+	- Requires: valid JWT token (via `x-org-id` and `x-user-id` headers from API Gateway).
+	- Validations: authentication context, organization existence; 401/404 errors. Server error 500.
+	- Returns: organization `apiKey` (public identifier, not secret).
+- `POST /auth/change-password` – changes authenticated user's password.
+	- Requires: valid JWT token (via `x-user-id` header from API Gateway); `currentPassword` and `newPassword` in request body.
+	- Validations: authentication context, current password verification, new password minimum 8 characters; 400/404 errors. Server error 500.
+	- Returns: success message with password change confirmation.
 - `POST /auth/internal/validate-api-key` – internal endpoint for API Gateway; validates API key and secret (B2B machine-to-machine authentication).
 	- Required fields: `apiKey`, `apiSecret`.
 	- Validations: API key existence, secret match (bcrypt comparison); 401 errors. Server error 500.
 	- Returns: `{ valid: true, organizationId, organizationName }` on success.
+
+Users Management Endpoints (Admin Only)
+- `GET /users` – retrieves all regular users for the authenticated admin's organization.
+	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway); organization context via `x-org-id` header.
+	- Security: Only returns users with `role: 'user'` (hides admins/superadmins); filtered by admin's organization (data isolation).
+	- Returns: array of user objects (id, email, firstName, lastName, role, createdAt); passwordHash excluded.
+	- Validations: authentication context, admin role check; 403 errors. Server error 500.
+- `POST /users` – creates new user in the authenticated admin's organization.
+	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway); organization context via `x-org-id` header.
+	- Required fields: `email`, `password`, `firstName`, `lastName`.
+	- Security: **CRITICAL** - role is hardcoded to `user` regardless of request body (admins cannot create other admins); organizationId forced to admin's organization.
+	- Validations: authentication context, admin role check, email uniqueness, password minimum 8 characters (Joi); 400/403 errors. Server error 500.
+	- Returns: created user details (id, email, firstName, lastName, role='user', organizationId, createdAt).
+- `DELETE /users/:id` – deletes user from the authenticated admin's organization.
+	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway); organization context via `x-org-id` header.
+	- Security: prevents self-deletion; verifies user belongs to admin's organization (data isolation); only superadmins can delete admin users.
+	- Validations: authentication context, admin role check, user existence, organization match, self-deletion prevention; 400/403/404 errors. Server error 500.
+	- Returns: success message.
 
 Usage Examples
 - Health check:
@@ -91,19 +117,6 @@ curl -X POST http://localhost:3002/auth/register-organization \
 		"password": "Str0ngPass!",
 		"firstName": "John",
 		"lastName": "Smith"
-	}'
-```
-
-- User registration (requires existing `organizationId`):
-```bash
-curl -X POST http://localhost:3002/auth/register-user \
-	-H "Content-Type: application/json" \
-	-d '{
-		"email": "user@acme.test",
-		"password": "Str0ngPass!",
-		"firstName": "Jane",
-		"lastName": "Doe",
-		"organizationId": "<ORG_ID>"
 	}'
 ```
 
@@ -172,13 +185,63 @@ curl -X POST http://localhost:3002/auth/reset-password \
 	}'
 ```
 
-- Reset organization API secret (admin only, requires JWT auth via gateway):
+- Reset organization API secret (admin only, requires JWT auth and password verification):
 ```bash
 curl -X POST http://localhost:8080/auth/reset-secret \
 	-H "Authorization: Bearer <JWT_TOKEN>" \
-	-H "Content-Type: application/json"
+	-H "Content-Type: application/json" \
+	-d '{
+		"password": "YourCurrentPassword123"
+	}'
 ```
 Returns new `apiSecret` (plaintext, visible only once).
+
+- Get organization's public API key (requires authentication):
+```bash
+curl -X GET http://localhost:8080/auth/organization/keys \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+```
+Returns `{ "apiKey": "pk_live_..." }`.
+
+- Change authenticated user's password:
+```bash
+curl -X POST http://localhost:8080/auth/change-password \
+	-H "Authorization: Bearer <JWT_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"currentPassword": "OldPassword123",
+		"newPassword": "NewStr0ngPass!"
+	}'
+```
+Returns success message.
+
+- Get all users in organization (admin only):
+```bash
+curl -X GET http://localhost:8080/users \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+```
+Returns array of users (role='user' only) from admin's organization.
+
+- Create new user in organization (admin only):
+```bash
+curl -X POST http://localhost:8080/users \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "newuser@acme.test",
+		"password": "Str0ngPass!",
+		"firstName": "Alice",
+		"lastName": "Johnson"
+	}'
+```
+Creates user with role='user' in admin's organization.
+
+- Delete user from organization (admin only):
+```bash
+curl -X DELETE http://localhost:8080/users/<USER_ID> \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+```
+Deletes user (prevents self-deletion, requires organization match).
 
 Response Structure (examples)
 - `/health`:
@@ -235,13 +298,18 @@ Response Structure (examples)
 How It Works (High Level)
 - `register-organization`: validates required fields, checks for duplicate org name and email, generates `apiKey` (format: `pk_live_<random>`) and `apiSecret` (format: `sk_live_<random>`), hashes apiSecret and password using bcryptjs (salt 10), saves Organization with hashed secret, creates admin User associated with organization, returns organization and user details with **plaintext apiSecret visible only once**.
 - `register-user`: validates required fields and checks organizationId existence, verifies email uniqueness, hashes password using bcryptjs (salt 10), saves User with role `user` and association to organization.
-- `login`: finds user by email, compares password against hash using bcryptjs, generates `accessToken` (15 min, payload `{ userId, organizationId, role }`) signed with `JWT_SECRET`, generates `refreshToken` (7 days) signed with `REFRESH_TOKEN_SECRET`, stores refreshToken in DB, returns both tokens and user info. **Rate limited to 10 requests per 15 minutes per IP.**
+- `login`: finds user by email, compares password against hash using bcryptjs, generates `accessToken` (15 min, payload `{ userId, organizationId, role }`) signed with `JWT_SECRET`, generates `refreshToken` (7 days) signed with `REFRESH_TOKEN_SECRET`, stores refreshToken in DB, returns both tokens and user info. **Rate limited to 50 requests per 15 minutes per IP.**
 - `refresh`: validates refreshToken exists in DB (not revoked) and passes cryptographic verification, fetches user (for current role), generates new `accessToken` (15 min).
 - `logout`: deletes refreshToken from database; user cannot refresh access token after this call.
 - `forgot-password`: finds user by email, generates random reset token, stores token in DB (expires 1 hour), sends email with reset link including token and userId. **Always returns success message to prevent account enumeration.**
 - `reset-password`: finds PasswordResetToken by userId, verifies token matches, hashes new password using bcryptjs (salt 10), updates User passwordHash, deletes used token from DB.
-- `reset-secret`: requires `admin` or `superadmin` role (via `x-role` header from API Gateway), generates new `apiSecret`, hashes and stores it, returns new credentials plaintext.
+- `change-password`: requires authentication via `x-user-id` header (from API Gateway), verifies current password against user's hash using bcryptjs, hashes new password (salt 10), updates User passwordHash, returns success message.
+- `reset-secret`: requires `admin` role (via `x-role` header from API Gateway) and user's current password for verification, compares password against user's hash using bcryptjs, generates new `apiSecret`, hashes and stores it, returns new credentials plaintext.
+- `getOrganizationKeys`: requires authentication via `x-org-id` and `x-user-id` headers (from API Gateway), finds organization by ID, returns public `apiKey` (not secret).
 - `/auth/internal/validate-api-key`: finds organization by apiKey, compares provided plaintext apiSecret against stored hash using bcryptjs, returns organization ID and name on success (used by API Gateway for B2B authentication).
+- `GET /users`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), queries User collection filtered by organizationId and role='user' (hides admins/superadmins), returns array of users with passwordHash excluded.
+- `POST /users`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), **forces role to 'user'** (prevents role elevation), validates email uniqueness, hashes password using bcryptjs (salt 10), creates User with forced organizationId from admin's context, returns created user details.
+- `DELETE /users/:id`: requires `admin` or `superadmin` role (via `x-role` header) and organization context (via `x-org-id` header), prevents self-deletion, verifies user belongs to admin's organization (data isolation), only superadmins can delete admin users, deletes user from database.
 - `/health`: reports service status and Mongoose connection state (1 = Connected, other = Disconnected).
 
 Validation Rules (Joi)
@@ -255,41 +323,82 @@ Authentication Methods
 - **Role-Based Access**: Tokens include user role (`superadmin`, `admin`, `user`) → API Gateway forwards role via `x-role` header → services can enforce access control (e.g., `/reset-secret` requires admin role).
 
 Data Models
-- **Organization**: { name (unique), country, city, address, apiKey (unique), apiSecretHash, createdAt }
-- **User**: { email (unique, lowercase), passwordHash, firstName, lastName, organizationId (references Organization), role (superadmin|admin|user), createdAt }
-- **PasswordResetToken**: { userId, token, createdAt (expires after 1 hour) }
-- **RefreshToken**: { token, userId, createdAt (expires after 7 days) }
+- **Organization**: { name (unique), country, city, address, apiKey (unique, format: pk_live_...), apiSecretHash (bcrypt), createdAt }
+- **User**: { email (unique, lowercase), passwordHash (bcrypt, salt 10), firstName, lastName, organizationId (references Organization), role (superadmin|admin|user), createdAt }
+- **PasswordResetToken**: { userId (references User), token (random string), createdAt (expires after 1 hour via TTL index) }
+- **RefreshToken**: { token (JWT), userId (references User), createdAt (expires after 7 days via TTL index) }
 
 Implemented Features
-- ✅ **Rate Limiting**: `/login` endpoint limited to 10 requests per 15 minutes per IP (express-rate-limit).
+- ✅ **Rate Limiting**: `/login` endpoint limited to 50 requests per 15 minutes per IP (express-rate-limit).
 - ✅ **Password Reset Flow**: `forgot-password` (send email) and `reset-password` (token-based reset) with 1-hour token expiration.
+- ✅ **Password Change**: `/change-password` endpoint for authenticated users to change their password with current password verification.
 - ✅ **Token Refresh/Revocation**: `refresh` endpoint for new access tokens; `logout` endpoint revokes refresh tokens from database.
-- ✅ **Role-Based Access**: `superadmin`, `admin`, and `user` roles supported; `/reset-secret` requires `admin` or `superadmin` role.
-- ✅ **Structured Logging**: winston with daily rotation for all authentication events and errors.
-- ✅ **API Secret Reset**: `/reset-secret` endpoint allows admins to regenerate organization API credentials.
-- ✅ **Schema Validation (Joi)**: email format and password minimum length enforced for registration, login, and reset-password.
+- ✅ **Role-Based Access Control (RBAC)**: `superadmin`, `admin`, and `user` roles supported; `/reset-secret` requires `admin` role; users management requires `admin` or `superadmin` role.
+- ✅ **Users Management (Admin)**: `GET /users` lists organization users; `POST /users` creates users (role forced to 'user'); `DELETE /users/:id` removes users with organization isolation.
+- ✅ **Structured Logging**: winston with daily rotation for all authentication events, errors, and audit trails.
+- ✅ **API Secret Reset**: `/reset-secret` endpoint allows admins to regenerate organization API credentials (requires password confirmation).
+- ✅ **Organization Keys Retrieval**: `GET /auth/organization/keys` returns public API key for authenticated users.
+- ✅ **Schema Validation (Joi)**: email format and password minimum length enforced for registration, login, reset-password, and user creation.
+- ✅ **Data Isolation**: All users management operations verify organization context; admins can only manage users from their own organization.
+- ✅ **Security Controls**: Self-deletion prevention, role elevation prevention (admins cannot create other admins), password verification for sensitive operations.
 
 Testing
 -------
 
-Integration tests for Auth Service verify endpoint behavior, request validation, authentication flows, and interaction with external dependencies (MongoDB, email service). Tests use Jest test framework with Supertest for HTTP testing and mock external dependencies.
+Integration tests for Auth Service verify endpoint behavior, request validation, authentication flows, role-based access control, and interaction with external dependencies (MongoDB, email service). Tests use Jest test framework with Supertest for HTTP testing and mock external dependencies.
 
 Test Files
-- `tests/auth.test.js` – comprehensive integration tests for all authentication endpoints.
-	- **Organization Registration** (`POST /auth/register-organization`):
+- `tests/auth.test.js` – comprehensive integration tests for all authentication and users management endpoints (31 tests total).
+	- **Organization Registration** (`POST /auth/register-organization` - 3 tests):
 		- Happy path: successful organization and admin user registration with API key generation (201).
 		- Duplicate email validation: rejects duplicate email registrations (400).
 		- Password validation: enforces minimum 8-character password requirement via Joi (400).
-	- **User Login** (`POST /auth/login`):
+	- **User Registration** (`POST /auth/register-user` - 5 tests):
+		- Success: registers user with admin authorization (201).
+		- Rejects registration without admin role (403).
+		- Validates duplicate email, missing organization ID, and required fields (400/404).
+	- **User Login** (`POST /auth/login` - 2 tests):
 		- Success: authenticates user and returns JWT access token and refresh token (200).
 		- Failure: rejects invalid credentials with 401 error.
-	- **Token Refresh** (`POST /auth/refresh`):
+	- **Token Refresh** (`POST /auth/refresh` - 2 tests):
 		- Success: generates new access token using valid refresh token stored in database (200).
 		- Failure: rejects invalid, expired, or revoked refresh tokens with 403 error.
-	- **User Logout** (`POST /auth/logout`):
+	- **User Logout** (`POST /auth/logout` - 2 tests):
 		- Success: revokes refresh token from database, preventing future token refreshes (200).
 		- Rejects refresh attempts with revoked token (403 after logout).
-	- Mocks: AuthService (business logic), RefreshToken model (database), User model, logger, email sender.
+	- **API Key Validation** (`POST /auth/internal/validate-api-key` - 4 tests):
+		- Success: validates correct API key and secret pair (200).
+		- Rejects invalid API key, invalid secret, and missing credentials (400/401).
+	- **API Secret Reset** (`POST /auth/reset-secret` - 3 tests):
+		- Success: generates new API secret for organization (200).
+		- Rejects non-admin users (403).
+		- Validates missing context headers (401).
+	- **Password Reset Flow** (`POST /auth/forgot-password` - 2 tests; `POST /auth/reset-password` - 3 tests):
+		- Forgot password: always returns success message (security, no account enumeration) (200).
+		- Reset password: successful reset with valid token (200); rejects invalid token and validates short password (400).
+	- **Password Change** (`POST /auth/change-password` - 2 tests):
+		- Success: changes password with current password verification (200).
+		- Rejects missing required fields (400).
+	- **Users Management - GET** (`GET /users` - 3 tests):
+		- Success: returns users list for admin's organization (200).
+		- Rejects non-admin users (403).
+		- Handles missing organization context (403).
+	- **Users Management - POST** (`POST /users` - 4 tests):
+		- Success: creates user with role='user' in admin's organization (201).
+		- Rejects non-admin users (403).
+		- Validates duplicate email and missing fields (400).
+	- **Users Management - DELETE** (`DELETE /users/:id` - 2 tests):
+		- Success: deletes user from organization (200).
+		- Rejects non-admin users (403).
+	- **Health Check** (`GET /health` - 1 test):
+		- Returns service status and database connection state (200).
+	- **Security & Edge Cases** (5 tests):
+		- Validates invalid email format (400).
+		- Validates missing required fields (400).
+		- Ensures passwordHash not exposed in responses.
+		- Tests RBAC enforcement across endpoints.
+		- Tests organization data isolation.
+	- Mocks: AuthService (business logic), RefreshToken model (database), User model (partial), logger, email sender.
 
 Running Tests
 - Command: `npm test` (runs all tests with verbose output)
@@ -299,12 +408,17 @@ Running Tests
 - Environment variables are set in test file (`JWT_SECRET`, `REFRESH_TOKEN_SECRET`)
 
 Test Coverage
-- **Request Validation**: Tests verify proper HTTP status codes for invalid inputs (short password, missing required fields).
-- **Security**: Tests ensure proper validation and rejection of duplicate credentials, invalid passwords, and unauthorized token usage.
-- **Authentication Flows**: Tests verify complete authentication flows including login, token generation, token refresh, and logout.
-- **JWT Token Handling**: Tests validate JWT token creation, cryptographic signing, and database persistence of refresh tokens.
-- **Database Interaction**: Tests verify correct interaction with RefreshToken and User models (save, find, delete operations).
-- **Error Handling**: Tests ensure proper HTTP error codes for various failure scenarios (validation errors 400, authentication errors 401, unauthorized errors 403).
+- **Request Validation**: Tests verify proper HTTP status codes for invalid inputs (short password, missing required fields, invalid email format).
+- **Security**: Tests ensure proper validation and rejection of duplicate credentials, invalid passwords, unauthorized token usage, and passwordHash exposure.
+- **Authentication Flows**: Tests verify complete authentication flows including login, token generation, token refresh, logout, password reset, and password change.
+- **Role-Based Access Control (RBAC)**: Tests validate admin-only endpoints (users management, reset-secret), role enforcement, and unauthorized access rejection (403).
+- **Users Management**: Tests verify CRUD operations for users (GET/POST/DELETE), organization data isolation, role enforcement (admins cannot create other admins), self-deletion prevention.
+- **JWT Token Handling**: Tests validate JWT token creation, cryptographic signing, database persistence of refresh tokens, and token revocation.
+- **API Key Authentication**: Tests verify B2B authentication flow (validate-api-key), API secret hashing and comparison, and API secret reset.
+- **Database Interaction**: Tests verify correct interaction with RefreshToken, User, and Organization models (save, find, delete operations).
+- **Error Handling**: Tests ensure proper HTTP error codes for various failure scenarios (validation errors 400, authentication errors 401, forbidden access 403, not found 404, server errors 500).
+- **Data Isolation**: Tests verify organization-scoped operations (admins can only manage users from their own organization).
+- **Health Monitoring**: Tests verify health check endpoint returns service and database status.
 
 Example Test Execution
 ```bash
@@ -319,6 +433,12 @@ PASS  tests/auth.test.js
       ✓ should register organization (Happy Path) -> 201
       ✓ should fail on Duplicate -> 400
       ✓ should fail Validation (short password) -> 400
+    POST /auth/register-user
+      ✓ should register user with admin auth -> 201
+      ✓ should reject non-admin registration -> 403
+      ✓ should validate duplicate email -> 400
+      ✓ should validate missing organizationId -> 404
+      ✓ should validate required fields -> 400
     POST /auth/login
       ✓ should login (Success) -> 200 + tokens
       ✓ should fail login (Wrong Password) -> 401
@@ -327,8 +447,48 @@ PASS  tests/auth.test.js
       ✓ should fail (Reuse/Invalid/Logged Out) -> 403
     POST /auth/logout
       ✓ should logout (Remove token) -> 200
-		✓ should prevent refresh after logout (revoked token) -> 403
+      ✓ should prevent refresh after logout (revoked token) -> 403
+    POST /auth/internal/validate-api-key
+      ✓ should validate correct API key -> 200
+      ✓ should reject invalid API key -> 401
+      ✓ should reject invalid secret -> 401
+      ✓ should reject missing credentials -> 400
+    POST /auth/reset-secret
+      ✓ should reset secret (Admin) -> 200
+      ✓ should reject non-admin -> 403
+      ✓ should reject missing context -> 401
+    POST /auth/forgot-password
+      ✓ should send reset email -> 200
+      ✓ should return success for non-existent email (security) -> 200
+    POST /auth/reset-password
+      ✓ should reset password with valid token -> 200
+      ✓ should reject invalid token -> 400
+      ✓ should validate short password -> 400
+    POST /auth/change-password
+      ✓ should change password -> 200
+      ✓ should reject missing fields -> 400
+    GET /users
+      ✓ should return users list (Admin) -> 200
+      ✓ should reject non-admin -> 403
+      ✓ should validate missing org context -> 403
+    POST /users
+      ✓ should create user (Admin, role forced to user) -> 201
+      ✓ should reject non-admin -> 403
+      ✓ should validate duplicate email -> 400
+      ✓ should validate required fields -> 400
+    DELETE /users/:id
+      ✓ should delete user (Admin) -> 200
+      ✓ should reject non-admin -> 403
+    GET /health
+      ✓ should return health status -> 200
+    Security & Edge Cases
+      ✓ should validate invalid email format -> 400
+      ✓ should validate missing required fields -> 400
+      ✓ should not expose passwordHash in responses
+      ✓ should enforce RBAC across endpoints
+      ✓ should enforce organization data isolation
 
-	Test Suites: 1 passed, 1 total
-	Tests:       9 passed, 9 total
+  Test Suites: 1 passed, 1 total
+  Tests:       31 passed, 31 total
+  Time:        1.553 s
 ```

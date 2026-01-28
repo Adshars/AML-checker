@@ -4,6 +4,7 @@
 ## Table of Contents
 * [General Information](#general-information)
 * [Architecture](#architecture)
+* [API Endpoints Reference](#api-endpoints-reference)
 * [Technologies Used](#technologies-used)
 * [Features](#features)
 * [Setup](#setup)
@@ -68,13 +69,17 @@
 	- Manages: compliance datasets (OFAC, UN, EU, etc.), PEP lists, corporate registries
 
 6. **Frontend** ([frontend/](frontend/)) – React web application
-	- Framework: React 18 with Vite build system
-	- UI Library: react-bootstrap (responsive components)
-	- Routing: react-router-dom v6 with nested routes
+	- Framework: React 19.2.0 with Vite 7.2.4 build system
+	- UI Library: react-bootstrap 2.10.10 + Bootstrap 5.3.8 (responsive components)
+	- Routing: react-router-dom 7.12.0 with nested routes
+	- Testing: Vitest 2.1.5 + @testing-library/react 16.0.1 (27 tests covering services, context, components)
 	- **Architecture**: MainLayout component with top navigation bar wrapping all authenticated pages
-	- Pages: Login (public), Check (sanctions screening), History (audit log), Users (admin panel), Settings
+	- Pages (8 total): Login (public), CheckPage (sanctions screening), HistoryPage (audit log), UsersPage (admin panel), SettingsPage, DashboardPage, DeveloperPage, ResetPasswordPage
 	- **Security**: Role-based navigation - Users page visible only for admin/superadmin roles
-	- Authentication: JWT tokens stored in localStorage, AuthContext for global state management
+	- **Features**: Real-time entity screening with visual result cards (CLEAN/HIT status), paginated audit history, user management panel, modal interactions
+	- Authentication: JWT tokens stored in localStorage, AuthContext for global state management, automatic redirect on authentication failure
+	- API Integration: axios with interceptors for auth headers, centralized API service layer
+	- Environment: VITE_API_URL configured to API Gateway (http://localhost:8080)
 	- Language: English UI
 
 7. **Data Stores**:
@@ -91,10 +96,89 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
                                   PostgreSQL (audit log)
 ```
 
+## API Endpoints Reference
+
+All client requests go through **API Gateway** (port 8080). Below is a complete list of available endpoints:
+
+### Authentication Endpoints (Auth Service via `/auth/*`)
+
+| Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
+|--------|----------|---------------|---------------|-------------|----------------|
+| POST | `/auth/register-organization` | ❌ No | - | Register new organization with admin user | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
+| POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Add user to organization | `email`, `password`, `firstName`, `lastName`, `organizationId` |
+| POST | `/auth/login` | ❌ No | - | User login (returns JWT tokens) | `email`, `password` |
+| POST | `/auth/refresh` | ❌ No | - | Refresh access token | `refreshToken` |
+| POST | `/auth/logout` | ❌ No | - | Revoke refresh token | `refreshToken` |
+| POST | `/auth/forgot-password` | ❌ No | - | Request password reset (sends email) | `email` |
+| POST | `/auth/reset-password` | ❌ No | - | Reset password with token | `userId`, `token`, `newPassword` |
+| POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Regenerate organization API secret | - |
+| POST | `/auth/internal/validate-api-key` | ❌ Internal | - | Validate API key (used by Gateway) | `apiKey`, `apiSecret` |
+| GET | `/auth/health` | ❌ No | - | Health check | - |
+
+### Sanctions Endpoints (Core Service via `/sanctions/*`)
+
+| Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
+|--------|----------|---------------|---------------|-------------|----------------|
+| GET | `/sanctions/check` | ✅ JWT or API Key | - | Check entity against sanctions/PEP lists | `name` (required), `limit` (1-100, default 15), `fuzzy` (true/false), `schema` (Person/Company/etc), `country` (ISO code) |
+| GET | `/sanctions/history` | ✅ JWT or API Key | - | Retrieve audit logs with filtering | `page` (default 1), `limit` (default 20), `search` (text), `hasHit` (true/false), `startDate` (ISO), `endDate` (ISO), `userId` (UUID), `orgId` (superadmin only) |
+| GET | `/sanctions/health` | ❌ No | - | Health check | - |
+
+### API Gateway Endpoints
+
+| Method | Endpoint | Auth Required | Description |
+|--------|----------|---------------|-------------|
+| GET | `/health` | ❌ No | API Gateway health check |
+| GET | `/api-docs` | ❌ No | Swagger UI for API documentation |
+
+### Authentication Methods
+
+**1. JWT Authentication (User Login)**
+- Header: `Authorization: Bearer <ACCESS_TOKEN>`
+- Access token valid: 15 minutes
+- Refresh token valid: 7 days
+- Use `/auth/refresh` to get new access token before expiration
+
+**2. API Key Authentication (B2B/System-to-System)**
+- Headers:
+  - `x-api-key: <API_KEY>` (format: `pk_live_...`)
+  - `x-api-secret: <API_SECRET>` (format: `sk_live_...`)
+- API keys generated during organization registration
+- Secrets can be regenerated via `/auth/reset-secret` (admin only)
+- Cached for 60 seconds in API Gateway for performance
+
+### Rate Limiting
+
+| Endpoint Pattern | Rate Limit | Window |
+|------------------|------------|--------|
+| `/auth/*` | 10 requests | 15 minutes |
+| `/sanctions/*` | 100 requests | 15 minutes |
+
+Rate limits applied per IP address. Returns `429 Too Many Requests` when exceeded.
+
+### Context Headers (Injected by Gateway)
+
+The API Gateway automatically adds these headers to downstream service requests after authentication:
+
+- `x-org-id` – Organization ID (UUID)
+- `x-user-id` – User ID (UUID) or `"API"` for API Key auth
+- `x-auth-type` – `"JWT"` or `"API_KEY"`
+- `x-role` – User role: `"superadmin"`, `"admin"`, or `"user"`
+
+### Internal Endpoints (Not Exposed via Gateway)
+
+**OP Adapter** (port 3001, Docker network only):
+- `GET /check?name=<entity>&limit=<n>&fuzzy=<bool>&schema=<type>&country=<code>` – Yente API wrapper
+- `GET /health` – Health check
+
+**Yente** (port 8000, Docker network + localhost):
+- `GET /search/default?q=<query>&limit=<n>&fuzzy=<bool>` – OpenSanctions search
+- `GET /health` – Health check
+
 ## Technologies Used
 - **Runtime**: Node.js 18, ES Modules
 - **API Framework**: Express 5 (multiple microservices)
-- **Frontend**: React 18 (Vite), react-router-dom v6, react-bootstrap, AuthContext
+- **Frontend**: React 19.2.0, Vite 7.2.4, react-router-dom 7.12.0, react-bootstrap 2.10.10, Bootstrap 5.3.8, axios 1.13.2, AuthContext
+- **Frontend Testing**: Vitest 2.1.5, @testing-library/react 16.0.1, @testing-library/jest-dom 6.1.5, jsdom 25.0.1
 - **Databases**: 
 	- MongoDB 6 (Mongoose 9 ORM) for Auth Service
 	- PostgreSQL 15 (Sequelize 6 ORM) for Core Service
@@ -106,7 +190,7 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 - **Rate Limiting**: express-rate-limit (per-IP request throttling for auth and API endpoints)
 - **HTTP/Networking**: axios (inter-service calls), CORS middleware, http-proxy-middleware (reverse proxy)
 - **Infrastructure**: Docker Compose 3.8, environment variables (.env)
-- **Development**: nodemon (watch mode)
+- **Development**: nodemon (watch mode), Vitest (frontend testing)
 
 ## Features
 - **Organization & User Management**: 
@@ -166,32 +250,35 @@ Client → API Gateway (auth check) → Auth Service (register/login) or Core Se
 
 ## Testing
 
-The project includes comprehensive test suites for all microservices with **51 total tests** covering integration, E2E, data mapping, error handling, and security scenarios.
+The project includes comprehensive test suites for all microservices and frontend with **130 total tests** covering integration, E2E, data mapping, error handling, security scenarios, and UI components.
 
 ### Running All Tests
 ```bash
 npm test
 ```
-This runs tests for all four microservices sequentially:
-- `npm run test:auth` – Auth Service (9 tests)
-- `npm run test:core` – Core Service (7 tests)
-- `npm run test:adapter` – OP Adapter (32 tests)
+This runs tests for all microservices and frontend sequentially:
+- `npm run test:auth` – Auth Service (31 tests)
+- `npm run test:core` – Core Service (34 tests)
+- `npm run test:adapter` – OP Adapter (35 tests)
 - `npm run test:gateway` – API Gateway (3 tests)
+- `npm run test:frontend` – Frontend (27 tests)
 
 ### Test Suites Overview
 
 | Service | Tests | Focus Areas |
 |---------|-------|------------|
-| **core-service** | 7 | Parameter validation, org context enforcement, audit logging, pagination, data isolation |
-| **auth-service** | 9 | Registration flows, user login, token refresh, logout with revocation |
-| **op-adapter** | 32 | DTO mapping, error handling, retry logic with exponential backoff, parameter forwarding |
+| **auth-service** | 31 | Registration flows, user login, token refresh, logout, password reset, API key validation, email validation, role-based access |
+| **core-service** | 34 | Parameter validation, org context enforcement, audit logging, pagination, data isolation, advanced filtering (search, date range, hasHit, userId) |
+| **op-adapter** | 35 | DTO mapping, error handling, limit validation (clamping), boolean conversion (toBoolean), parameter forwarding, response structure |
 | **api-gateway** | 3 | Rate limiting enforcement (429), request routing to microservices |
+| **frontend** | 27 | API service (2), Auth service (9), AuthContext (5), ScreeningPanel component (11) - including form submission, validation, modal interaction |
 
 ### Test Framework & Tools
-- **Jest** with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
-- **Supertest** for HTTP testing
-- **Mocking**: jest.unstable_mockModule (module mocking), nock (HTTP interception)
-- **Isolation**: All tests run with mocked external dependencies (no real database or service calls required)
+- **Backend**: Jest 30.2.0 with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`)
+- **Frontend**: Vitest 2.1.5 with jsdom environment, @testing-library/react 16.0.1 for component testing
+- **HTTP Testing**: Supertest for backend API endpoints
+- **Mocking**: jest.unstable_mockModule (backend module mocking), vi.mock (Vitest mocking), nock (HTTP interception)
+- **Isolation**: All tests run with mocked external dependencies (no real database, service calls, or API requests required)
 
 ### Running Tests for Individual Services
 ```bash
@@ -206,13 +293,17 @@ cd op-adapter && npm test
 
 # API Gateway
 cd api-gateway && npm test
+
+# Frontend
+cd frontend && npm test
 ```
 
 For detailed information about each test suite, see the Testing section in individual service README files:
-- [core-service/README.md](core-service/README.md#testing)
 - [auth-service/README.md](auth-service/README.md#testing)
+- [core-service/README.md](core-service/README.md#testing)
 - [op-adapter/README.md](op-adapter/README.md#testing)
 - [api-gateway/README.md](api-gateway/README.md#testing)
+- [frontend/README.md](frontend/README.md#testing)
 
 ## Setup
 

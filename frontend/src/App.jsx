@@ -2,10 +2,13 @@ import { useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
 import CheckPage from './pages/CheckPage';
 import HistoryPage from './pages/HistoryPage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import DeveloperPage from './pages/DeveloperPage';
 import MainLayout from './components/MainLayout';
 
 // Protected Route Component - requires authentication
@@ -27,11 +30,12 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Root - redirect to check page */}
-        <Route path="/" element={<Navigate to="/check" replace />} />
+        {/* Root - redirect to dashboard */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         {/* Public route - Login */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Protected routes with MainLayout */}
         <Route
@@ -41,10 +45,12 @@ function App() {
             </ProtectedRoute>
           }
         >
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/check" element={<CheckPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/developer" element={<DeveloperPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

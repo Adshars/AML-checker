@@ -108,4 +108,53 @@ export const deleteUser = (userId) => {
   return api.delete(`/users/${userId}`).then((response) => response.data);
 };
 
+/**
+ * Change password for the authenticated user
+ * @param {{ currentPassword: string, newPassword: string }} data
+ * @returns {Promise<Object>} response data
+ */
+export const changePassword = (data) => {
+  return api.post('/auth/change-password', data).then((response) => response.data);
+};
+
+/**
+ * Get organization's public API key
+ */
+export const getOrganizationKeys = () => {
+  return api.get('/auth/organization/keys').then((response) => response.data);
+};
+
+/**
+ * Reset organization's API secret (requires password confirmation)
+ */
+export const resetOrganizationSecret = (password) => {
+  return api.post('/auth/reset-secret', { password }).then((response) => response.data);
+};
+
+/**
+ * Request password reset link
+ * @param {string} email
+ * @returns {Promise<Object>} response data
+ */
+export const requestPasswordReset = (email) => {
+  return api.post('/auth/forgot-password', { email }).then((response) => response.data);
+};
+
+/**
+ * Confirm password reset with token
+ * @param {{ userId: string, token: string, newPassword: string }} data
+ * @returns {Promise<Object>} response data
+ */
+export const confirmPasswordReset = (data) => {
+  return api.post('/auth/reset-password', data).then((response) => response.data);
+};
+
+/**
+ * Get dashboard statistics
+ * @returns {Promise<Object>} response data with stats
+ */
+export const getDashboardStats = () => {
+  return api.get('/sanctions/stats').then((response) => response.data);
+};
+
 export default api;

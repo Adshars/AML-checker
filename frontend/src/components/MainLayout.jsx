@@ -26,6 +26,9 @@ const MainLayout = () => {
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
             <Nav className="me-auto">
+              <Nav.Link as={NavLink} to="/dashboard">
+                Dashboard
+              </Nav.Link>
               <Nav.Link as={NavLink} to="/check">
                 Check
               </Nav.Link>
@@ -35,6 +38,11 @@ const MainLayout = () => {
               {isAdmin && (
                 <Nav.Link as={NavLink} to="/users">
                   Users
+                </Nav.Link>
+              )}
+              {isAdmin && (
+                <Nav.Link as={NavLink} to="/developer">
+                  Developer
                 </Nav.Link>
               )}
               <Nav.Link as={NavLink} to="/settings">

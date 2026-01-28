@@ -52,6 +52,11 @@ Endpoints
 	- Returns: `{ data, meta { totalItems, totalPages, currentPage, itemsPerPage } }` ordered by `createdAt` descending.
 	- Data isolation: regular users see only their organization's logs; superadmins can view all logs or filter by `orgId`.
 	- Error responses: 403 (missing org context for non-superadmin), 500 (database error).
+- `GET /stats` – returns aggregated statistics for organization (protected; requires organization context).
+	- Headers required: `x-org-id` (organization context).
+	- Returns: `{ totalChecks, sanctionHits, pepHits, recentLogs }` with count aggregations and last 100 logs.
+	- Data isolation: statistics scoped to requesting organization only.
+	- Error responses: 400 (missing x-org-id), 500 (database error).
 
 Usage Examples
 - Health check:
@@ -128,6 +133,12 @@ curl -X GET "http://localhost:3000/history?orgId=<ORG_ID>" \
 	-H "x-role: superadmin"
 ```
 
+- Organization statistics (total checks, sanction hits, PEP hits, recent logs):
+```bash
+curl -X GET http://localhost:3000/stats \
+	-H "x-org-id: <ORG_ID>"
+```
+
 Response Structure
 - `/health`:
 ```json
@@ -183,11 +194,30 @@ Response Structure
 }
 ```
 
+- `/stats` (success; aggregated statistics for organization):
+```json
+{
+  "totalChecks": 150,
+  "sanctionHits": 25,
+  "pepHits": 10,
+  "recentLogs": [
+    {
+      "id": "<uuid>",
+      "searchQuery": "John Doe",
+      "isSanctioned": false,
+      "isPep": false,
+      "createdAt": "2025-12-28T10:30:00Z"
+    }
+  ]
+}
+```
+
 How It Works (High Level)
 - **Request Flow**: Client sends `GET /check?name=<entity>` with organization context in header → Core Service validates `name` and `x-org-id` → forwards to OP Adapter via `OpAdapterClient` → receives sanctions result with `hits_count` and `data` → creates AuditLog record (organization-scoped) → returns adapter payload.
 - **Audit Logging**: Each search stores organization ID, user ID (`API` default), search query, hit flag/count, and best-match enrichment (name, score, birthDate, gender, countries, datasets, description/notes, isPep, isSanctioned). Supports compliance and search history per org.
+- **Statistics Aggregation**: `/stats` endpoint queries AuditLog table with organization-scoped filters to calculate totalChecks (all logs), sanctionHits (isSanctioned=true), pepHits (isPep=true), and retrieves last 100 logs ordered by createdAt descending.
 - **Pagination and Filtering**: `/history` supports pagination with filters: text search by entity name, hit status, date range, user ID, and (superadmin only) organization ID.
-- **Data Isolation**: Organization-based access enforced on `/history` via `x-org-id`; `x-role: superadmin` can omit org header and optionally filter by `orgId`.
+- **Data Isolation**: Organization-based access enforced on `/check`, `/history`, and `/stats` via `x-org-id`; `x-role: superadmin` can omit org header on `/history` and optionally filter by `orgId`.
 - **OP Adapter Integration**: Core Service delegates sanctions validation to OP Adapter through `OpAdapterClient`, adding logging and audit persistence around the call.
 - **Database Sync**: Sequelize auto-syncs schema on startup (`sync({ alter: true })`), creating AuditLog if missing.
 
@@ -204,17 +234,33 @@ Data Models
 Testing
 -------
 
-Integration tests verify validation, data isolation, and adapter/database interactions. Jest + Supertest with ESM uses `jest.unstable_mockModule` to mock before imports.
+Integration tests verify endpoint behavior, validation, data isolation, error handling, and adapter/database interactions. Tests use Jest + Supertest with ESM support via `jest.unstable_mockModule` to mock dependencies before app import.
 
 Test Files
-- `tests/check.test.js` – `/check` endpoint.
-	- Missing `name` → 400; missing `x-org-id` → 403.
-	- Happy path persists AuditLog using mocked `OpAdapterClient.checkSanctions` response.
+- `tests/check.test.js` – `/check` endpoint (14 tests).
+	- **Request Validation** (3 tests): Missing `name` → 400; missing `x-org-id` → 403; empty name after trim → 400.
+	- **Happy Paths** (3 tests): Successful response with AuditLog persistence; empty results (no matches); multiple matches handling.
+	- **Query Parameters** (1 test): Optional parameters (limit, fuzzy, schema, country) forwarded to adapter.
+	- **Error Handling** (3 tests): Op-Adapter error → 502; unexpected errors → 502; AuditLog failure (continues operation).
+	- **Authentication Context** (2 tests): Missing userID (API key auth, stored as 'API'); userEmail header handling.
+	- **Entity Field Mapping** (2 tests): Whitespace trimming; complete entity fields (gender, score, description, position, notes).
 	- Mocks: `OpAdapterClient`, `AuditLog`, `logger`.
-- `tests/history.test.js` – `/history` endpoint.
-	- Org context required unless `x-role: superadmin`.
-	- Pagination metadata and filters (`search`, `hasHit`, `userId`, `startDate`/`endDate`, `orgId` when superadmin).
+- `tests/history.test.js` – `/history` endpoint (13 tests).
+	- **Security & Data Isolation** (3 tests): Missing `x-org-id` → 403 (non-superadmin); organization-scoped queries; superadmin access without org context.
+	- **Pagination** (3 tests): Paginated results with metadata; default values (page=1, limit=20); page beyond available data.
+	- **Filtering** (6 tests): Search by query; hasHit=true/false; userId filter; date range (startDate/endDate); superadmin orgId filter.
+	- **Error Handling** (1 test): Database error → 500.
 	- Mocks: `OpAdapterClient` (constructed in app), `AuditLog`, `logger`.
+- `tests/stats.test.js` – `/stats` endpoint (5 tests).
+	- **Happy Path** (1 test): Returns aggregated statistics (totalChecks, sanctionHits, pepHits, recentLogs).
+	- **Security** (1 test): Missing `x-org-id` → 400.
+	- **Data Isolation** (2 tests): Organization with no data; statistics scoped to organization only.
+	- **Error Handling** (1 test): Database error → 500.
+	- Mocks: `OpAdapterClient` (constructed in app), `AuditLog`, `logger`.
+- `tests/health.test.js` – `/health` endpoint (2 tests).
+	- **Database Connected** (1 test): Returns status UP with database Connected.
+	- **Database Disconnected** (1 test): Returns status UP with database Disconnected (graceful degradation).
+	- Mocks: `sequelize.authenticate` (database connection), `OpAdapterClient`, `AuditLog`, `logger`.
 
 Running Tests
 - Command: `npm test` (runs all tests with verbose output)
@@ -222,10 +268,15 @@ Running Tests
 - Tests run isolated from real DB/adapter; all externals mocked before app import
 
 Test Coverage
-- **Request Validation**: Proper status codes for missing `name` / `x-org-id`.
-- **Security**: Org-based isolation on `/history`; superadmin exemption via `x-role` header.
-- **Business Logic**: Audit log persistence with best-match enrichment and hit counting.
-- **Pagination & Filtering**: Metadata calculation and query filters for history results.
+- **Request Validation**: Tests verify proper HTTP status codes for missing/invalid inputs (missing name, missing x-org-id, empty name after trim).
+- **Security & Data Isolation**: Organization-based access control on `/check`, `/history`, and `/stats`; superadmin exemption via `x-role` header; org-scoped database queries.
+- **Business Logic**: Audit log persistence with best-match enrichment; entity field mapping (name, score, birthDate, gender, countries, datasets, description); hit counting and flagging.
+- **Error Handling**: Adapter errors (502), database errors (500), unexpected errors; graceful degradation when AuditLog fails (operation continues).
+- **Authentication Context**: JWT authentication (user context) vs API Key authentication (stored as 'API'); userEmail header handling.
+- **Pagination & Filtering**: Metadata calculation (totalItems, totalPages, currentPage, itemsPerPage); query filters (search, hasHit, userId, startDate/endDate, orgId for superadmin); default values.
+- **Query Parameters**: Optional parameters forwarded to Op-Adapter (limit, fuzzy, schema, country); whitespace trimming.
+- **Statistics Aggregation**: Count queries for totalChecks, sanctionHits, pepHits; recent logs retrieval (last 100); organization-scoped aggregations.
+- **Health Monitoring**: Service status reporting; database connection state (Connected/Disconnected).
 
 Example Test Execution
 ```bash
@@ -234,11 +285,10 @@ npm test
 
 Expected output:
 ```
-PASS  tests/check.test.js
-  GET /check Integration Test
-    ✓ should return 400 if name is missing
-    ✓ should return 403 if x-org-id is missing
-    ✓ should process successful response from Op-Adapter and save log
+PASS  tests/health.test.js
+  GET /health Integration Test
+    ✓ should return healthy status with connected database
+    ✓ should return healthy status with disconnected database
 
 PASS  tests/history.test.js
   GET /history Integration Test
@@ -246,7 +296,42 @@ PASS  tests/history.test.js
     ✓ should return paginated results (Pagination)
     ✓ should enforce data isolation for regular users
     ✓ should allow filtering by search query
+    ✓ should allow superadmin to access without x-org-id
+    ✓ should filter by organization for superadmin when orgId provided
+    ✓ should filter by hasHit parameter
+    ✓ should filter by hasHit=false parameter
+    ✓ should filter by userId parameter
+    ✓ should filter by date range (startDate and endDate)
+    ✓ should use default pagination values when not provided
+    ✓ should handle page beyond available data
+    ✓ should return 500 on database error
 
-Test Suites: 2 passed, 2 total
-Tests:       7 passed, 7 total
+PASS  tests/stats.test.js
+  GET /stats Integration Test
+    ✓ should return statistics for organization (Happy Path)
+    ✓ should return 400 if x-org-id is missing
+    ✓ should handle organization with no data
+    ✓ should enforce data isolation (only stats for specified org)
+    ✓ should return 500 on database error
+
+PASS  tests/check.test.js
+  GET /check Integration Test
+    ✓ should return 400 if name is missing
+    ✓ should return 403 if x-org-id is missing
+    ✓ should process successful response from Op-Adapter and save log
+    ✓ should return empty results when no matches found
+    ✓ should handle multiple matches correctly
+    ✓ should pass optional query parameters to adapter
+    ✓ should return 502 when Op-Adapter returns error
+    ✓ should return 500 on unexpected errors
+    ✓ should handle missing userID gracefully (API key authentication)
+    ✓ should handle userEmail header when provided
+    ✓ should trim whitespace from name parameter
+    ✓ should reject empty name after trimming
+    ✓ should continue operation even if AuditLog fails
+    ✓ should map all entity fields correctly
+
+Test Suites: 4 passed, 4 total
+Tests:       34 passed, 34 total
+Time:        2.025 s
 ```

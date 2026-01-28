@@ -7,11 +7,9 @@ const MainLayout = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  // Debug log
-  console.log('User Role:', user?.role);
-
-  // Case-insensitive admin check
+  // Role checks
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'SUPERADMIN';
+  const isSuperAdmin = user?.role === 'superadmin';
 
   const handleLogout = () => {
     logout();
@@ -26,28 +24,38 @@ const MainLayout = () => {
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
             <Nav className="me-auto">
-              <Nav.Link as={NavLink} to="/dashboard">
-                Dashboard
-              </Nav.Link>
-              <Nav.Link as={NavLink} to="/check">
-                Check
-              </Nav.Link>
-              <Nav.Link as={NavLink} to="/history">
-                History
-              </Nav.Link>
-              {isAdmin && (
-                <Nav.Link as={NavLink} to="/users">
-                  Users
+              {isSuperAdmin ? (
+                // SuperAdmin menu - only New Organization
+                <Nav.Link as={NavLink} to="/superadmin">
+                  New Organization
                 </Nav.Link>
+              ) : (
+                // Regular user menu
+                <>
+                  <Nav.Link as={NavLink} to="/dashboard">
+                    Dashboard
+                  </Nav.Link>
+                  <Nav.Link as={NavLink} to="/check">
+                    Check
+                  </Nav.Link>
+                  <Nav.Link as={NavLink} to="/history">
+                    History
+                  </Nav.Link>
+                  {isAdmin && (
+                    <Nav.Link as={NavLink} to="/users">
+                      Users
+                    </Nav.Link>
+                  )}
+                  {isAdmin && (
+                    <Nav.Link as={NavLink} to="/developer">
+                      Developer
+                    </Nav.Link>
+                  )}
+                  <Nav.Link as={NavLink} to="/settings">
+                    Settings
+                  </Nav.Link>
+                </>
               )}
-              {isAdmin && (
-                <Nav.Link as={NavLink} to="/developer">
-                  Developer
-                </Nav.Link>
-              )}
-              <Nav.Link as={NavLink} to="/settings">
-                Settings
-              </Nav.Link>
             </Nav>
             <Nav>
               <Navbar.Text className="me-3">

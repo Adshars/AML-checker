@@ -178,6 +178,12 @@ export default class GatewayServer {
     // ==================== PROTECTED AUTH ROUTES ====================
     // Auth REQUIRED - rate limited
 
+    this.app.post('/auth/register-organization',
+      this.authLimiter,
+      this.authMiddleware.middleware,  // ✅ REQUIRE AUTHENTICATION (SuperAdmin only)
+      this.authProxy
+    );
+
     this.app.post('/auth/register-user',
       this.authLimiter,
       this.authMiddleware.middleware,  // ✅ REQUIRE AUTHENTICATION
@@ -196,15 +202,16 @@ export default class GatewayServer {
       this.authProxy
     );
 
+    this.app.get('/auth/organization/keys',
+      this.authLimiter,
+      this.authMiddleware.middleware,
+      this.authProxy
+    );
+
     // ==================== PUBLIC AUTH ROUTES ====================
     // No auth required, rate limited
 
     this.app.post('/auth/login',
-      this.authLimiter,
-      this.authProxy
-    );
-
-    this.app.post('/auth/register-organization',
       this.authLimiter,
       this.authProxy
     );
@@ -248,8 +255,8 @@ export default class GatewayServer {
     );
 
     logger.info('All routes configured', {
-      protectedAuthRoutes: ['/register-user', '/reset-secret', '/change-password'],
-      publicAuthRoutes: ['/login', '/register-organization', '/forgot-password', '/reset-password', '/refresh', '/logout'],
+      protectedAuthRoutes: ['/register-organization', '/register-user', '/reset-secret', '/change-password', '/organization/keys'],
+      publicAuthRoutes: ['/login', '/forgot-password', '/reset-password', '/refresh', '/logout'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
       protectedUsersRoutes: ['/users (wildcard)'],
     });

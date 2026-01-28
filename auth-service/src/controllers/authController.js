@@ -9,16 +9,15 @@ import { registerOrgSchema, registerUserSchema, loginSchema, resetPasswordSchema
 export const registerOrganization = async (req, res) => {
   const requestId = `reg-${Date.now()}`;
 
-  // --- New security feature ---
-  // Only SuperAdmin can create new organizations
-  /*
+  // Security: Only SuperAdmin can create new organizations
   const requesterRole = req.headers['x-role'];
   if (requesterRole !== 'superadmin') {
-      logger.warn('Unauthorized org registration attempt', { requestId });
-      return res.status(403).json({ error: 'Only SuperAdmin can create organizations' });
+      logger.warn('Unauthorized org registration attempt', { 
+        requestId, 
+        role: requesterRole 
+      });
+      return res.status(403).json({ error: 'Only SuperAdmin can register organizations' });
   }
-  */
-  // ---------------------------------
 
   try {
     const { error } = registerOrgSchema.validate(req.body);

@@ -31,72 +31,80 @@ Docker Compose Setup
 - Endpoints will be available at http://localhost:3002 (port mapping handled by docker-compose).
 
 Endpoints
-- `GET /health` – returns service status and MongoDB connection (`{ service, status, database }`).
-- `POST /auth/register-organization` – registers organization and admin user, generates `apiKey` and returns `apiSecret` once (never stored in plain text).
-	- Required fields: `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName`.
-	- Validations: required fields (Joi), email format, password minimum 8 characters; duplicate org name, duplicate email; 400 errors. Server error 500.
-	- Returns: organization details with `apiKey` (format: `pk_live_...`) and `apiSecret` (format: `sk_live_...`) visible only once; admin user with role `admin`.
-- `POST /auth/register-user` – adds user to existing organization with `user` role. **REQUIRES AUTHENTICATION** (admin only).
-	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway).
-	- Required fields: `email`, `password`, `firstName`, `lastName`, `organizationId`.
-	- Validations: authentication context, admin role check (403); required fields (Joi), email format, password minimum 8 characters; organizationId existence, duplicate email; 400/404 errors; server error 500.
-	- Returns: user details (email, name, role, organization assignment).
-- `POST /auth/login` – authenticates user by email/password and returns access token + refresh token.
-	- Required fields: `email`, `password`.
-	- Rate limited: 50 requests per 15 minutes per IP (express-rate-limit in `authRoutes`).
-	- Validations: email format (Joi), password required; user existence, password match; 401 errors. Server error 500.
-	- Returns: `accessToken` valid for 15 minutes (JWT payload includes `userId`, `organizationId`, `role`); `refreshToken` valid for 7 days.
-- `POST /auth/refresh` – generates new access token using valid refresh token.
-	- Required fields: `refreshToken` (from login response).
-	- Validations: token exists in DB (not revoked), cryptographic verification; 401/403 errors.
-	- Returns: new `accessToken` valid for 15 minutes.
-- `POST /auth/logout` – revokes refresh token (user cannot refresh access token after logout).
-	- Required fields: `refreshToken`.
-	- Deletes refresh token from database.
-	- Returns: logout success message.
-- `POST /auth/forgot-password` – requests password reset email (public endpoint, no auth required).
-	- Required fields: `email`.
-	- Always returns success message for security (no account enumeration).
-	- Sends email with reset link containing token and user ID (valid for 1 hour).
-- `POST /auth/reset-password` – resets password using token from email.
-	- Required fields: `userId`, `token`, `newPassword`.
-	- Validations: token existence and validity; new password minimum 8 characters (Joi); 400 errors. Server error 500.
-	- Hashes new password and updates user record; deletes used reset token.
-	- Returns: reset success message.
-- `POST /auth/reset-secret` – resets organization's API secret (admin only, requires authentication and password confirmation).
-	- Requires: valid JWT token with `admin` role (via `x-role` header from API Gateway); `password` field in request body (user's current password for verification).
-	- Validations: authentication context, admin role check, password verification against user's hash; 401/403/404 errors. Server error 500.
-	- Returns: organization `apiKey` and new `apiSecret` (plaintext, visible only once).
-- `GET /auth/organization/keys` – retrieves organization's public API key (requires authentication).
-	- Requires: valid JWT token (via `x-org-id` and `x-user-id` headers from API Gateway).
-	- Validations: authentication context, organization existence; 401/404 errors. Server error 500.
-	- Returns: organization `apiKey` (public identifier, not secret).
-- `POST /auth/change-password` – changes authenticated user's password.
-	- Requires: valid JWT token (via `x-user-id` header from API Gateway); `currentPassword` and `newPassword` in request body.
-	- Validations: authentication context, current password verification, new password minimum 8 characters; 400/404 errors. Server error 500.
-	- Returns: success message with password change confirmation.
-- `POST /auth/internal/validate-api-key` – internal endpoint for API Gateway; validates API key and secret (B2B machine-to-machine authentication).
-	- Required fields: `apiKey`, `apiSecret`.
-	- Validations: API key existence, secret match (bcrypt comparison); 401 errors. Server error 500.
-	- Returns: `{ valid: true, organizationId, organizationName }` on success.
+---------
 
-Users Management Endpoints (Admin Only)
-- `GET /users` – retrieves all regular users for the authenticated admin's organization.
-	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway); organization context via `x-org-id` header.
-	- Security: Only returns users with `role: 'user'` (hides admins/superadmins); filtered by admin's organization (data isolation).
-	- Returns: array of user objects (id, email, firstName, lastName, role, createdAt); passwordHash excluded.
-	- Validations: authentication context, admin role check; 403 errors. Server error 500.
-- `POST /users` – creates new user in the authenticated admin's organization.
-	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway); organization context via `x-org-id` header.
-	- Required fields: `email`, `password`, `firstName`, `lastName`.
-	- Security: **CRITICAL** - role is hardcoded to `user` regardless of request body (admins cannot create other admins); organizationId forced to admin's organization.
-	- Validations: authentication context, admin role check, email uniqueness, password minimum 8 characters (Joi); 400/403 errors. Server error 500.
-	- Returns: created user details (id, email, firstName, lastName, role='user', organizationId, createdAt).
-- `DELETE /users/:id` – deletes user from the authenticated admin's organization.
-	- Requires: valid JWT token with `admin` or `superadmin` role (via `x-role` header from API Gateway); organization context via `x-org-id` header.
-	- Security: prevents self-deletion; verifies user belongs to admin's organization (data isolation); only superadmins can delete admin users.
-	- Validations: authentication context, admin role check, user existence, organization match, self-deletion prevention; 400/403/404 errors. Server error 500.
-	- Returns: success message.
+### Service Endpoints
+
+| Method | Endpoint | Auth Required | Role Required | Description |
+|--------|----------|---------------|---------------|-------------|
+| GET | `/health` | ❌ No | - | Returns service status and MongoDB connection state |
+
+### Authentication Endpoints (`/auth/*`)
+
+#### Public Endpoints (No Authentication Required)
+
+| Method | Endpoint | Rate Limit | Description | Required Fields |
+|--------|----------|------------|-------------|-----------------|
+| POST | `/auth/register-organization` | None | Register new organization with admin user; generates API key/secret | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
+| POST | `/auth/login` | 50 req/15min | User login; returns JWT access token (15min) + refresh token (7d) | `email`, `password` |
+| POST | `/auth/refresh` | None | Generate new access token using valid refresh token | `refreshToken` |
+| POST | `/auth/logout` | None | Revoke refresh token from database | `refreshToken` |
+| POST | `/auth/forgot-password` | None | Request password reset email with token (valid 1 hour) | `email` |
+| POST | `/auth/reset-password` | None | Reset password using token from email | `userId`, `token`, `newPassword` |
+
+#### Protected Endpoints (Authentication Required)
+
+| Method | Endpoint | Auth Required | Role Required | Description | Required Fields |
+|--------|----------|---------------|---------------|-------------|-----------------|
+| POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Add user to organization (role forced to 'user') | `email`, `password`, `firstName`, `lastName`, `organizationId` |
+| POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Reset organization's API secret; requires password confirmation | `password` |
+| POST | `/auth/change-password` | ✅ JWT | - | Change authenticated user's password | `currentPassword`, `newPassword` |
+| GET | `/auth/organization/keys` | ✅ JWT | - | Get organization's public API key | - |
+
+#### Internal Endpoints (Not Exposed via Gateway)
+
+| Method | Endpoint | Description | Required Fields |
+|--------|----------|-------------|-----------------|
+| POST | `/auth/internal/validate-api-key` | Validate API key/secret for API Gateway (B2B auth) | `apiKey`, `apiSecret` |
+
+### Users Management Endpoints (`/users/*`)
+
+All users management endpoints require **JWT authentication** with **admin or superadmin role** and **organization context** (via `x-org-id`, `x-user-id`, `x-role` headers from API Gateway).
+
+| Method | Endpoint | Description | Required Fields | Security Features |
+|--------|----------|-------------|-----------------|-------------------|
+| GET | `/users` | List all regular users in organization | - | Returns only users with role='user' (hides admins); organization data isolation |
+| POST | `/users` | Create new user in organization | `email`, `password`, `firstName`, `lastName` | **Role forced to 'user'** (prevents admin creation); organizationId auto-assigned from admin context |
+| DELETE | `/users/:id` | Delete user from organization | - | Prevents self-deletion; organization data isolation; only superadmins can delete admins |
+
+### Endpoint Details
+
+**Authentication & Authorization:**
+- JWT tokens contain: `userId`, `organizationId`, `role`, `email`
+- Access token validity: 15 minutes
+- Refresh token validity: 7 days
+- Rate limiting: 50 req/15min for login endpoint (express-rate-limit)
+
+**Validation Rules (Joi):**
+- Email: valid format with `@` and domain
+- Password: minimum 8 characters
+- All required fields validated before processing
+
+**Error Responses:**
+- 400: Validation errors, duplicate entries, missing fields
+- 401: Invalid credentials, expired tokens
+- 403: Insufficient permissions, missing role/organization context
+- 404: Resource not found (user, organization, token)
+- 500: Server errors
+
+**Security Features:**
+- Passwords hashed with bcryptjs (salt rounds: 10)
+- API secrets hashed with bcryptjs (never stored in plaintext)
+- JWT verification for protected endpoints
+- Organization-based data isolation
+- Role-based access control (RBAC)
+- Self-deletion prevention
+- Admin role elevation prevention (forced user role in POST /users)
 
 Usage Examples
 - Health check:

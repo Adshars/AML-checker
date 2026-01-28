@@ -36,27 +36,163 @@ Docker Compose Setup
 - Endpoints available at http://localhost:3000 (or mapped port from docker-compose).
 
 Endpoints
-- `GET /health` – returns service status and PostgreSQL connection state (`{ service, status, database }`).
-	- No authentication required; available for health checks and liveness probes.
-- `GET /check` – sanctions checking endpoint (protected; requires organization context).
-	- Query parameters: `name` (required); optional: `limit`, `fuzzy`, `schema`, `country` (forwarded to OP Adapter).
-	- Headers required: `x-org-id` (organization context; enforced by API Gateway middleware).
-	- Optional headers: `x-user-id` (user context from JWT; if absent, defaults to `API` in audit log), `x-request-id` (request tracking ID; auto-generated if missing).
-	- Returns: OP Adapter response with `hits_count`, `data` array of mapped entities, and `meta` passthrough.
-	- Automatically creates AuditLog record with search query, hit flag/count, and best-match enrichment (name, score, birthDate, countries, datasets, description/notes, isPep, isSanctioned).
-	- Error responses: 400 (missing name), 403 (missing x-org-id), 502 (OP Adapter error), 500 (unexpected).
-- `GET /history` – returns paginated audit log (protected; requires organization context or superadmin role).
-	- Query parameters (optional): `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId`; `orgId` allowed only with `x-role: superadmin`.
-	- Headers required: `x-org-id` (unless `x-role: superadmin`).
-	- Optional header: `x-role` (if `superadmin`, can access without `x-org-id` and filter by organization).
-	- Returns: `{ data, meta { totalItems, totalPages, currentPage, itemsPerPage } }` ordered by `createdAt` descending.
-	- Data isolation: regular users see only their organization's logs; superadmins can view all logs or filter by `orgId`.
-	- Error responses: 403 (missing org context for non-superadmin), 500 (database error).
-- `GET /stats` – returns aggregated statistics for organization (protected; requires organization context).
-	- Headers required: `x-org-id` (organization context).
-	- Returns: `{ totalChecks, sanctionHits, pepHits, recentLogs }` with count aggregations and last 100 logs.
-	- Data isolation: statistics scoped to requesting organization only.
-	- Error responses: 400 (missing x-org-id), 500 (database error).
+---------
+
+### Service Endpoints
+
+| Method | Endpoint | Auth Required | Description |
+|--------|----------|---------------|-------------|
+| GET | `/health` | ❌ No | Returns service status and PostgreSQL connection state |
+
+### Sanctions & Audit Endpoints
+
+All sanctions endpoints require **organization context** via `x-org-id` header (injected by API Gateway after JWT or API Key authentication).
+
+| Method | Endpoint | Auth Required | Description | Required Headers | Query Parameters |
+|--------|----------|---------------|-------------|------------------|------------------|
+| GET | `/check` | ✅ Yes (org context) | Check entity against sanctions/PEP lists; creates audit log | `x-org-id` (required)<br>`x-user-id` (optional)<br>`x-user-email` (optional)<br>`x-request-id` (optional) | `name` (required)<br>`limit` (optional)<br>`fuzzy` (optional)<br>`schema` (optional)<br>`country` (optional) |
+| GET | `/history` | ✅ Yes (org context or superadmin) | Retrieve paginated audit logs with filtering | `x-org-id` (required for non-superadmin)<br>`x-role` (optional, for superadmin) | `page` (default: 1)<br>`limit` (default: 20)<br>`search` (text filter)<br>`hasHit` (true/false)<br>`startDate` (ISO date)<br>`endDate` (ISO date)<br>`userId` (filter by user)<br>`orgId` (superadmin only) |
+| GET | `/stats` | ✅ Yes (org context) | Get aggregated statistics for organization | `x-org-id` (required) | None |
+
+### Endpoint Details
+
+#### `/check` - Sanctions Check
+**Purpose:** Validate entity against OpenSanctions data (via OP Adapter), log to audit trail, return results.
+
+**Query Parameters:**
+- `name` (required) - Entity name to check
+- `limit` (optional) - Maximum results to return (forwarded to OP Adapter)
+- `fuzzy` (optional) - Enable fuzzy matching (forwarded to OP Adapter)
+- `schema` (optional) - Entity type filter: Person, Company, etc. (forwarded to OP Adapter)
+- `country` (optional) - ISO country code filter (forwarded to OP Adapter)
+
+**Headers:**
+- `x-org-id` (required) - Organization context for data isolation
+- `x-user-id` (optional) - User ID from JWT; defaults to `"API"` if absent (for API Key auth)
+- `x-user-email` (optional) - User email from JWT
+- `x-request-id` (optional) - Request tracking ID; auto-generated if missing
+
+**Response:**
+```json
+{
+  "hits_count": 1,
+  "data": [
+    {
+      "name": "Vladimir Putin",
+      "score": 1.0,
+      "birthDate": "1952-10-07",
+      "country": ["RU"],
+      "datasets": ["ofac"],
+      "isSanctioned": true,
+      "isPep": false
+    }
+  ],
+  "meta": { "requestId": "...", "source": "OpenSanctions" }
+}
+```
+
+**Audit Logging:**
+- Creates AuditLog record with: organizationId, userId, searchQuery, hasHit, hitsCount
+- Enriches with best match: entityName, entityScore, entityBirthDate, entityGender, entityCountries, entityDatasets, entityDescription, isSanctioned, isPep
+
+**Error Responses:**
+- 400 - Missing `name` parameter or empty after trim
+- 403 - Missing `x-org-id` header (organization context required)
+- 502 - OP Adapter error (downstream service failure)
+- 500 - Internal server error
+
+---
+
+#### `/history` - Audit Log History
+**Purpose:** Retrieve paginated audit logs with advanced filtering; supports organization-scoped access and superadmin cross-organization queries.
+
+**Query Parameters:**
+- `page` (optional, default: 1) - Page number for pagination
+- `limit` (optional, default: 20) - Items per page
+- `search` (optional) - Text filter for entity names (case-insensitive)
+- `hasHit` (optional) - Filter by hit status: `true` or `false`
+- `startDate` (optional) - Filter logs from this date (ISO format)
+- `endDate` (optional) - Filter logs until this date (ISO format)
+- `userId` (optional) - Filter by specific user ID
+- `orgId` (optional, superadmin only) - Filter by organization ID
+
+**Headers:**
+- `x-org-id` (required for non-superadmin) - Organization context for data isolation
+- `x-role` (optional) - User role; `superadmin` can omit `x-org-id` and use `orgId` parameter
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "<uuid>",
+      "organizationId": "<org_id>",
+      "userId": "API",
+      "searchQuery": "Putin",
+      "hasHit": true,
+      "hitsCount": 1,
+      "entityName": "Vladimir Putin",
+      "entityScore": 1,
+      "entityBirthDate": "1952-10-07",
+      "entityCountries": "RU",
+      "entityDatasets": "ofac",
+      "isSanctioned": true,
+      "isPep": false,
+      "createdAt": "2025-12-28T10:30:00Z"
+    }
+  ],
+  "meta": {
+    "totalItems": 150,
+    "totalPages": 8,
+    "currentPage": 1,
+    "itemsPerPage": 20
+  }
+}
+```
+
+**Data Isolation:**
+- Regular users: see only their organization's logs (via `x-org-id`)
+- Superadmins: can view all logs or filter by `orgId` parameter
+
+**Error Responses:**
+- 403 - Missing `x-org-id` for non-superadmin users
+- 500 - Database error
+
+---
+
+#### `/stats` - Organization Statistics
+**Purpose:** Get aggregated statistics for organization: total checks, sanction hits, PEP hits, and recent logs.
+
+**Headers:**
+- `x-org-id` (required) - Organization context
+
+**Response:**
+```json
+{
+  "totalChecks": 150,
+  "sanctionHits": 25,
+  "pepHits": 10,
+  "recentLogs": [
+    {
+      "id": "<uuid>",
+      "searchQuery": "John Doe",
+      "isSanctioned": false,
+      "isPep": false,
+      "createdAt": "2025-12-28T10:30:00Z"
+    }
+  ]
+}
+```
+
+**Statistics Breakdown:**
+- `totalChecks` - Total number of checks for organization
+- `sanctionHits` - Number of checks with `isSanctioned: true`
+- `pepHits` - Number of checks with `isPep: true`
+- `recentLogs` - Last 100 audit logs ordered by creation date (descending)
+
+**Error Responses:**
+- 400 - Missing `x-org-id` header
+- 500 - Database error
 
 Usage Examples
 - Health check:

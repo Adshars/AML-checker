@@ -91,21 +91,94 @@ Protected Routes
 - Role-based access enforced via AuthContext and route guards in App.jsx.
 
 API Integration (via API Gateway)
-- Base URL: `VITE_API_URL` (configured in .env; defaults to http://localhost:8080).
-- **Authentication Service**:
-	- `POST /auth/login` – user login; returns `{ accessToken, refreshToken, user }`.
-	- `POST /auth/logout` – user logout; invalidates refresh token.
-	- `POST /auth/change-password` – change user password; requires JWT authentication.
-- **Core Sanctions Service**:
-	- `POST /sanctions/check` – check entity against sanctions; requires `name` parameter; returns `{ result, data }` with CLEAN/HIT status and entity array.
-	- `GET /sanctions/history` – get paginated check history; supports filters (search, hasHit, startDate, endDate, userId, page, limit).
-	- `GET /sanctions/stats` – get aggregated statistics; returns `{ totalChecks, sanctionHits, pepHits, recentLogs }`.
-- **User Management Service**:
-	- `GET /users` – get all users (admin only).
-	- `POST /users` – create new user (admin only); requires `{ email, password, role, firstName, lastName }`.
-	- `DELETE /users/:id` – delete user (admin only).
-- **Request Interceptor**: Automatically adds `Authorization: Bearer <token>` header from localStorage to all requests.
-- **Response Interceptor**: Intercepts 401 responses; clears localStorage (token, refreshToken, user); redirects to `/login`; skips redirect if already on `/auth/login` route.
+---------------------------------
+
+**Base URL:** `VITE_API_URL` (configured in .env; defaults to http://localhost:8080)
+
+### Authentication Endpoints
+
+| Method | Endpoint | Service File | Description | Request Payload | Response |
+|--------|----------|--------------|-------------|-----------------|----------|
+| POST | `/auth/login` | `authService.js` | User authentication; stores JWT tokens in localStorage | `{ email, password }` | `{ accessToken, refreshToken, user }` |
+| POST | `/auth/logout` | `authService.js` | Invalidate refresh token; clears localStorage | `{ refreshToken }` | `{ message }` |
+| POST | `/auth/change-password` | `api.js` | Change authenticated user's password | `{ currentPassword, newPassword }` | `{ message }` |
+| POST | `/auth/forgot-password` | `api.js` | Request password reset email with token | `{ email }` | `{ message }` |
+| POST | `/auth/reset-password` | `api.js` | Reset password using token from email | `{ userId, token, newPassword }` | `{ message }` |
+| GET | `/auth/organization/keys` | `api.js` | Get organization's public API key | - | `{ apiKey }` |
+| POST | `/auth/reset-secret` | `api.js` | Reset organization API secret (requires password) | `{ password }` | `{ apiKey, apiSecret }` |
+
+### Sanctions & Core Service Endpoints
+
+| Method | Endpoint | Service File | Description | Query/Request Parameters | Response |
+|--------|----------|--------------|-------------|--------------------------|----------|
+| GET | `/sanctions/check` | `coreService.js` | Check entity against sanctions/PEP lists | Query: `name` (required), `limit`, `fuzzy`, `schema`, `country` | `{ hits_count, data: [...], meta }` |
+| GET | `/sanctions/history` | `api.js` | Get paginated audit history with filters | Query: `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId` | `{ data: [...], meta: { totalItems, totalPages, currentPage, itemsPerPage } }` |
+| GET | `/sanctions/stats` | `api.js` | Get aggregated statistics for organization | - | `{ totalChecks, sanctionHits, pepHits, recentLogs }` |
+
+### User Management Endpoints (Admin Only)
+
+| Method | Endpoint | Service File | Description | Request Payload | Response |
+|--------|----------|--------------|-------------|-----------------|----------|
+| GET | `/users` | `api.js` | Get all users in organization | - | `{ data: [{ id, email, firstName, lastName, role, createdAt }] }` |
+| POST | `/users` | `api.js` | Create new user in organization | `{ email, password, firstName, lastName }` | `{ message, user }` |
+| DELETE | `/users/:id` | `api.js` | Delete user from organization | - | `{ message }` |
+
+### Axios Interceptors
+
+**Request Interceptor:**
+- Automatically adds `Authorization: Bearer <token>` header from localStorage to all requests
+- Token retrieved via `localStorage.getItem('token')`
+- Applied to all API calls except those without token in localStorage
+
+**Response Interceptor:**
+- Intercepts 401 Unauthorized responses (expired/invalid tokens)
+- Clears localStorage: `token`, `refreshToken`, `user`
+- Redirects to `/login` via `window.location.href`
+- Skips redirect if error originates from `/auth/login` (prevents redirect loops)
+
+### Service Layer Architecture
+
+**`api.js` (Base API Module):**
+- Axios instance with `baseURL` from `VITE_API_URL`
+- Request/response interceptors for authentication
+- Common API methods: `getHistory()`, `getUsers()`, `createUser()`, `deleteUser()`, `changePassword()`, `getOrganizationKeys()`, `resetOrganizationSecret()`, `requestPasswordReset()`, `confirmPasswordReset()`, `getDashboardStats()`
+
+**`authService.js` (Authentication Service):**
+- `login(email, password)` - authenticates user, saves tokens to localStorage
+- `logout()` - calls logout API, clears localStorage (graceful degradation if API fails)
+- `getCurrentUser()` - retrieves and parses user from localStorage
+
+**`coreService.js` (Core Service):**
+- `checkEntity(params)` - sanctions check with query parameters
+
+### API Response Handling
+
+**Success Response Structure:**
+```javascript
+// Login
+{ accessToken: "jwt...", refreshToken: "jwt...", user: { id, email, role, ... } }
+
+// Sanctions Check (CLEAN)
+{ hits_count: 0, data: [], meta: { requestId, source } }
+
+// Sanctions Check (HIT)
+{ hits_count: 2, data: [{ name, score, birthDate, country, datasets, isSanctioned, isPep }], meta: { ... } }
+
+// History
+{ data: [...], meta: { totalItems: 150, totalPages: 8, currentPage: 1, itemsPerPage: 20 } }
+
+// Stats
+{ totalChecks: 150, sanctionHits: 25, pepHits: 10, recentLogs: [...] }
+```
+
+**Error Response Structure:**
+```javascript
+// Standard error (caught in components)
+{ error: "Error message" }
+
+// Network/timeout errors handled by axios interceptors
+// 401 errors trigger automatic logout and redirect to /login
+```
 
 How It Works (High Level)
 - **Authentication Flow**: User submits login form → `authService.login()` calls `POST /auth/login` via API Gateway → receives JWT tokens and user object → stores in localStorage → updates AuthContext state → redirects to `/check`.

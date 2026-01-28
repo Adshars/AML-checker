@@ -50,9 +50,9 @@
 3. **Core Service** ([core-service/](core-service/)) – Sanctions checking and audit logging
 	- Port: 3000 (mapped to 3005 for debug; accessed via API Gateway on production)
 	- Database: PostgreSQL 15 (Sequelize 6 ORM)
-	- Responsibilities: forward sanctions queries to OP Adapter, log audit trail, return history
+	- Responsibilities: forward sanctions queries to OP Adapter, log audit trail, return history and statistics
 	- Enforces organization-based data isolation: users see only their organization's logs
-	- Endpoints: `/check` (sanctions check with audit), `/history` (audit log), `/health`
+	- Endpoints: `/check` (sanctions check with audit), `/history` (audit log with advanced filtering), `/stats` (aggregated statistics), `/health`
 
 4. **OP Adapter** ([op-adapter/](op-adapter/)) – OpenSanctions Yente wrapper
 	- Port: 3000 (mapped to 3001)
@@ -111,16 +111,27 @@ All client requests go through **API Gateway** (port 8080). Below is a complete 
 | POST | `/auth/logout` | ❌ No | - | Revoke refresh token | `refreshToken` |
 | POST | `/auth/forgot-password` | ❌ No | - | Request password reset (sends email) | `email` |
 | POST | `/auth/reset-password` | ❌ No | - | Reset password with token | `userId`, `token`, `newPassword` |
+| POST | `/auth/change-password` | ✅ JWT | - | Change user password | `currentPassword`, `newPassword` |
 | POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Regenerate organization API secret | - |
+| GET | `/auth/organization/keys` | ✅ JWT | - | Get organization API keys | - |
 | POST | `/auth/internal/validate-api-key` | ❌ Internal | - | Validate API key (used by Gateway) | `apiKey`, `apiSecret` |
 | GET | `/auth/health` | ❌ No | - | Health check | - |
+
+### User Management Endpoints (Auth Service via `/users/*`)
+
+| Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
+|--------|----------|---------------|---------------|-------------|----------------|
+| GET | `/users` | ✅ JWT | admin/superadmin | List all users in organization | - |
+| POST | `/users` | ✅ JWT | admin/superadmin | Create new user in organization | `email`, `password`, `firstName`, `lastName` |
+| DELETE | `/users/:id` | ✅ JWT | admin/superadmin | Delete user from organization | `id` (user ID in URL) |
 
 ### Sanctions Endpoints (Core Service via `/sanctions/*`)
 
 | Method | Endpoint | Auth Required | Role Required | Description | Key Parameters |
 |--------|----------|---------------|---------------|-------------|----------------|
-| GET | `/sanctions/check` | ✅ JWT or API Key | - | Check entity against sanctions/PEP lists | `name` (required), `limit` (1-100, default 15), `fuzzy` (true/false), `schema` (Person/Company/etc), `country` (ISO code) |
-| GET | `/sanctions/history` | ✅ JWT or API Key | - | Retrieve audit logs with filtering | `page` (default 1), `limit` (default 20), `search` (text), `hasHit` (true/false), `startDate` (ISO), `endDate` (ISO), `userId` (UUID), `orgId` (superadmin only) |
+| GET | `/sanctions/check` | ✅ JWT or API Key | - | Check entity against sanctions/PEP lists; creates audit log | `name` (required), `limit` (1-100, default 15), `fuzzy` (true/false), `schema` (Person/Company/etc), `country` (ISO code) |
+| GET | `/sanctions/history` | ✅ JWT or API Key | - | Retrieve audit logs with pagination and advanced filtering | `page` (default 1), `limit` (default 20), `search` (text), `hasHit` (true/false), `startDate` (ISO), `endDate` (ISO), `userId` (UUID), `orgId` (superadmin only) |
+| GET | `/sanctions/stats` | ✅ JWT or API Key | - | Get aggregated statistics for organization | - |
 | GET | `/sanctions/health` | ❌ No | - | Health check | - |
 
 ### API Gateway Endpoints
@@ -202,6 +213,7 @@ The API Gateway automatically adds these headers to downstream service requests 
 	- Password reset flow: request reset via `/forgot-password` (sends email with token), reset password with token via `/reset-password`
 	- API key validation for system-to-system (B2B) authentication
 	- Reset organization API secret (`/reset-secret` admin-only endpoint)
+	- **User Management (Admin)**: List users (`GET /users`), create users (`POST /users`), delete users (`DELETE /users/:id`) with organization isolation and self-deletion prevention
 	- **Request validation** using Joi: email format validation, password minimum 8 characters for registration and password reset
 
 - **API Gateway & Authentication**:
@@ -242,9 +254,11 @@ The API Gateway automatically adds these headers to downstream service requests 
 	- **MainLayout**: Top navigation bar with role-based menu items (Users page visible only for admins)
 	- **Authentication flow**: Login page → JWT token storage → protected routes with automatic redirect
 	- **Entity Screening Panel**: Real-time sanctions checking with visual result cards (CLEAN/HIT status)
-	- **Audit History**: Paginated view of organization's sanctions checks
-	- **User Management**: Admin panel for adding users to organization (admin-only)
-	- **Settings Page**: Account configuration (stub)
+	- **Audit History**: Paginated view of organization's sanctions checks with advanced filtering (search, date range, hit status, user)
+	- **Dashboard**: Analytics with charts displaying total checks, sanction hits, PEP hits, and recent activity
+	- **User Management**: Admin panel for listing users, creating users, and deleting users from organization (admin-only) with self-deletion prevention
+	- **Settings Page**: Change password functionality and account configuration
+	- **Developer Page**: API key management and developer tools
 	- Responsive design with react-bootstrap components
 	- English UI with clear labeling and user feedback
 
@@ -522,7 +536,59 @@ curl -X GET "http://localhost:8080/sanctions/history?page=2&limit=50" \
 	-H "Authorization: Bearer <JWT_TOKEN>"
 
 # Combined filters (search + date range + pagination)
-curl -X GET "http://localhost:8080/sanctions/history?search=John&startDate=2025-12-01T00:00:00Z&hasHit=true&page=1&limit=10" \
+cur
+
+### 9. Get Organization Statistics
+```bash
+curl10. User Management (Admin Only)
+```bash
+# List all users in organization
+curl -X GET http://localhost:8080/users \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+
+# Create new user in organization
+curl -X POST http://localhost:8080/users \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"email": "newuser@acme.test",
+		"password": "Str0ngPass!",
+		"firstName": "Alice",
+		"lastName": "Johnson"
+	}'
+
+# Delete user from organization (prevents self-deletion)
+curl -X DELETE http://localhost:8080/users/<USER_ID> \
+	-H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+```
+
+### 11. Change Password
+```bash
+curl -X POST http://localhost:8080/auth/change-password \
+	-H "Authorization: Bearer <JWT_TOKEN>" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"currentPassword": "OldPassword123",
+		"newPassword": "NewStr0ngPass!"
+	}'
+```
+
+### 12. Get Organization API Keys
+```bash
+curl -X GET http://localhost:8080/auth/organization/keys \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+```
+**Response includes**:
+- `apiKey` – public API key (format: `pk_live_...`)
+
+###  -X GET http://localhost:8080/sanctions/stats \
+	-H "Authorization: Bearer <JWT_TOKEN>"
+```
+**Response includes**:
+- `totalChecks` – total number of sanctions checks for organization
+- `sanctionHits` – number of checks with sanctioned entities
+- `pepHits` – number of checks with PEP entities
+- `recentLogs` – last 100 audit logs with basic detailsl -X GET "http://localhost:8080/sanctions/history?search=John&startDate=2025-12-01T00:00:00Z&hasHit=true&page=1&limit=10" \
 	-H "Authorization: Bearer <JWT_TOKEN>"
 ```
 
@@ -542,15 +608,23 @@ curl http://localhost:3005/health                  # Core Service (debug)
 		"timestamp": "2025-12-28T10:30:45.123Z",
 		"requestId": "req-1735386645123-a1b2c3d4"
 	},
-	"query": "John Doe",
-	"search_params": {
-		"limit": 15,
-		"fuzzy": false,
-		"schema": null
-	},
-	"hits_count": 2,
-	"data": [
+	"quentityName": "John Doe",
+			"entityScore": 0.98,
+			"isSanctioned": true,
+			"isPep": false,
+			"createdAt": "2025-12-28T10:30:00Z"
+		},
 		{
+			"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+			"organizationId": "<org_id>",
+			"userId": "API",
+			"searchQuery": "Jane Smith",
+			"hasHit": false,
+			"hitsCount": 0,
+			"entityName": null,
+			"entityScore": null,
+			"isSanctioned": false,
+			"isPep": false
 			"id": "ocbid-8f7ac0e8b79e67a42c6de10d8a2c7b3f",
 			"name": "John Doe",
 			"schema": "Person",
@@ -595,6 +669,42 @@ curl http://localhost:3005/health                  # Core Service (debug)
 			"createdAt": "2025-12-28T10:25:00Z"
 		}
 	],
+
+### Response Example (Organization Statistics)
+```json
+{
+	"totalChecks": 150,
+	"sanctionHits": 25,
+	"pepHits": 10,
+	"recentLogs": [
+		{
+			"id": "550e8400-e29b-41d4-a716-446655440000",
+			"searchQuery": "John Doe",
+			"isSanctioned": true,
+			"isPep": false,
+			"createdAt": "2025-12-28T10:30:00Z"
+		},
+		{
+			"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+			"searchQuery": "Jane Smith",
+			"isSanctioned": false,
+			"isPep": false,
+			"createdAt": "2025-12-28T10:25:00Z"
+		}
+	]
+}
+```
+
+## Acknowledgements
+- OpenSanctions project ([opensanctions.org](https://www.opensanctions.org/)) for providing comprehensive sanctions and PEP data.
+- Yente API ([github.com/opensanctions/yente](https://github.com/opensanctions/yente)) for the local sanctions API implementation.
+- All open-source libraries and frameworks used in this project.
+
+## Contact
+Created by Adam Węglewski - feel free to contact me!
+
+## License
+This project is open source and available under the [MIT License](LICENSE).
 	"meta": {
 		"totalItems": 150,
 		"totalPages": 8,

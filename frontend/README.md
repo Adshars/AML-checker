@@ -3,39 +3,181 @@ Frontend
 
 Single-page application for AML (Anti-Money Laundering) sanctions screening system. Provides responsive user interface for entity screening, history tracking, user management, and analytics dashboard. Communicates with backend services through API Gateway using JWT authentication and role-based access control.
 
-Stack and Dependencies
-- React 19.2.0, Vite 7.2.4 (build tool), ES6+ JavaScript
-- React Router DOM 7.12.0 (client-side routing with protected routes)
-- React Bootstrap 2.10.10 + Bootstrap 5.3.8 (UI components and styling)
-- Recharts 3.7.0 (data visualization for dashboard charts)
-- React Toastify 11.0.5 (toast notifications for user feedback)
-- Axios 1.13.2 (HTTP client with request/response interceptors)
-- React Context API (global authentication state management)
-- Vitest 2.1.5 + @testing-library/react 16.0.1 (testing framework with React Testing Library)
-- @testing-library/jest-dom 6.1.5 + @testing-library/user-event 14.5.2 (DOM matchers and user interactions)
-- jsdom 25.0.1 + @vitest/ui 2.1.5 (DOM environment and visual test interface)
-- ESLint 9.x (code linting with React plugin)
+**Version:** 1.0.0  
+**React:** 19.2.0  
+**Build Tool:** Vite 7.2.4
 
-Environment and Configuration
-- `VITE_API_URL` – API Gateway base URL; defaults to `http://localhost:8080` in development.
-- Application runs on port 5173 in development; production build outputs to `dist/` directory.
-- Authentication tokens stored in browser localStorage: `token` (JWT access token), `refreshToken` (JWT refresh token), `user` (JSON-serialized user object).
-- Axios interceptors automatically inject `Authorization: Bearer <token>` header on all requests; redirect to `/login` on 401 responses.
+## Table of Contents
 
-Local Setup
-1) `npm install`
-2) Create `.env` file with `VITE_API_URL=http://localhost:8080` (or API Gateway address)
-3) `npm run dev` (starts Vite development server on http://localhost:5173)
-4) `npm run build` (production build to dist/)
-5) `npm run preview` (preview production build)
-6) `npm test` (run tests in watch mode)
+- [Stack and Dependencies](#stack-and-dependencies)
+- [Environment and Configuration](#environment-and-configuration)
+- [Local Setup](#local-setup)
+- [Docker Compose Setup](#docker-compose-setup)
+- [Project Structure](#project-structure)
+- [Routes and Features](#routes-and-features)
+  - [Public Routes](#public-routes)
+  - [Protected Routes](#protected-routes)
+  - [Role-Based Routes](#role-based-routes)
+- [API Integration](#api-integration-via-api-gateway)
+  - [Authentication Endpoints](#authentication-endpoints)
+  - [Sanctions & Core Service Endpoints](#sanctions--core-service-endpoints)
+  - [User Management Endpoints](#user-management-endpoints-admin-only)
+  - [Axios Interceptors](#axios-interceptors)
+  - [Service Layer Architecture](#service-layer-architecture)
+  - [API Response Handling](#api-response-handling)
+- [Key Components and Services](#key-components-and-services)
+  - [ScreeningPanel Component](#screeningpanel-component)
+  - [ExtendedDetails Component](#extendeddetails-component)
+  - [MainLayout Component](#mainlayout-component)
+  - [AuthContext](#authcontext)
+  - [authService](#authservice)
+  - [api Service](#api-service)
+  - [coreService](#coreservice)
+- [How It Works](#how-it-works-high-level)
+  - [Authentication Flow](#authentication-flow)
+  - [Logout Flow](#logout-flow)
+  - [Protected Route Access](#protected-route-access)
+  - [API Request with Expired Token](#api-request-with-expired-token-silent-refresh)
+  - [Entity Screening Flow](#entity-screening-flow)
+  - [Token Persistence](#token-persistence)
+- [Data Models](#data-models)
+  - [User Object](#user-object)
+  - [Entity Object](#entity-object-sanctions-check-result)
+  - [AuditLog Object](#auditlog-object-history)
+  - [Statistics Object](#statistics-object-dashboard)
+- [Testing](#testing)
+  - [Test Files](#test-files)
+  - [Running Tests](#running-tests)
+  - [Example Test Output](#example-test-output)
+  - [Test Configuration](#test-configuration)
+- [Development Notes](#development-notes)
+  - [Environment Variables](#environment-variables)
+  - [Hot Module Replacement](#hot-module-replacement-hmr)
+  - [Build Output](#build-output)
+  - [Browser Compatibility](#browser-compatibility)
+- [Docker Deployment](#docker-deployment)
+  - [Dockerfile Structure](#dockerfile-structure)
+  - [nginx Configuration](#nginx-configuration)
+  - [docker-compose.yml](#docker-composeyml)
+- [Troubleshooting](#troubleshooting)
+  - [Common Issues](#common-issues)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
 
-Docker Compose Setup
-- From project root directory: `docker compose up --build frontend`
-- Service accessible at http://localhost:5173 (or mapped port from docker-compose).
-- Build output served via nginx in production container.
+---
 
-Project Structure
+## Stack and Dependencies
+
+**Core Framework:**
+- **React** 19.2.0 – Modern UI library with hooks and Context API
+- **React DOM** 19.2.0 – React rendering for web
+- **Vite** 7.2.4 – Fast build tool with HMR (Hot Module Replacement)
+
+**Routing & State Management:**
+- **React Router DOM** 7.12.0 – Client-side routing with protected routes
+- **React Context API** – Global authentication state management
+
+**UI Framework & Components:**
+- **React Bootstrap** 2.10.10 + **Bootstrap** 5.3.8 – UI components and responsive grid
+- **React Bootstrap Icons** 1.11.6 – Icon library
+- **React Icons** 5.5.0 – Additional icon sets
+- **React Toastify** 11.0.5 – Toast notifications for user feedback
+
+**Data Visualization:**
+- **Recharts** 3.7.0 – Charts for dashboard analytics
+
+**HTTP Client:**
+- **Axios** 1.13.2 – HTTP client with request/response interceptors
+
+**Utilities:**
+- **date-fns** 4.1.0 – Date formatting and manipulation
+
+**Development & Testing:**
+- **Vitest** 2.1.5 – Fast unit test framework
+- **@testing-library/react** 16.0.1 – React component testing utilities
+- **@testing-library/jest-dom** 6.1.5 – Custom DOM matchers
+- **@testing-library/user-event** 14.5.2 – User interaction simulation
+- **jsdom** 25.0.1 – DOM environment for tests
+- **@vitest/ui** 2.1.5 – Visual test interface
+- **ESLint** 9.x – Code linting with React plugins
+
+## Environment and Configuration
+
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `VITE_API_URL` | API Gateway base URL | `http://localhost:8080` |
+
+**Application Configuration:**
+- Development server port: `5173`
+- Production build output: `dist/` directory
+- Authentication storage: Browser `localStorage`
+  - `token` – JWT access token (15 min expiry)
+  - `refreshToken` – JWT refresh token (7 days expiry)
+  - `user` – JSON-serialized user object
+
+**Axios Configuration:**
+- Automatic `Authorization: Bearer <token>` header injection on all requests
+- Automatic redirect to `/login` on 401 responses
+- Silent token refresh on 401 errors (with queue mechanism)
+
+## Local Setup
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Create environment file:**
+   ```bash
+   # .env
+   VITE_API_URL=http://localhost:8080
+   ```
+
+3. **Start development server:**
+   ```bash
+   npm run dev
+   ```
+   Application available at `http://localhost:5173`
+
+4. **Build for production:**
+   ```bash
+   npm run build
+   ```
+   Output in `dist/` directory
+
+5. **Preview production build:**
+   ```bash
+   npm run preview
+   ```
+
+6. **Run tests:**
+   ```bash
+   npm test              # Watch mode
+   npm run test:ui       # Visual UI
+   npm run test:coverage # With coverage report
+   ```
+
+7. **Lint code:**
+   ```bash
+   npm run lint
+   ```
+
+## Docker Compose Setup
+
+**From project root directory:**
+```bash
+docker compose up --build frontend
+```
+
+**Configuration:**
+- Service accessible at `http://localhost:5173` (or mapped port from docker-compose)
+- Production build served via nginx
+- Environment variables configured in docker-compose.yml
+
+---
+
+## Project Structure
 ```
 frontend/
 ├── src/
@@ -47,6 +189,7 @@ frontend/
 │   ├── assets/                 # Images, fonts, static resources
 │   │   └── react.svg                 # React logo
 │   ├── components/             # Reusable React components
+│   │   ├── ExtendedDetails.jsx       # Entity details display with field sorting
 │   │   ├── MainLayout.jsx            # Layout wrapper with navigation
 │   │   └── ScreeningPanel.jsx        # Entity screening form with results display
 │   ├── context/                # React Context providers
@@ -75,28 +218,95 @@ frontend/
 ├── vite.config.js          # Vite configuration
 ├── vitest.config.js        # Vitest test configuration
 └── package.json            # Dependencies and scripts
-```
+---
 
-Routes and Features
-- `/` – redirects to `/dashboard` if authenticated; to `/login` if not authenticated.
-- `/login` – user authentication form (LoginPage); calls `POST /auth/login` via API Gateway; stores JWT tokens in localStorage; redirects based on role (superadmin → `/superadmin`, others → `/dashboard`) on success.
-- `/superadmin` – organization registration form (SuperAdminPage, superadmin role only); create new organizations with admin user; calls `POST /auth/register-organization`; displays API credentials after creation; includes logout button.
-- `/dashboard` – statistics and analytics dashboard (DashboardPage); displays charts (Recharts) for total checks, sanction hits, PEP hits; calls `GET /sanctions/stats`.
-- `/check` – entity sanctions screening interface (CheckPage with ScreeningPanel); form validates input (trim whitespace, required field); calls `GET /sanctions/check`; displays CLEAN/HIT results with entity details modal; shows loading spinner during API call.
-- `/history` – search history with pagination and filters (HistoryPage); filters by date range, entity name, hit status, user ID; calls `GET /sanctions/history`; displays paginated results table.
-- `/users` – user management interface (UsersPage, admin role only); lists all users; create new user form; delete user functionality; calls `GET /users`, `POST /users`, `DELETE /users/:id`.
-- `/settings` – user account settings (SettingsPage); change password form; calls `POST /auth/change-password`.
-- `/developer` – developer tools and utilities (DeveloperPage); API key management, documentation links.
-- `/reset-password` – password reset form (ResetPasswordPage); validates token and allows setting new password; calls `POST /auth/reset-password`.
+## Routes and Features
 
-Protected Routes
-- All routes except `/login` and `/reset-password` require JWT authentication; redirected to `/login` if token missing/expired.
-- `/superadmin` route restricted to superadmin role; non-superadmin users redirected based on their role.
-- `/users` route restricted to admin role; non-admin users redirected to `/dashboard`.
-- Role-based access enforced via AuthContext and ProtectedRoute guards in App.jsx.
+### Public Routes
 
-API Integration (via API Gateway)
----------------------------------
+**`/` (Root)**
+- Redirects to `/dashboard` if authenticated
+- Redirects to `/login` if not authenticated
+
+**`/login` (LoginPage)**
+- User authentication form
+- Calls `POST /auth/login` via API Gateway
+- Stores JWT tokens in localStorage
+- Redirects based on role:
+  - Superadmin → `/superadmin`
+  - Others → `/dashboard`
+
+**`/reset-password` (ResetPasswordPage)**
+- Password reset form
+- Validates token from email
+- Calls `POST /auth/reset-password`
+- Allows setting new password
+
+### Protected Routes
+
+All routes require JWT authentication. Redirected to `/login` if token missing/expired.
+
+**`/dashboard` (DashboardPage)**
+- Statistics and analytics dashboard
+- Displays charts (Recharts) for:
+  - Total checks
+  - Sanction hits
+  - PEP hits
+- Calls `GET /sanctions/stats`
+
+**`/check` (CheckPage with ScreeningPanel)**
+- Entity sanctions screening interface
+- Form validates input (trim whitespace, required field)
+- Calls `GET /sanctions/check`
+- Displays CLEAN/HIT results
+- Entity details modal with ExtendedDetails component
+- Loading spinner during API call
+
+**`/history` (HistoryPage)**
+- Search history with pagination and filters
+- Filters by:
+  - Date range
+  - Entity name
+  - Hit status
+  - User ID
+- Calls `GET /sanctions/history`
+- Displays paginated results table
+
+**`/settings` (SettingsPage)**
+- User account settings
+- Change password form
+- Calls `POST /auth/change-password`
+
+**`/developer` (DeveloperPage)**
+- Developer tools and utilities
+- API key management
+- Documentation links
+
+### Role-Based Routes
+
+**`/superadmin` (SuperAdminPage)** - Superadmin Only
+- Organization registration form
+- Create new organizations with admin user
+- Calls `POST /auth/register-organization`
+- Displays API credentials after creation
+- Includes logout button
+- Non-superadmin users redirected based on role
+
+**`/users` (UsersPage)** - Admin Only
+- User management interface
+- Lists all users in organization
+- Create new user form
+- Delete user functionality
+- Calls `GET /users`, `POST /users`, `DELETE /users/:id`
+- Non-admin users redirected to `/dashboard`
+
+**Role-Based Access Control:**
+- Enforced via AuthContext and ProtectedRoute guards in [App.jsx](src/App.jsx)
+- Automatic role-based redirection
+
+---
+
+## API Integration (via API Gateway)
 
 **Base URL:** `VITE_API_URL` (configured in .env; defaults to http://localhost:8080)
 
@@ -132,49 +342,97 @@ API Integration (via API Gateway)
 ### Axios Interceptors
 
 **Request Interceptor:**
-- Automatically adds `Authorization: Bearer <token>` header from localStorage to all requests
+- Automatically adds `Authorization: Bearer <token>` header from localStorage
 - Token retrieved via `localStorage.getItem('token')`
-- Applied to all API calls except those without token in localStorage
+- Applied to all API calls
 
-**Response Interceptor:**
+**Response Interceptor (Silent Token Refresh):**
 - Intercepts 401 Unauthorized responses (expired/invalid tokens)
-- Clears localStorage: `token`, `refreshToken`, `user`
-- Redirects to `/login` via `window.location.href`
+- Implements token refresh queue mechanism:
+  - First 401 triggers refresh token request
+  - Subsequent 401s during refresh wait in queue
+  - All queued requests retry after successful refresh
+- On refresh failure:
+  - Clears localStorage: `token`, `refreshToken`, `user`
+  - Redirects to `/login` via `window.location.href`
 - Skips redirect if error originates from `/auth/login` (prevents redirect loops)
 
 ### Service Layer Architecture
 
-**`api.js` (Base API Module):**
+**[src/services/api.js](src/services/api.js) (Base API Module):**
 - Axios instance with `baseURL` from `VITE_API_URL`
 - Request/response interceptors for authentication
-- Common API methods: `getHistory()`, `getUsers()`, `createUser()`, `deleteUser()`, `changePassword()`, `getOrganizationKeys()`, `resetOrganizationSecret()`, `requestPasswordReset()`, `confirmPasswordReset()`, `getDashboardStats()`, `registerOrganization()`
+- Silent token refresh with queue mechanism
+- Common API methods:
+  - `getHistory()` – Paginated audit history
+  - `getUsers()` – User list for organization
+  - `createUser(data)` – Create new user
+  - `deleteUser(id)` – Delete user
+  - `changePassword(data)` – Change password
+  - `getOrganizationKeys()` – Get API key
+  - `resetOrganizationSecret(data)` – Reset API secret
+  - `requestPasswordReset(email)` – Request reset email
+  - `confirmPasswordReset(data)` – Confirm password reset
+  - `getDashboardStats()` – Dashboard statistics
+  - `registerOrganization(data)` – Register new organization
 
-**`authService.js` (Authentication Service):**
-- `login(email, password)` - authenticates user, saves tokens to localStorage
-- `logout()` - calls logout API, clears localStorage (graceful degradation if API fails)
-- `getCurrentUser()` - retrieves and parses user from localStorage
+**[src/services/authService.js](src/services/authService.js) (Authentication Service):**
+- `login(email, password)` – Authenticates user, saves tokens to localStorage
+- `logout()` – Calls logout API, clears localStorage (graceful degradation if API fails)
+- `getCurrentUser()` – Retrieves and parses user from localStorage
 
-**`coreService.js` (Core Service):**
-- `checkEntity(params)` - sanctions check with query parameters; calls `GET /sanctions/check` with params
+**[src/services/coreService.js](src/services/coreService.js) (Core Service):**
+- `checkEntity(params)` – Sanctions check with query parameters
+- Calls `GET /sanctions/check` with params: `name`, `limit`, `fuzzy`, `schema`, `country`
 
 ### API Response Handling
 
 **Success Response Structure:**
 ```javascript
 // Login
-{ accessToken: "jwt...", refreshToken: "jwt...", user: { id, email, role, ... } }
+{
+  accessToken: "jwt...",
+  refreshToken: "jwt...",
+  user: { id, email, role, firstName, lastName, organizationId }
+}
 
 // Sanctions Check (CLEAN)
-{ hits_count: 0, data: [], meta: { requestId, source } }
+{
+  hits_count: 0,
+  data: [],
+  meta: { requestId, source }
+}
 
 // Sanctions Check (HIT)
-{ hits_count: 2, data: [{ name, score, birthDate, country, datasets, isSanctioned, isPep }], meta: { ... } }
+{
+  hits_count: 2,
+  data: [
+    {
+      name, score, birthDate, country, datasets,
+      isSanctioned, isPep, description, position, notes
+    }
+  ],
+  meta: { requestId, source }
+}
 
 // History
-{ data: [...], meta: { totalItems: 150, totalPages: 8, currentPage: 1, itemsPerPage: 20 } }
+{
+  data: [...],
+  meta: {
+    totalItems: 150,
+    totalPages: 8,
+    currentPage: 1,
+    itemsPerPage: 20
+  }
+}
 
 // Stats
-{ totalChecks: 150, sanctionHits: 25, pepHits: 10, recentLogs: [...] }
+{
+  totalChecks: 150,
+  sanctionHits: 25,
+  pepHits: 10,
+  recentLogs: [...]
+}
 ```
 
 **Error Response Structure:**
@@ -183,11 +441,162 @@ API Integration (via API Gateway)
 { error: "Error message" }
 
 // Network/timeout errors handled by axios interceptors
-// 401 errors trigger automatic logout and redirect to /login
+// 401 errors trigger automatic token refresh or redirect to /login
 ```
 
-How It Works (High Level)
-- **Authentication Flow**: User submits login form → `authService.login()` calls `POST /auth/login` via API Gateway → receives JWT tokens and user object → stores in localStorage → updates AuthContext state → redirects based on role (superadmin to `/superadmin`, others to `/dashboard`).
+---
+
+## Key Components and Services
+
+### ScreeningPanel Component
+
+**File:** [src/components/ScreeningPanel.jsx](src/components/ScreeningPanel.jsx)
+
+**Purpose:** Entity screening form with validation and results display
+
+**State Management:**
+- `name` – Input field value
+- `loading` – API call in progress
+- `error` – Validation/API error message
+- `results` – CLEAN/HIT status with entity array
+- `showModal` – Entity details modal visibility
+- `selectedEntity` – Clicked entity for modal
+
+**Form Submission Flow:**
+1. Validates empty input (trim whitespace)
+2. Calls `coreService.checkEntity({ name: trimmedName, fuzzy: true, limit: 10 })`
+3. Normalizes API response (handles `data`, `results`, `hits` fields)
+4. Updates results state
+
+**Results Display:**
+- CLEAN status: Success Alert component
+- HIT status: Danger Alert with entity ListGroup
+- Each entity clickable to open Modal with ExtendedDetails
+
+**Error Handling:**
+- Displays validation errors: "Name field is required"
+- Displays API errors from `response.data.message` or `error.message`
+- Shows loading Spinner during API call
+
+### ExtendedDetails Component
+
+**File:** [src/components/ExtendedDetails.jsx](src/components/ExtendedDetails.jsx)
+
+**Purpose:** Display entity details with logical field ordering
+
+**Features:**
+- **Priority-based field sorting** using `PRIORITY_KEYS` array:
+  1. Basic Identity: name, firstName, lastName, gender, title
+  2. Birth & Death: birthDate, birthPlace, deathDate
+  3. Legal Status: nationality, citizenship, country
+  4. Occupation: position, education, religion, political
+  5. Contact Data: address, email, phone, taxNumber
+  6. Other: alias, weakAlias, notes
+- Formats field names with proper capitalization
+- Handles arrays (joins with commas)
+- Displays empty state for missing data
+
+### MainLayout Component
+
+**File:** [src/components/MainLayout.jsx](src/components/MainLayout.jsx)
+
+**Purpose:** Layout wrapper with navigation and role-based menu
+
+**Features:**
+- Navigation bar with logo and links
+- Role-based menu items:
+  - Dashboard (all roles)
+  - Check (all roles)
+  - History (all roles)
+  - Users (admin/superadmin only)
+  - Settings (all roles)
+  - Developer (all roles)
+- User dropdown menu:
+  - Display user name and role
+  - Logout button
+- Responsive design with Bootstrap
+
+### AuthContext
+
+**File:** [src/context/AuthContext.jsx](src/context/AuthContext.jsx)
+
+**Purpose:** Global authentication state provider using React Context API
+
+**State:**
+- `user` – Logged in user object or null
+- `loading` – Initialization in progress
+
+**Initialization:**
+- On mount, reads localStorage via `authService.getCurrentUser()`
+- Updates user state
+- Sets `loading=false`
+
+**Methods:**
+- `login(email, password)` – Calls `authService.login()`, updates user state
+- `logout()` – Calls `authService.logout()`, clears user state, redirects to `/login`
+
+**Usage:**
+- Wraps App component
+- Consumed by pages via `useContext(AuthContext)`
+
+### authService
+
+**File:** [src/services/authService.js](src/services/authService.js)
+
+**Purpose:** Authentication utility functions with localStorage persistence
+
+**Methods:**
+
+**`login(email, password)`**
+- Calls `api.post('/auth/login', { email, password })`
+- If `response.data.accessToken` exists:
+  - Saves `token`, `refreshToken`, `user` to localStorage
+- Returns `response.data`
+
+**`logout()`**
+- Reads `refreshToken` from localStorage
+- Tries `api.post('/auth/logout', { refreshToken })`
+- Always clears localStorage in finally block (graceful degradation)
+- Clears: `token`, `refreshToken`, `user`
+
+**`getCurrentUser()`**
+- Reads `user` from localStorage
+- Parses JSON
+- Returns user object or null on error/empty
+
+### api Service
+
+**File:** [src/services/api.js](src/services/api.js)
+
+**Purpose:** Axios instance with base URL and interceptors
+
+**Configuration:**
+- Base URL from `VITE_API_URL` environment variable
+- Request interceptor: Adds `Authorization: Bearer <token>` header
+- Response interceptor: Handles 401 errors with silent refresh and redirect
+
+**Features:**
+- Silent token refresh with queue mechanism
+- Automatic retry of failed requests after refresh
+- Graceful fallback to login on refresh failure
+
+### coreService
+
+**File:** [src/services/coreService.js](src/services/coreService.js)
+
+**Purpose:** Sanctions check API calls
+
+**Methods:**
+
+**`checkEntity({ name, fuzzy, limit })`**
+- Calls `api.get('/sanctions/check', { params })`
+- Returns `response.data` with CLEAN/HIT status and entity array
+
+---
+
+## How It Works (High Level)
+
+### Authentication Flow
 - **Logout Flow**: User clicks logout → `authService.logout()` calls `POST /auth/logout` (invalidates refresh token on server) → clears localStorage (token, refreshToken, user) even on API failure → updates AuthContext state → redirects to `/login`.
 - **Protected Route Access**: User navigates to protected route → AuthContext checks localStorage for user/token → if missing, redirects to `/login` → if present, renders requested page component; ProtectedRoute checks `requiredRole` and redirects if role mismatch.
 - **API Request Flow**: Component calls API service method → axios interceptor adds `Authorization: Bearer <token>` header from localStorage → request sent to API Gateway → response returned → if 401, interceptor clears localStorage and redirects to `/login`.

@@ -3,39 +3,196 @@ Core Service
 
 Sanctions checking and audit logging service for the AML Checker platform. Receives sanctioned entity queries via API Gateway, forwards them to the OP Adapter for validation, logs all searches to PostgreSQL audit table, and returns results with hit/match information. Enforces organization-based data isolation through context headers.
 
-Stack and Dependencies
-- Node.js 18, Express 4, ES Modules
-- Sequelize 6 + PostgreSQL 15 (relational database)
-- pg + pg-hstore (PostgreSQL adapter and data type serialization)
-- axios (via OpAdapterClient for OP Adapter communication)
-- cors (cross-origin request handling)
-- winston + winston-daily-rotate-file (structured logging with file rotation)
-- nodemon (dev dependency for auto-reload)
-- jest + supertest (dev dependencies for integration testing)
-- cross-env (dev dependency for cross-platform environment variables)
+**Version:** 1.0.0  
+**Node.js:** 18+ (Alpine)  
+**Type:** ES Modules
 
-Environment and Configuration
-- `DB_HOST` – PostgreSQL hostname; defaults to `postgres` in Docker network.
-- `POSTGRES_USER` – PostgreSQL username; defaults to `admin`.
-- `POSTGRES_PASSWORD` – PostgreSQL password; defaults to `tajne_haslo_postgres`.
-- `POSTGRES_DB` – database name; defaults to `core_db`.
-- `OP_ADAPTER_URL` – address of OP Adapter service; defaults to `http://op-adapter:3000` in Docker network.
-- Application port in container: 3000; exposed and mapped via docker-compose.
-- Database auto-syncs on startup using Sequelize `sync({ alter: true })` (see src/index.js).
+## Table of Contents
 
-Local Setup
-1) `npm install`
-2) Ensure PostgreSQL is running on `localhost:5432` with credentials from environment variables
-3) `npm start` (for production) or `npm run dev` (for development with nodemon)
-4) Set environment variables: `DB_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `OP_ADAPTER_URL`
-5) `npm test` (for running integration tests)
+- [Stack and Dependencies](#stack-and-dependencies)
+- [Environment and Configuration](#environment-and-configuration)
+- [Local Setup](#local-setup)
+- [Docker Compose Setup](#docker-compose-setup)
+- [Architecture](#architecture)
+  - [Design Pattern](#design-pattern)
+  - [Key Components](#key-components)
+  - [Request Flow](#request-flow)
+  - [Data Isolation](#data-isolation)
+- [Endpoints](#endpoints)
+  - [Service Endpoints](#service-endpoints)
+  - [Sanctions & Audit Endpoints](#sanctions--audit-endpoints)
+  - [Endpoint Details](#endpoint-details)
+- [Usage Examples](#usage-examples)
+  - [Health Check](#health-check)
+  - [Sanctions Check with JWT](#sanctions-check-with-jwt)
+  - [Sanctions Check with API Key](#sanctions-check-with-api-key)
+  - [Get Audit History](#get-audit-history)
+  - [Filter History by Date Range](#filter-history-by-date-range)
+  - [Get Organization Statistics](#get-organization-statistics)
+- [Response Structure](#response-structure)
+- [Data Models](#data-models)
+- [How It Works](#how-it-works-high-level)
+- [Testing](#testing)
+  - [Test Files](#test-files)
+  - [Running Tests](#running-tests)
+  - [Test Coverage](#test-coverage)
+  - [Example Test Execution](#example-test-execution)
+- [License](#license)
 
-Docker Compose Setup
-- From project root directory: `docker compose up --build core-service`
-- Service connects to PostgreSQL container automatically via Docker network.
-- Endpoints available at http://localhost:3000 (or mapped port from docker-compose).
+---
 
-Endpoints
+## Stack and Dependencies
+
+**Core Framework:**
+- **Node.js 18+** (Alpine) – Lightweight production runtime
+- **Express** 4.18.2 – Fast, minimalist web framework with ES Modules support
+
+**Database & ORM:**
+- **PostgreSQL 15** – Relational database for audit logs
+- **Sequelize** 6.35.0 – Promise-based ORM with auto-sync
+- **pg** 8.11.3 + **pg-hstore** 2.3.4 – PostgreSQL adapter and data serialization
+
+**HTTP Client & Integration:**
+- **axios** 1.6.0 – HTTP client for OP Adapter communication
+- **cors** 2.8.5 – Cross-Origin Resource Sharing configuration
+
+**Logging:**
+- **winston** 3.19.0 – Structured logging with multiple transports
+- **winston-daily-rotate-file** 5.0.0 – Automatic log rotation (daily, error/combined logs)
+
+**Development & Testing:**
+- **nodemon** 3.0.1 – Auto-reload during development
+- **jest** 30.2.0 – Test runner with ES Modules support
+- **supertest** 7.2.2 – HTTP assertions for integration testing
+- **cross-env** 10.1.0 – Cross-platform environment variables
+
+## Environment and Configuration
+
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `DB_HOST` | PostgreSQL hostname | `postgres` (Docker network) |
+| `POSTGRES_USER` | PostgreSQL username | `admin` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | `tajne_haslo_postgres` |
+| `POSTGRES_DB` | Database name | `core_db` |
+| `OP_ADAPTER_URL` | OP Adapter service address | `http://op-adapter:3000` |
+| `PORT` | Application port (container) | `3000` |
+
+**Database Configuration:**
+- Auto-syncs schema on startup using Sequelize `sync({ alter: true })`
+- Creates `AuditLog` table if not exists
+- See [src/index.js](src/index.js) for initialization logic
+
+## Local Setup
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Configure PostgreSQL:**
+   - Ensure PostgreSQL is running on `localhost:5432`
+   - Create database: `core_db`
+   - Configure credentials via environment variables
+
+3. **Set environment variables:**
+   ```bash
+   export DB_HOST=localhost
+   export POSTGRES_USER=admin
+   export POSTGRES_PASSWORD=tajne_haslo_postgres
+   export POSTGRES_DB=core_db
+   export OP_ADAPTER_URL=http://localhost:3000
+   ```
+
+4. **Start the service:**
+   ```bash
+   npm start         # Production mode
+   npm run dev       # Development mode with nodemon
+   ```
+
+5. **Run tests:**
+   ```bash
+   npm test
+   ```
+
+## Docker Compose Setup
+
+**From project root directory:**
+```bash
+docker compose up --build core-service
+```
+
+**Configuration:**
+- Service connects to PostgreSQL container automatically via Docker network
+- Endpoints available at `http://localhost:3000` (or mapped port from docker-compose)
+- Database automatically syncs schema on startup
+- Logs stored in `logs/` directory with daily rotation
+
+## Architecture
+
+### Design Pattern
+
+**Dependency Injection & Composition Root:**
+- **createApp()** function ([src/app.js](src/app.js)) builds Express app with DI
+- Manual composition of dependencies (OpAdapterClient → SanctionsCoreService → SanctionsController)
+- No IoC container, explicit dependency graph
+
+**Layered Architecture:**
+```
+Controllers (HTTP layer)
+    ↓
+Services (Business logic)
+    ↓
+Clients (External API communication)
+    ↓
+Models (Database ORM)
+```
+
+### Key Components
+
+**Controllers** ([src/controllers/](src/controllers/))
+- [sanctionsController.js](src/controllers/sanctionsController.js) – Sanctions check, statistics, health check
+- [historyController.js](src/controllers/historyController.js) – Audit log retrieval with pagination/filtering
+
+**Services** ([src/services/](src/services/))
+- [SanctionsCoreService.js](src/services/SanctionsCoreService.js) – Business logic for sanctions screening and audit logging
+
+**Clients** ([src/clients/](src/clients/))
+- [OpAdapterClient.js](src/clients/OpAdapterClient.js) – HTTP client for OP Adapter communication (axios-based)
+
+**Models** ([src/models/](src/models/))
+- [AuditLog.js](src/models/AuditLog.js) – Sequelize model for audit trail with organization-scoped queries
+
+**Configuration** ([src/config/](src/config/))
+- [database.js](src/config/database.js) – Sequelize PostgreSQL connection configuration
+
+**Utilities** ([src/utils/](src/utils/))
+- [logger.js](src/utils/logger.js) – Winston logger with daily file rotation
+- [auditLogger.js](src/utils/auditLogger.js) – Audit log enrichment helper
+
+### Request Flow
+
+1. **Client Request** → API Gateway validates authentication (JWT/API Key)
+2. **Gateway Injection** → Adds `x-org-id`, `x-user-id`, `x-user-email`, `x-request-id` headers
+3. **Core Service** → Validates required headers and query parameters
+4. **OP Adapter Call** → Forwards request to OP Adapter via `OpAdapterClient`
+5. **Audit Logging** → Saves search query and results to PostgreSQL `AuditLog` table
+6. **Response** → Returns OP Adapter payload with sanctions data
+
+### Data Isolation
+
+**Organization-Scoped Queries:**
+- All endpoints require `x-org-id` header (injected by API Gateway)
+- Database queries automatically filter by `organizationId`
+- Prevents cross-organization data access
+
+**Superadmin Exemption:**
+- `/history` endpoint allows `x-role: superadmin` to omit `x-org-id`
+- Superadmins can filter by `orgId` query parameter to view specific organization data
+- Regular users always restricted to their organization
+
+---
+
+## Endpoints
 ---------
 
 ### Service Endpoints
@@ -194,94 +351,191 @@ All sanctions endpoints require **organization context** via `x-org-id` header (
 - 400 - Missing `x-org-id` header
 - 500 - Database error
 
-Usage Examples
-- Health check:
+## Usage Examples
+
+### Health Check
+
+**Request:**
 ```bash
 curl http://localhost:3000/health
 ```
 
-- Sanctions check (via API Gateway with JWT):
+**Response (200 OK):**
+```json
+{
+  "service": "core-service",
+  "status": "UP",
+  "database": "Connected"
+}
+```
+
+### Sanctions Check with JWT
+
+**Request:**
 ```bash
 curl -X GET "http://localhost:3000/check?name=John%20Doe" \
-	-H "x-org-id: <ORG_ID>" \
-	-H "x-user-id: <USER_ID>"
+  -H "x-org-id: <ORG_ID>" \
+  -H "x-user-id: <USER_ID>" \
+  -H "x-user-email: user@example.com"
 ```
 
-- Sanctions check (via API Gateway with API Key – userId stored as `API`):
+**Response (200 OK):**
+```json
+{
+  "hits_count": 1,
+  "data": [
+    {
+      "name": "John Doe",
+      "score": 0.95,
+      "birthDate": "1980-05-15",
+      "country": ["US"],
+      "datasets": ["ofac"],
+      "isSanctioned": true,
+      "isPep": false
+    }
+  ],
+  "meta": {
+    "requestId": "abc-123-def-456",
+    "source": "OpenSanctions"
+  }
+}
+```
+
+### Sanctions Check with API Key
+
+**Request:**
 ```bash
 curl -X GET "http://localhost:3000/check?name=Jane%20Smith" \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history for organization (paginated, page 1, 20 items per page):
+ℹ️ **Note:** When using API Key authentication, `userId` is stored as `"API"` in audit logs.
+
+### Get Audit History
+
+**Request (Paginated, page 1, 20 items per page):**
 ```bash
 curl -X GET http://localhost:3000/history \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history with pagination (page 2, 50 items per page):
+**Response (200 OK):**
+```json
+{
+  "data": [
+    {
+      "id": "uuid-1",
+      "organizationId": "org-uuid",
+      "userId": "user-uuid",
+      "searchQuery": "John Doe",
+      "hasHit": true,
+      "hitsCount": 1,
+      "entityName": "John Doe",
+      "entityScore": 0.95,
+      "isSanctioned": true,
+      "isPep": false,
+      "createdAt": "2026-01-29T10:30:00Z"
+    }
+  ],
+  "meta": {
+    "totalItems": 150,
+    "totalPages": 8,
+    "currentPage": 1,
+    "itemsPerPage": 20
+  }
+}
+```
+
+**With Pagination:**
 ```bash
 curl -X GET "http://localhost:3000/history?page=2&limit=50" \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history with text search (search for entity names containing "John"):
+**With Text Search:**
 ```bash
 curl -X GET "http://localhost:3000/history?search=John" \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history filtered by hit status (only hits):
+**Filter by Hit Status:**
 ```bash
 curl -X GET "http://localhost:3000/history?hasHit=true" \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history with date range filter (between specific dates):
+### Filter History by Date Range
+
+**Request:**
 ```bash
-curl -X GET "http://localhost:3000/history?startDate=2025-12-01T00:00:00Z&endDate=2025-12-31T23:59:59Z" \
-	-H "x-org-id: <ORG_ID>"
+curl -X GET "http://localhost:3000/history?startDate=2026-01-01T00:00:00Z&endDate=2026-01-31T23:59:59Z" \
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history filtered by user ID (e.g., specific user or API key call stored as `API`):
+**Filter by User ID:**
 ```bash
 curl -X GET "http://localhost:3000/history?userId=<USER_ID>" \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Combine multiple filters (search + date range + pagination):
+**Combine Multiple Filters:**
 ```bash
-curl -X GET "http://localhost:3000/history?search=John&startDate=2025-12-01T00:00:00Z&endDate=2025-12-31T23:59:59Z&page=1&limit=10" \
-	-H "x-org-id: <ORG_ID>"
+curl -X GET "http://localhost:3000/history?search=John&startDate=2026-01-01T00:00:00Z&endDate=2026-01-31T23:59:59Z&page=1&limit=10" \
+  -H "x-org-id: <ORG_ID>"
 ```
 
-- Audit history for all organizations (superadmin only):
+**Superadmin - All Organizations:**
 ```bash
 curl -X GET http://localhost:3000/history \
-	-H "Authorization: Bearer <JWT_TOKEN_SUPERADMIN>" \
-	-H "x-role: superadmin"
+  -H "x-role: superadmin"
 ```
 
-- Audit history for specific organization (superadmin filtering):
+**Superadmin - Specific Organization:**
 ```bash
 curl -X GET "http://localhost:3000/history?orgId=<ORG_ID>" \
-	-H "Authorization: Bearer <JWT_TOKEN_SUPERADMIN>" \
-	-H "x-role: superadmin"
+  -H "x-role: superadmin"
 ```
 
-- Organization statistics (total checks, sanction hits, PEP hits, recent logs):
+### Get Organization Statistics
+
+**Request:**
 ```bash
 curl -X GET http://localhost:3000/stats \
-	-H "x-org-id: <ORG_ID>"
+  -H "x-org-id: <ORG_ID>"
 ```
 
-Response Structure
-- `/health`:
+**Response (200 OK):**
 ```json
-{ "service": "core-service", "status": "UP", "database": "Connected" }
+{
+  "totalChecks": 150,
+  "sanctionHits": 25,
+  "pepHits": 10,
+  "recentLogs": [
+    {
+      "id": "uuid-1",
+      "searchQuery": "John Doe",
+      "isSanctioned": false,
+      "isPep": false,
+      "createdAt": "2026-01-29T10:30:00Z"
+    }
+  ]
+}
 ```
 
-- `/check` (success; passthrough from OP Adapter):
+---
+
+## Response Structure
+
+**Health Check:**
+```json
+{
+  "service": "core-service",
+  "status": "UP",
+  "database": "Connected"
+}
+```
+
+**Sanctions Check (Success):**
 ```json
 {
   "hits_count": 1,
@@ -296,17 +550,20 @@ Response Structure
       "isPep": false
     }
   ],
-  "meta": { "requestId": "...", "source": "OpenSanctions" }
+  "meta": {
+    "requestId": "abc-123-def-456",
+    "source": "OpenSanctions"
+  }
 }
 ```
 
-- `/history` (success; example with pagination metadata):
+**Audit History (Paginated):**
 ```json
 {
   "data": [
     {
-      "id": "<uuid>",
-      "organizationId": "<org_id>",
+      "id": "uuid-1",
+      "organizationId": "org-uuid",
       "userId": "API",
       "searchQuery": "Putin",
       "hasHit": true,
@@ -318,7 +575,7 @@ Response Structure
       "entityDatasets": "ofac",
       "isSanctioned": true,
       "isPep": false,
-      "createdAt": "2025-12-28T10:30:00Z"
+      "createdAt": "2026-01-29T10:30:00Z"
     }
   ],
   "meta": {
@@ -330,7 +587,7 @@ Response Structure
 }
 ```
 
-- `/stats` (success; aggregated statistics for organization):
+**Organization Statistics:**
 ```json
 {
   "totalChecks": 150,
@@ -338,88 +595,238 @@ Response Structure
   "pepHits": 10,
   "recentLogs": [
     {
-      "id": "<uuid>",
+      "id": "uuid-1",
       "searchQuery": "John Doe",
       "isSanctioned": false,
       "isPep": false,
-      "createdAt": "2025-12-28T10:30:00Z"
+      "createdAt": "2026-01-29T10:30:00Z"
     }
   ]
 }
 ```
 
-How It Works (High Level)
-- **Request Flow**: Client sends `GET /check?name=<entity>` with organization context in header → Core Service validates `name` and `x-org-id` → forwards to OP Adapter via `OpAdapterClient` → receives sanctions result with `hits_count` and `data` → creates AuditLog record (organization-scoped) → returns adapter payload.
-- **Audit Logging**: Each search stores organization ID, user ID (`API` default), search query, hit flag/count, and best-match enrichment (name, score, birthDate, gender, countries, datasets, description/notes, isPep, isSanctioned). Supports compliance and search history per org.
-- **Statistics Aggregation**: `/stats` endpoint queries AuditLog table with organization-scoped filters to calculate totalChecks (all logs), sanctionHits (isSanctioned=true), pepHits (isPep=true), and retrieves last 100 logs ordered by createdAt descending.
-- **Pagination and Filtering**: `/history` supports pagination with filters: text search by entity name, hit status, date range, user ID, and (superadmin only) organization ID.
-- **Data Isolation**: Organization-based access enforced on `/check`, `/history`, and `/stats` via `x-org-id`; `x-role: superadmin` can omit org header on `/history` and optionally filter by `orgId`.
-- **OP Adapter Integration**: Core Service delegates sanctions validation to OP Adapter through `OpAdapterClient`, adding logging and audit persistence around the call.
-- **Database Sync**: Sequelize auto-syncs schema on startup (`sync({ alter: true })`), creating AuditLog if missing.
+**Error Responses:**
+```json
+{
+  "error": "Missing required parameter: name"
+}
+```
 
-Data Models
-- **AuditLog**:
-	- `id` (UUID, primary key)
-	- `organizationId` (string, indexed)
-	- `userId` (string; defaults to `API` when header absent)
-	- `searchQuery` (string; the entity name queried)
-	- `hasHit` (boolean), `hitsCount` (integer)
-	- Best match enrichment: `entityName`, `entityScore`, `entityBirthDate`, `entityGender`, `entityCountries`, `entityDatasets`, `entityDescription`, `isSanctioned`, `isPep`
-	- `createdAt` (timestamp; auto-set)
+```json
+{
+  "error": "Organization context required (x-org-id header missing)"
+}
+```
 
-Testing
--------
+```json
+{
+  "error": "Failed to communicate with Op-Adapter",
+  "details": "Connection timeout"
+}
+```
 
-Integration tests verify endpoint behavior, validation, data isolation, error handling, and adapter/database interactions. Tests use Jest + Supertest with ESM support via `jest.unstable_mockModule` to mock dependencies before app import.
+---
 
-Test Files
-- `tests/check.test.js` – `/check` endpoint (14 tests).
-	- **Request Validation** (3 tests): Missing `name` → 400; missing `x-org-id` → 403; empty name after trim → 400.
-	- **Happy Paths** (3 tests): Successful response with AuditLog persistence; empty results (no matches); multiple matches handling.
-	- **Query Parameters** (1 test): Optional parameters (limit, fuzzy, schema, country) forwarded to adapter.
-	- **Error Handling** (3 tests): Op-Adapter error → 502; unexpected errors → 502; AuditLog failure (continues operation).
-	- **Authentication Context** (2 tests): Missing userID (API key auth, stored as 'API'); userEmail header handling.
-	- **Entity Field Mapping** (2 tests): Whitespace trimming; complete entity fields (gender, score, description, position, notes).
-	- Mocks: `OpAdapterClient`, `AuditLog`, `logger`.
-- `tests/history.test.js` – `/history` endpoint (13 tests).
-	- **Security & Data Isolation** (3 tests): Missing `x-org-id` → 403 (non-superadmin); organization-scoped queries; superadmin access without org context.
-	- **Pagination** (3 tests): Paginated results with metadata; default values (page=1, limit=20); page beyond available data.
-	- **Filtering** (6 tests): Search by query; hasHit=true/false; userId filter; date range (startDate/endDate); superadmin orgId filter.
-	- **Error Handling** (1 test): Database error → 500.
-	- Mocks: `OpAdapterClient` (constructed in app), `AuditLog`, `logger`.
-- `tests/stats.test.js` – `/stats` endpoint (5 tests).
-	- **Happy Path** (1 test): Returns aggregated statistics (totalChecks, sanctionHits, pepHits, recentLogs).
-	- **Security** (1 test): Missing `x-org-id` → 400.
-	- **Data Isolation** (2 tests): Organization with no data; statistics scoped to organization only.
-	- **Error Handling** (1 test): Database error → 500.
-	- Mocks: `OpAdapterClient` (constructed in app), `AuditLog`, `logger`.
-- `tests/health.test.js` – `/health` endpoint (2 tests).
-	- **Database Connected** (1 test): Returns status UP with database Connected.
-	- **Database Disconnected** (1 test): Returns status UP with database Disconnected (graceful degradation).
-	- Mocks: `sequelize.authenticate` (database connection), `OpAdapterClient`, `AuditLog`, `logger`.
+## Data Models
 
-Running Tests
-- Command: `npm test` (runs all tests with verbose output)
-- Uses ESM via `cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`
-- Tests run isolated from real DB/adapter; all externals mocked before app import
+**AuditLog** ([src/models/AuditLog.js](src/models/AuditLog.js))
+```javascript
+{
+  id: UUID (primary key, auto-generated),
+  organizationId: STRING (indexed, required),
+  userId: STRING (defaults to "API" if absent),
+  searchQuery: STRING (entity name queried),
+  hasHit: BOOLEAN,
+  hitsCount: INTEGER,
+  
+  // Best match enrichment:
+  entityName: STRING,
+  entityScore: FLOAT,
+  entityBirthDate: STRING,
+  entityGender: STRING,
+  entityCountries: STRING,
+  entityDatasets: STRING,
+  entityDescription: STRING,
+  isSanctioned: BOOLEAN,
+  isPep: BOOLEAN,
+  
+  createdAt: DATE (auto-generated)
+}
+```
 
-Test Coverage
-- **Request Validation**: Tests verify proper HTTP status codes for missing/invalid inputs (missing name, missing x-org-id, empty name after trim).
-- **Security & Data Isolation**: Organization-based access control on `/check`, `/history`, and `/stats`; superadmin exemption via `x-role` header; org-scoped database queries.
-- **Business Logic**: Audit log persistence with best-match enrichment; entity field mapping (name, score, birthDate, gender, countries, datasets, description); hit counting and flagging.
-- **Error Handling**: Adapter errors (502), database errors (500), unexpected errors; graceful degradation when AuditLog fails (operation continues).
-- **Authentication Context**: JWT authentication (user context) vs API Key authentication (stored as 'API'); userEmail header handling.
-- **Pagination & Filtering**: Metadata calculation (totalItems, totalPages, currentPage, itemsPerPage); query filters (search, hasHit, userId, startDate/endDate, orgId for superadmin); default values.
-- **Query Parameters**: Optional parameters forwarded to Op-Adapter (limit, fuzzy, schema, country); whitespace trimming.
-- **Statistics Aggregation**: Count queries for totalChecks, sanctionHits, pepHits; recent logs retrieval (last 100); organization-scoped aggregations.
-- **Health Monitoring**: Service status reporting; database connection state (Connected/Disconnected).
+**Indexes:**
+- `organizationId` - Fast organization-scoped queries
+- `createdAt` - Efficient date range filtering
 
-Example Test Execution
+---
+
+## How It Works (High Level)
+
+### Request Flow
+1. **Client Request** → Sends `GET /check?name=<entity>` with organization context header
+2. **Validation** → Core Service validates `name` parameter and `x-org-id` header
+3. **OP Adapter Call** → Forwards request to OP Adapter via `OpAdapterClient`
+4. **Response Processing** → Receives sanctions result with `hits_count` and `data`
+5. **Audit Logging** → Creates AuditLog record (organization-scoped)
+6. **Response** → Returns OP Adapter payload to client
+
+### Audit Logging
+- Each search stores:
+  - Organization ID (data isolation)
+  - User ID (`"API"` default for API Key auth)
+  - Search query (entity name)
+  - Hit flag and count
+  - Best match enrichment:
+    - Entity name, score, birthDate, gender
+    - Countries, datasets, description/notes
+    - Sanctions flag (`isSanctioned`)
+    - PEP flag (`isPep`)
+- Supports compliance requirements and search history per organization
+
+### Statistics Aggregation
+- `/stats` endpoint queries `AuditLog` table with organization-scoped filters
+- Calculates:
+  - `totalChecks` - All logs for organization
+  - `sanctionHits` - Logs with `isSanctioned=true`
+  - `pepHits` - Logs with `isPep=true`
+  - `recentLogs` - Last 100 logs ordered by `createdAt DESC`
+
+### Pagination and Filtering
+- `/history` supports:
+  - **Pagination**: `page`, `limit` parameters with metadata
+  - **Text Search**: Entity name filtering (case-insensitive)
+  - **Hit Status**: `hasHit` boolean filter
+  - **Date Range**: `startDate`, `endDate` ISO format
+  - **User Filter**: `userId` parameter
+  - **Superadmin**: `orgId` parameter (cross-organization queries)
+
+### Data Isolation
+- Organization-based access enforced on `/check`, `/history`, `/stats`
+- Header: `x-org-id` (injected by API Gateway)
+- Superadmins: Can omit `x-org-id` on `/history` and use `orgId` parameter
+- Database queries automatically filter by `organizationId`
+
+### OP Adapter Integration
+- Core Service delegates sanctions validation to OP Adapter
+- Adds logging and audit persistence around the call
+- Forwards optional query parameters: `limit`, `fuzzy`, `schema`, `country`
+
+### Database Sync
+- Sequelize auto-syncs schema on startup: `sync({ alter: true })`
+- Creates `AuditLog` table if missing
+- Updates schema if model changes detected
+
+---
+
+## Testing
+
+The Core Service includes comprehensive integration tests that verify endpoint behavior, request validation, data isolation, error handling, and OP Adapter/database interactions.
+
+**Test Framework:**
+- **jest** 30.2.0 – Test runner with ES Modules support
+- **supertest** 7.2.2 – HTTP assertions
+- **Mocking**: Jest mocks for OpAdapterClient, AuditLog, logger, sequelize
+
+**Test Coverage:** 34 integration tests across all endpoints
+
+### Test Files
+
+**tests/check.test.js** – `/check` endpoint (14 tests)
+- ✅ Request Validation (3 tests): Missing `name` → 400; missing `x-org-id` → 403; empty name after trim → 400
+- ✅ Happy Paths (3 tests): Successful response with AuditLog persistence; empty results (no matches); multiple matches handling
+- ✅ Query Parameters (1 test): Optional parameters (limit, fuzzy, schema, country) forwarded to adapter
+- ✅ Error Handling (3 tests): Op-Adapter error → 502; unexpected errors → 502; AuditLog failure (continues operation)
+- ✅ Authentication Context (2 tests): Missing userID (API key auth, stored as 'API'); userEmail header handling
+- ✅ Entity Field Mapping (2 tests): Whitespace trimming; complete entity fields (gender, score, description, position, notes)
+
+**tests/history.test.js** – `/history` endpoint (13 tests)
+- ✅ Security & Data Isolation (3 tests): Missing `x-org-id` → 403 (non-superadmin); organization-scoped queries; superadmin access without org context
+- ✅ Pagination (3 tests): Paginated results with metadata; default values (page=1, limit=20); page beyond available data
+- ✅ Filtering (6 tests): Search by query; hasHit=true/false; userId filter; date range (startDate/endDate); superadmin orgId filter
+- ✅ Error Handling (1 test): Database error → 500
+
+**tests/stats.test.js** – `/stats` endpoint (5 tests)
+- ✅ Happy Path (1 test): Returns aggregated statistics (totalChecks, sanctionHits, pepHits, recentLogs)
+- ✅ Security (1 test): Missing `x-org-id` → 400
+- ✅ Data Isolation (2 tests): Organization with no data; statistics scoped to organization only
+- ✅ Error Handling (1 test): Database error → 500
+
+**tests/health.test.js** – `/health` endpoint (2 tests)
+- ✅ Database Connected (1 test): Returns status UP with database Connected
+- ✅ Database Disconnected (1 test): Returns status UP with database Disconnected (graceful degradation)
+
+### Running Tests
+
+**Command:**
 ```bash
 npm test
 ```
 
-Expected output:
+**Configuration:**
+- Uses ESM via `cross-env NODE_OPTIONS=--experimental-vm-modules jest --verbose`
+- Tests run isolated from real DB/adapter
+- All externals mocked before app import
+- `NODE_ENV=test` prevents server startup
+
+**Mocked Dependencies:**
+- `OpAdapterClient` – HTTP client for OP Adapter
+- `AuditLog` – Sequelize database model
+- `logger` – Winston logger
+- `sequelize.authenticate` – Database connection
+
+### Test Coverage
+
+**Request Validation:**
+- Verifies proper HTTP status codes for missing/invalid inputs
+- Tests missing name, missing x-org-id, empty name after trim
+
+**Security & Data Isolation:**
+- Organization-based access control on `/check`, `/history`, `/stats`
+- Superadmin exemption via `x-role` header
+- Org-scoped database queries
+
+**Business Logic:**
+- Audit log persistence with best-match enrichment
+- Entity field mapping (name, score, birthDate, gender, countries, datasets, description)
+- Hit counting and flagging
+
+**Error Handling:**
+- Adapter errors (502)
+- Database errors (500)
+- Unexpected errors
+- Graceful degradation when AuditLog fails (operation continues)
+
+**Authentication Context:**
+- JWT authentication (user context)
+- API Key authentication (stored as 'API')
+- userEmail header handling
+
+**Pagination & Filtering:**
+- Metadata calculation (totalItems, totalPages, currentPage, itemsPerPage)
+- Query filters (search, hasHit, userId, startDate/endDate, orgId for superadmin)
+- Default values handling
+
+**Query Parameters:**
+- Optional parameters forwarded to Op-Adapter (limit, fuzzy, schema, country)
+- Whitespace trimming
+
+**Statistics Aggregation:**
+- Count queries for totalChecks, sanctionHits, pepHits
+- Recent logs retrieval (last 100)
+- Organization-scoped aggregations
+
+**Health Monitoring:**
+- Service status reporting
+- Database connection state (Connected/Disconnected)
+
+### Example Test Execution
+
+**Command:**
+```bash
+npm test
+```
+
+**Expected output:**
 ```
 PASS  tests/health.test.js
   GET /health Integration Test
@@ -471,3 +878,9 @@ Test Suites: 4 passed, 4 total
 Tests:       34 passed, 34 total
 Time:        2.025 s
 ```
+
+---
+
+## License
+
+MIT

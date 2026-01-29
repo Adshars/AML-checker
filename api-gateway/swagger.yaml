@@ -1,13 +1,12 @@
 openapi: 3.0.0
 info:
-  title: Compliance System API
-  description: API Gateway for Sanctions Screening System
-  version: 1.0.0
+  title: AML Checker - Compliance System API
+  description: API Gateway for Sanctions Screening System with JWT and API Key authentication
+  version: 2.0.0
 servers:
   - url: http://localhost:8080
     description: Local Docker Environment
 
-# Security definitions (Smart Auth)
 components:
   securitySchemes:
     bearerAuth:
@@ -32,11 +31,14 @@ security:
     apiSecretAuth: []
 
 paths:
-  # AUTH SERVICE
+  # ==================== AUTH SERVICE ====================
+  
   /auth/login:
     post:
-      summary: Log in user (Generates JWT)
-      tags: [Auth]
+      summary: User login
+      description: Authenticate user and receive JWT access token and refresh token
+      tags: [Authentication]
+      security: []
       requestBody:
         required: true
         content:
@@ -47,6 +49,7 @@ paths:
               properties:
                 email:
                   type: string
+                  format: email
                   example: admin@testcorp.com
                 password:
                   type: string
@@ -60,23 +63,90 @@ paths:
               schema:
                 type: object
                 properties:
-                  token:
+                  message:
                     type: string
-                    description: JWT Token
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
                   user:
                     type: object
-  
-  /auth/register-organization:
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      role:
+                        type: string
+                      firstName:
+                        type: string
+                      lastName:
+                        type: string
+                      organizationId:
+                        type: string
+        401:
+          description: Invalid credentials
+
+  /auth/refresh:
     post:
-      summary: Register new organization (Admin + Company)
-      tags: [Auth]
-      security: [] # Public endpoint
+      summary: Refresh access token
+      description: Get new access token using refresh token
+      tags: [Authentication]
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        200:
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+        403:
+          description: Invalid or expired refresh token
+
+  /auth/logout:
+    post:
+      summary: Logout user
+      description: Revoke refresh token
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        200:
+          description: Logout successful
+
+  /auth/register-organization:
+    post:
+      summary: Register new organization (SuperAdmin only)
+      description: Create new organization with admin user. Requires SuperAdmin JWT.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orgName, country, city, email, password, firstName, lastName]
               properties:
                 orgName:
                   type: string
@@ -92,9 +162,11 @@ paths:
                   example: Main St 1
                 email:
                   type: string
-                  example: ceo@acme.com
+                  format: email
+                  example: admin@acme.com
                 password:
                   type: string
+                  format: password
                   example: SecretPass1!
                 firstName:
                   type: string
@@ -104,13 +176,279 @@ paths:
                   example: Doe
       responses:
         201:
-          description: Organisation registered successfully
+          description: Organization registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  organization:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      location:
+                        type: string
+                      apiKey:
+                        type: string
+                      apiSecret:
+                        type: string
+                  user:
+                    type: object
+        403:
+          description: Forbidden - SuperAdmin only
 
-  # CORE SERVICE (SANCTIONS)
+  /auth/validate-api-key:
+    post:
+      summary: Validate API key and secret
+      description: Verify API credentials for B2B integration
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [apiKey, apiSecret]
+              properties:
+                apiKey:
+                  type: string
+                apiSecret:
+                  type: string
+      responses:
+        200:
+          description: Valid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  organizationId:
+                    type: string
+                  organizationName:
+                    type: string
+        401:
+          description: Invalid credentials
+
+  /auth/forgot-password:
+    post:
+      summary: Request password reset
+      description: Send password reset link to user email
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        200:
+          description: Reset link sent
+
+  /auth/reset-password:
+    post:
+      summary: Reset password with token
+      description: Confirm password reset using token from email
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, token, newPassword]
+              properties:
+                userId:
+                  type: string
+                token:
+                  type: string
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        200:
+          description: Password reset successful
+        400:
+          description: Invalid or expired token
+
+  /auth/change-password:
+    post:
+      summary: Change password
+      description: Change password for authenticated user
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  format: password
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        200:
+          description: Password changed successfully
+        400:
+          description: Invalid current password
+
+  /auth/organization/keys:
+    get:
+      summary: Get organization API key
+      description: Retrieve organization's public API key (Admin only)
+      tags: [Authentication]
+      responses:
+        200:
+          description: API key retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey:
+                    type: string
+
+  /auth/reset-secret:
+    post:
+      summary: Reset organization API secret
+      description: Generate new API secret (Admin only, requires password confirmation)
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  format: password
+      responses:
+        200:
+          description: Secret reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  apiKey:
+                    type: string
+                  newApiSecret:
+                    type: string
+        403:
+          description: Incorrect password or forbidden
+
+  # ==================== USER MANAGEMENT ====================
+  
+  /users:
+    get:
+      summary: Get all users
+      description: List all users in organization (Admin only)
+      tags: [User Management]
+      responses:
+        200:
+          description: Users list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        email:
+                          type: string
+                        firstName:
+                          type: string
+                        lastName:
+                          type: string
+                        role:
+                          type: string
+    
+    post:
+      summary: Create new user
+      description: Register new user in organization (Admin only)
+      tags: [User Management]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, firstName, lastName, organizationId]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                organizationId:
+                  type: string
+                role:
+                  type: string
+                  enum: [user, admin]
+                  default: user
+      responses:
+        201:
+          description: User created successfully
+        403:
+          description: Forbidden - Admin only
+
+  /users/{userId}:
+    delete:
+      summary: Delete user
+      description: Remove user from organization (Admin only)
+      tags: [User Management]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: User deleted successfully
+        403:
+          description: Forbidden - Admin only
+        404:
+          description: User not found
+
+  # ==================== SANCTIONS SCREENING ====================
+  
   /sanctions/check:
     get:
       summary: Check entity against sanctions lists
-      description: Requires JWT (User) or API Key (B2B). Writes an audit log.
+      description: Screen name against international sanctions databases. Supports JWT and API Key authentication.
       tags: [Sanctions]
       parameters:
         - in: query
@@ -122,7 +460,7 @@ paths:
           example: Vladimir Putin
       responses:
         200:
-          description: Check result
+          description: Screening completed
           content:
             application/json:
               schema:
@@ -130,6 +468,11 @@ paths:
                 properties:
                   meta:
                     type: object
+                    properties:
+                      query:
+                        type: string
+                      timestamp:
+                        type: string
                   hits_count:
                     type: integer
                   data:
@@ -137,30 +480,118 @@ paths:
                     items:
                       type: object
                       properties:
-                        isSanctioned:
-                          type: boolean
+                        id:
+                          type: string
                         name:
                           type: string
+                        schema:
+                          type: string
+                        properties:
+                          type: object
+                        datasets:
+                          type: array
+                        score:
+                          type: number
+        400:
+          description: Missing or invalid parameters
+        401:
+          description: Unauthorized
 
   /sanctions/history:
     get:
       summary: Get search history
-      description: Returns logs only for the current user's organization.
-      tags: [History]
+      description: Retrieve audit logs for organization with pagination and filters
+      tags: [Sanctions]
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Filter by search query
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: hasHit
+          schema:
+            type: boolean
+          description: Filter by whether results were found
       responses:
         200:
-          description: List of logs
+          description: History retrieved
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    searchQuery:
-                      type: string
-                    hasHit:
-                      type: boolean
-                    createdAt:
-                      type: string
-                      format: date-time
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        _id:
+                          type: string
+                        searchQuery:
+                          type: string
+                        hasHit:
+                          type: boolean
+                        resultsCount:
+                          type: integer
+                        userId:
+                          type: string
+                        organizationId:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+                  pagination:
+                    type: object
+                    properties:
+                      currentPage:
+                        type: integer
+                      totalPages:
+                        type: integer
+                      totalResults:
+                        type: integer
+                      limit:
+                        type: integer
+
+  /sanctions/stats:
+    get:
+      summary: Get dashboard statistics
+      description: Retrieve screening statistics for organization
+      tags: [Sanctions]
+      responses:
+        200:
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalSearches:
+                    type: integer
+                  hitsFound:
+                    type: integer
+                  uniqueQueries:
+                    type: integer
+                  lastSearch:
+                    type: string
+                    format: date-time

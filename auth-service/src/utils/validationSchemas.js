@@ -48,8 +48,8 @@ export const registerUserSchema = Joi.object({
 export const loginSchema = Joi.object({
   email: emailRule,
   password: Joi.string().required().messages({
-    'string.empty': 'Hasło jest wymagane',
-    'any.required': 'Hasło jest wymagane'
+    'string.empty': 'Password is required',
+    'any.required': 'Password is required'
   })
 });
 

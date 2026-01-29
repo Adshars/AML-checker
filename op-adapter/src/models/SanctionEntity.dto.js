@@ -6,7 +6,7 @@ export default class SanctionEntity {
     // KLUCZOWE: Przekazujemy surowy obiekt properties dalej
     this.properties = data.properties || {};
 
-    // Helpery do podstawowych pól (Yente zawsze zwraca tablice w properties!)
+    // Helper properties for basic fields (Yente always returns arrays in properties!)
     this.name = this.properties.name ? this.properties.name[0] : (data.caption || 'Unknown');
     this.country = this.properties.country || []; 
     this.datasets = data.datasets || [];
@@ -16,7 +16,7 @@ export default class SanctionEntity {
     return new SanctionEntity({
       id: item.id,
       schema: item.schema,
-      properties: item.properties || {}, // Tu łapiemy wszystkie dane
+      properties: item.properties || {}, // Capture all data here
       caption: item.caption,
       datasets: item.datasets || []
     });

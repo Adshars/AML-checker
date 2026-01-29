@@ -14,18 +14,18 @@ const AuditLog = sequelize.define('AuditLog', {
   hasHit: { type: DataTypes.BOOLEAN, defaultValue: false },
   hitsCount: { type: DataTypes.INTEGER, defaultValue: 0 },
 
-  // Płaskie kolumny (podstawowe info - uproszczone do stringów)
+  // Flat columns (basic info - simplified to strings)
   entityName: { type: DataTypes.STRING, allowNull: true },
   entityScore: { type: DataTypes.FLOAT, allowNull: true },
   entityBirthDate: { type: DataTypes.STRING, allowNull: true },
   entityGender: { type: DataTypes.STRING, allowNull: true },
   
-  // Zmiana na TEXT, bo listy krajów mogą być długie
+  // Changed to TEXT because country lists can be long
   entityCountries: { type: DataTypes.TEXT, allowNull: true },
   entityDatasets: { type: DataTypes.TEXT, allowNull: true },
   entityDescription: { type: DataTypes.TEXT, allowNull: true },
 
-  // PEŁNE DANE - Tu trafi cały obiekt properties (aliasy, edukacja, etc.)
+  // FULL DATA - Complete properties object goes here (aliases, education, etc.)
   hitDetails: {
     type: DataTypes.JSONB, 
     allowNull: true

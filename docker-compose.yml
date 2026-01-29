@@ -74,7 +74,7 @@ services:
     build: ./core-service
     # For testing purposes, delete comments below to expose port
     #ports:
-    #  - "3005:3000" # Dostęp z zewnątrz na porcie 3005 (dla debugowania)
+    #  - "3005:3000" # External access on port 3005 (for debugging)
     volumes:
       - ./core-service/logs:/app/logs
     environment:

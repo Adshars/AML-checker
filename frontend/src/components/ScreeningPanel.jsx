@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Card, Form, Button, Spinner, Alert, ListGroup, Modal, Table } from 'react-bootstrap';
+import { Card, Form, Button, Spinner, Alert, ListGroup, Modal, Badge } from 'react-bootstrap';
 import coreService from '../services/coreService';
+import ExtendedDetails from './ExtendedDetails';
 
 function ScreeningPanel() {
   const [name, setName] = useState('');
@@ -9,6 +10,26 @@ function ScreeningPanel() {
   const [results, setResults] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState(null);
+
+  // Helper function to extract Latin name from properties.name array
+  const getLatinName = (hit) => {
+    if (!hit) return 'Unknown Entity';
+
+    // 1. Check properties.name array
+    const names = hit.properties?.name;
+    
+    if (Array.isArray(names) && names.length > 0) {
+      // Find first name containing Latin characters (A-Z, a-z)
+      const latinName = names.find(n => /[a-zA-Z]/.test(n));
+      
+      // If found - return it. Otherwise return first available name.
+      if (latinName) return latinName;
+      return names[0];
+    }
+
+    // 2. Fallback to main fields if properties don't exist
+    return hit.name || hit.caption || 'Unknown Entity';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -116,37 +137,47 @@ function ScreeningPanel() {
 
                   {hasData ? (
                     <ListGroup>
-                      {results.data.map((hit, idx) => (
-                        <ListGroup.Item 
-                          key={hit.id || idx}
-                          onClick={() => handleEntityClick(hit)}
-                          style={{ cursor: 'pointer' }}
-                          className="action"
-                        >
-                          <div className="d-flex justify-content-between align-items-start">
-                            <div>
-                              <div className="fw-semibold">{hit.name || 'Unknown name'}</div>
-                              <div className="text-muted">
-                                Schema: <span>{hit.schema || 'N/A'}</span>
+                      {results.data.map((hit, idx) => {
+                        // Extract sanction flags from properties.topics
+                        const isSanctioned = hit.properties?.topics?.includes('sanction') || false;
+                        const isPep = hit.properties?.topics?.includes('role.pep') || false;
+
+                        return (
+                          <ListGroup.Item 
+                            key={hit.id || idx}
+                            onClick={() => handleEntityClick(hit)}
+                            style={{ cursor: 'pointer' }}
+                            className="action"
+                          >
+                            <div className="d-flex justify-content-between align-items-start">
+                              <div>
+                                <div className="fw-semibold">{getLatinName(hit)}</div>
+                                <div className="text-muted">
+                                  Schema: <span>{hit.schema || 'N/A'}</span>
+                                </div>
+                                <div className="text-muted">
+                                  Countries: <span>
+                                    {Array.isArray(hit.country) 
+                                      ? hit.country.join(', ') 
+                                      : (hit.country || 'N/A')}
+                                  </span>
+                                </div>
+                                <div className="mt-1">
+                                  {isSanctioned && <Badge bg="danger" className="me-1">Sanction</Badge>}
+                                  {isPep && <Badge bg="warning" text="dark">PEP</Badge>}
+                                </div>
                               </div>
-                              <div className="text-muted">
-                                Countries: <span>
-                                  {Array.isArray(hit.country) 
-                                    ? hit.country.join(', ') 
-                                    : (hit.country || 'N/A')}
-                                </span>
+                              <div className="text-nowrap">
+                                Score: <strong>
+                                  {typeof hit.score === 'number' 
+                                    ? hit.score.toFixed(2) 
+                                    : (hit.score ?? 'N/A')}
+                                </strong>
                               </div>
                             </div>
-                            <div className="text-nowrap">
-                              Score: <strong>
-                                {typeof hit.score === 'number' 
-                                  ? hit.score.toFixed(2) 
-                                  : (hit.score ?? 'N/A')}
-                              </strong>
-                            </div>
-                          </div>
-                        </ListGroup.Item>
-                      ))}
+                          </ListGroup.Item>
+                        );
+                      })}
                     </ListGroup>
                   ) : (
                     <Alert variant="info">No details available for this result.</Alert>
@@ -164,35 +195,33 @@ function ScreeningPanel() {
 
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
         <Modal.Header closeButton>
-          <Modal.Title>Entity Details</Modal.Title>
+          <Modal.Title>{getLatinName(selectedEntity)}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {selectedEntity && (
             <>
-              <h5 className="mb-3">{selectedEntity.name || 'Unknown Entity'}</h5>
-              <Table striped bordered hover responsive>
-                <thead>
-                  <tr>
-                    <th>Property</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(selectedEntity).map(([key, value]) => {
-                    if (key === 'id' || value === null || (typeof value === 'object' && !Array.isArray(value))) {
-                      return null;
-                    }
-                    return (
-                      <tr key={key}>
-                        <td>
-                          <strong>{formatKey(key)}</strong>
-                        </td>
-                        <td>{formatValue(value)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
+              {/* Header with basic info */}
+              <div className="mb-4">
+                <div className="text-muted mb-2">
+                  <strong>Schema:</strong> {selectedEntity.schema || 'N/A'}
+                </div>
+                <div className="text-muted mb-2">
+                  <strong>Match Score:</strong> {selectedEntity.score?.toFixed(2) || 'N/A'}
+                </div>
+                <div className="text-muted mb-2">
+                  <strong>Countries:</strong> {Array.isArray(selectedEntity.country) 
+                    ? selectedEntity.country.join(', ') 
+                    : (selectedEntity.country || 'N/A')}
+                </div>
+                <div className="text-muted">
+                  <strong>Datasets:</strong> {Array.isArray(selectedEntity.datasets) 
+                    ? selectedEntity.datasets.join(', ') 
+                    : (selectedEntity.datasets || 'N/A')}
+                </div>
+              </div>
+
+              {/* Extended Details - dynamically render ALL properties */}
+              <ExtendedDetails data={selectedEntity.properties} />
             </>
           )}
         </Modal.Body>

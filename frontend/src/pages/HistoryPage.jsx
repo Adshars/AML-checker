@@ -14,6 +14,7 @@ import {
   Alert,
 } from 'react-bootstrap';
 import { getHistory } from '../services/api';
+import ExtendedDetails from '../components/ExtendedDetails';
 
 const HistoryPage = () => {
   const [filters, setFilters] = useState({ search: '', status: '', startDate: '', endDate: '' });
@@ -25,6 +26,21 @@ const HistoryPage = () => {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
+
+  // Helper: Extract Latin name from hitDetails or fallback to entityName
+  const getLatinName = (entityName, hitDetails) => {
+    // If we have hitDetails with name array, search for Latin version
+    if (hitDetails && Array.isArray(hitDetails.name)) {
+      const latin = hitDetails.name.find(n => /[a-zA-Z]/.test(n));
+      if (latin) return latin;
+      // Fallback to first name in array
+      return hitDetails.name[0];
+    }
+    // If entityName is array (edge case)
+    if (Array.isArray(entityName)) return entityName[0];
+    // Fallback to direct entityName
+    return entityName || 'Unknown Entity';
+  };
 
   const statusParam = useMemo(() => {
     if (filters.status === 'hit') return true;
@@ -256,17 +272,80 @@ const HistoryPage = () => {
         <Modal.Body>
           {selectedLog && (
             <>
-              <p><strong>Date:</strong> {selectedLog.createdAt ? new Date(selectedLog.createdAt).toLocaleString() : '—'}</p>
-              <p><strong>User:</strong> {renderUserCell(selectedLog.userId, selectedLog.userEmail)}</p>
-              <p><strong>Search Query:</strong> {selectedLog.searchQuery || '—'}</p>
-              <p><strong>Result:</strong> {selectedLog.hasHit ? 'HIT' : 'CLEAN'}</p>
-              <p><strong>Entity Name:</strong> {selectedLog.entityName || '—'}</p>
-              <p><strong>Description:</strong> {selectedLog.entityDescription || '—'}</p>
-              <p><strong>Datasets:</strong> {formatDatasets(selectedLog.entityDatasets)}</p>
-              <h6 className="mt-3">Raw Payload</h6>
-              <pre className="bg-light p-3 rounded" style={{ maxHeight: '50vh', overflow: 'auto' }}>
-                {JSON.stringify(selectedLog, null, 2)}
-              </pre>
+              {/* SECTION 1: System Metadata (Pretty Table at Top) */}
+              <div className="mb-4">
+                <h6 className="text-uppercase text-secondary small fw-bold mb-3">System Metadata</h6>
+                <Table size="sm" borderless className="mb-0">
+                  <tbody>
+                    <tr>
+                      <td className="text-muted" style={{ width: '140px' }}>Date:</td>
+                      <td className="fw-medium">
+                        {selectedLog.createdAt ? new Date(selectedLog.createdAt).toLocaleString() : '—'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="text-muted">User:</td>
+                      <td>{renderUserCell(selectedLog.userId, selectedLog.userEmail)}</td>
+                    </tr>
+                    <tr>
+                      <td className="text-muted">Search Query:</td>
+                      <td className="fw-bold text-primary">"{selectedLog.searchQuery}"</td>
+                    </tr>
+                    <tr>
+                      <td className="text-muted">Result:</td>
+                      <td>{renderResultBadge(selectedLog)}</td>
+                    </tr>
+                  </tbody>
+                </Table>
+              </div>
+
+              <hr className="my-3" />
+
+              {/* SECTION 2: Entity Data (Header with Latin Name) */}
+              <div className="mb-4">
+                <h5 className="mb-1">
+                  {getLatinName(selectedLog.entityName, selectedLog.hitDetails)}
+                </h5>
+                <p className="text-muted small mb-3">
+                  {selectedLog.entityDescription || 
+                   selectedLog.hitDetails?.position?.[0] || 
+                   'No description available'}
+                </p>
+                {selectedLog.entityCountries && (
+                  <p className="text-muted small mb-0">
+                    <strong>Countries:</strong> {selectedLog.entityCountries}
+                  </p>
+                )}
+                {selectedLog.entityDatasets && (
+                  <p className="text-muted small">
+                    <strong>Datasets:</strong> {formatDatasets(selectedLog.entityDatasets)}
+                  </p>
+                )}
+              </div>
+
+              <hr className="my-3" />
+
+              {/* SECTION 3: Extended Details (Reusable Component) */}
+              {/* Pass hitDetails (JSONB from database) */}
+              <ExtendedDetails data={selectedLog.hitDetails} />
+
+              {/* SECTION 4: Debug Info (Collapsible JSON) */}
+              <div className="mt-4">
+                <details>
+                  <summary 
+                    className="text-muted small" 
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    📋 Show Raw Debug JSON
+                  </summary>
+                  <pre 
+                    className="bg-light p-3 mt-2 rounded border small" 
+                    style={{ maxHeight: '250px', overflow: 'auto' }}
+                  >
+                    {JSON.stringify(selectedLog, null, 2)}
+                  </pre>
+                </details>
+              </div>
             </>
           )}
         </Modal.Body>

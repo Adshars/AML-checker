@@ -56,26 +56,35 @@ export default class SanctionsCoreService {
     const hits = adapterResponse.data || [];
     const hasHit = adapterResponse.hits_count > 0;
 
-    const bestMatch = hits.length > 0 ? hits[0] : null;
-
-    const joinArr = (arr) => (Array.isArray(arr) && arr.length > 0 ? arr.join(', ') : null);
-
-    const getDescription = (match) => {
-      if (!match) return null;
-      const pos = joinArr(match.position) || '';
-      const desc = joinArr(match.description) || joinArr(match.notes) || '';
-      const combined = `${pos} ${desc}`.trim();
-      return combined.length > 0 ? combined : null;
+    // Helper to safely convert arrays to comma-separated strings
+    const arrayToString = (val) => {
+      if (!val) return null;
+      if (Array.isArray(val)) return val.join(', ');
+      return String(val);
     };
+
+    // Get first result (bestHit)
+    const bestHit = (hits && hits.length > 0) ? hits[0] : null;
+
+    // Extract raw properties from adapter response
+    // NOTE: Adapter now returns .properties field (after Stage 1 changes)
+    // If it doesn't exist, use entire bestHit object as fallback
+    const rawProps = bestHit ? (bestHit.properties || bestHit) : {};
+
+    // Extract flags from properties.topics
+    const isSanctioned = bestHit ? ((rawProps.topics || []).includes('sanction')) : false;
+    const isPep = bestHit ? ((rawProps.topics || []).includes('role.pep')) : false;
 
     try {
       logger.debug('Creating AuditLog entry', {
         requestId,
-        userId: userID,
-        userEmail: userEmail,
+        orgID,
+        userID,
+        userEmail,
         searchQuery: name,
         hasHit: hasHit,
       });
+
       await AuditLog.create({
         organizationId: orgID,
         userId: userID || 'API',
@@ -83,16 +92,26 @@ export default class SanctionsCoreService {
         searchQuery: name,
         hasHit: hasHit,
         hitsCount: adapterResponse.hits_count || 0,
-        entityName: bestMatch?.name || null,
-        entityScore: bestMatch?.score || null,
-        entityBirthDate: bestMatch?.birthDate || null,
-        entityGender: bestMatch?.gender || null,
-        entityCountries: bestMatch ? joinArr(bestMatch.country) : null,
-        entityDatasets: bestMatch ? joinArr(bestMatch.datasets) : null,
-        entityDescription: getDescription(bestMatch),
-        isSanctioned: bestMatch?.isSanctioned || false,
-        isPep: bestMatch?.isPep || false,
+
+        // Flat columns for quick table overview
+        // Using arrayToString because OpenSanctions always returns arrays
+        entityName: rawProps.name ? (Array.isArray(rawProps.name) ? rawProps.name[0] : rawProps.name) : (bestHit?.name || null),
+        entityScore: bestHit?.score || null,
+        entityBirthDate: arrayToString(rawProps.birthDate),
+        entityGender: arrayToString(rawProps.gender),
+        entityCountries: arrayToString(rawProps.country),
+        entityDatasets: arrayToString(bestHit?.datasets),
+        entityDescription: arrayToString(rawProps.description || rawProps.position || rawProps.notes),
+
+        // Full data (key to success)
+        // Store entire raw object. This way we get weakAlias, education, religion, etc. in DB
+        hitDetails: rawProps,
+
+        // Flags
+        isSanctioned: isSanctioned,
+        isPep: isPep,
       });
+
       logger.info('Audit log saved successfully', { requestId, orgID, hasHit, userEmail });
     } catch (dbError) {
       logger.error('Failed to save Audit Log', { requestId, error: dbError.message });

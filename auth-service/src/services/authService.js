@@ -116,7 +116,7 @@ export const loginService = async (email, password) => {
             role: user.role 
         }, 
         process.env.JWT_SECRET, 
-        { expiresIn: process.env.JWT_ACCESS_EXPIRATION || '1m' }
+        { expiresIn: process.env.JWT_ACCESS_EXPIRATION || '15m' }
     );
 
     // Generate Refresh Token
@@ -201,7 +201,7 @@ export const refreshAccessTokenService = async (refreshToken) => {
     const newAccessToken = jwt.sign(
         { userId: user._id, organizationId: user.organizationId, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_ACCESS_EXPIRATION || '1m' }
+        { expiresIn: process.env.JWT_ACCESS_EXPIRATION || '15m' }
     );
 
     logger.info('Access Token refreshed', { userId: user._id });

@@ -72,10 +72,10 @@ export const registerOrganization = async (req, res) => {
 // User Registration
 export const registerUser = async (req, res) => {
   const requestId = `user-reg-${Date.now()}`;
-  const userRole = req.headers['x-role'];  // ✅ Pochodzi z JWT w API Gateway
+  const userRole = req.headers['x-role'];  // ✅ Comes from JWT in API Gateway
   
   try {
-    // ✅ Sprawdzenie, czy user jest adminiem
+    // ✅ Check if user is admin
     if (userRole !== 'admin' && userRole !== 'superadmin') {
       logger.warn('Unauthorized user registration attempt', { 
         requestId, 

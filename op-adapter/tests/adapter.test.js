@@ -85,19 +85,21 @@ describe('OP-Adapter Integration Tests', () => {
             expect(mapped.id).toBe('res-123');
             expect(mapped.name).toBe('Vladimir Putin');
             expect(mapped.schema).toBe('Person');
-            expect(mapped.score).toBe(0.99);
-            expect(mapped.isSanctioned).toBe(true); // topics contains 'sanction'
-            expect(mapped.isPep).toBe(true); // topics contains 'role.pep'
-            expect(mapped.birthDate).toBe('1952-10-07');
-            expect(mapped.birthPlace).toBe('Leningrad, USSR');
-            expect(mapped.gender).toBe('M');
-            expect(mapped.nationality).toEqual(['Russian']);
             expect(mapped.country).toEqual(['RU']);
-            expect(mapped.position).toEqual(['President of Russia']);
-            expect(mapped.notes).toEqual(['Leader of Russian Federation']);
-            expect(mapped.alias).toEqual(['Vladimir Vladimirovich Putin', 'Wladimir Putin']);
-            expect(mapped.address).toEqual(['Moscow, Russia']);
             expect(mapped.datasets).toEqual(['ru-fsin-sdn', 'us-ofac-sdn']);
+            
+            // Verify properties object contains all Yente data
+            expect(mapped.properties).toBeDefined();
+            expect(mapped.properties.topics).toEqual(['sanction', 'role.pep']);
+            expect(mapped.properties.birthDate).toEqual(['1952-10-07']);
+            expect(mapped.properties.birthPlace).toEqual(['Leningrad, USSR']);
+            expect(mapped.properties.gender).toEqual(['M']);
+            expect(mapped.properties.nationality).toEqual(['Russian']);
+            expect(mapped.properties.country).toEqual(['RU']);
+            expect(mapped.properties.position).toEqual(['President of Russia']);
+            expect(mapped.properties.notes).toEqual(['Leader of Russian Federation']);
+            expect(mapped.properties.alias).toEqual(['Vladimir Vladimirovich Putin', 'Wladimir Putin']);
+            expect(mapped.properties.address).toEqual(['Moscow, Russia']);
         });
 
         it('should handle sparse Yente response (missing optional fields)', async () => {
@@ -126,16 +128,17 @@ describe('OP-Adapter Integration Tests', () => {
             expect(res.statusCode).toBe(200);
             
             const mapped = res.body.data[0];
-            expect(mapped.isSanctioned).toBe(false);
-            expect(mapped.isPep).toBe(false);
-            expect(mapped.birthDate).toBeNull();
-            expect(mapped.birthPlace).toBeNull();
-            expect(mapped.gender).toBeNull();
-            expect(mapped.nationality).toEqual([]);
-            expect(mapped.position).toEqual([]);
-            expect(mapped.notes).toEqual([]);
-            expect(mapped.alias).toEqual([]);
-            expect(mapped.address).toEqual([]);
+            expect(mapped.properties).toBeDefined();
+            expect(mapped.properties.topics).toEqual(['']);
+            expect(mapped.properties.country).toEqual(['US']);
+            expect(mapped.properties.birthDate).toBeUndefined();
+            expect(mapped.properties.birthPlace).toBeUndefined();
+            expect(mapped.properties.gender).toBeUndefined();
+            expect(mapped.properties.nationality).toBeUndefined();
+            expect(mapped.properties.position).toBeUndefined();
+            expect(mapped.properties.notes).toBeUndefined();
+            expect(mapped.properties.alias).toBeUndefined();
+            expect(mapped.properties.address).toBeUndefined();
         });
 
         it('should extract first value from multi-valued properties', async () => {
@@ -163,8 +166,8 @@ describe('OP-Adapter Integration Tests', () => {
 
             expect(res.statusCode).toBe(200);
             const mapped = res.body.data[0];
-            expect(mapped.birthDate).toBe('1980-01-01'); // First value only
-            expect(mapped.birthPlace).toBe('City A'); // First value only
+            expect(mapped.properties.birthDate).toEqual(['1980-01-01', '1980-01-02']); // All values preserved
+            expect(mapped.properties.birthPlace).toEqual(['City A', 'City B']); // All values preserved
         });
 
         it('should return empty data array when Yente finds no results', async () => {

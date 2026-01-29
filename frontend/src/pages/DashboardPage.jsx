@@ -28,7 +28,7 @@ const DashboardPage = () => {
     );
   }
 
-  // Grupowanie po dacie dla wykresu
+  // Group logs by date for chart
   const chartData = stats.recentLogs.reduce((acc, log) => {
     const date = new Date(log.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const existing = acc.find((d) => d.date === date);
@@ -46,7 +46,7 @@ const DashboardPage = () => {
     <Container>
       <h2 className="mb-4">Dashboard</h2>
 
-      {/* Statystyki - karty */}
+      {/* Statistics - cards */}
       <Row className="mb-4">
         <Col md={4} className="mb-3">
           <Card bg="primary" text="white">
@@ -74,7 +74,7 @@ const DashboardPage = () => {
         </Col>
       </Row>
 
-      {/* Wykres aktywności */}
+      {/* Activity chart */}
       {chartData.length > 0 ? (
         <Card className="mb-4">
           <Card.Body>
@@ -96,7 +96,7 @@ const DashboardPage = () => {
         </Alert>
       )}
 
-      {/* Ostatnia aktywność */}
+      {/* Latest activity */}
       <Card>
         <Card.Body>
           <Card.Title>Recent Activity</Card.Title>

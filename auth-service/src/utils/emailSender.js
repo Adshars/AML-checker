@@ -36,16 +36,16 @@ export const sendResetEmail = async (email, resetLink) => {
     const mailOptions = {
       from: '"AML Checker Security" <security@amlchecker.local>', // Sender
       to: email, // Recipient
-      subject: 'Reset Hasła - AML Checker',
+      subject: 'Password Reset - AML Checker',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Resetowanie hasła</h2>
-          <p>Otrzymaliśmy prośbę o zresetowanie hasła dla Twojego konta.</p>
-          <p>Kliknij w poniższy przycisk, aby ustawić nowe hasło (link ważny 1h):</p>
-          <a href="${resetLink}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Zresetuj hasło</a>
+          <h2>Password Reset</h2>
+          <p>We received a request to reset the password for your account.</p>
+          <p>Click the button below to set a new password (link valid for 1 hour):</p>
+          <a href="${resetLink}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
           <p>Lub skopiuj ten link: ${resetLink}</p>
           <hr>
-          <p><small>Jeśli to nie Ty, zignoruj tę wiadomość.</small></p>
+          <p><small>If this wasn't you, please ignore this message.</small></p>
         </div>
       `,
     };

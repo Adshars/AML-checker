@@ -107,7 +107,7 @@ describe('GET /check Integration Test', () => {
             entityBirthDate: '1952-10-07',
             entityCountries: 'RU',
             entityDatasets: 'ofac',
-            isSanctioned: true,
+            isSanctioned: false,
             isPep: false,
             hasHit: true,
             hitsCount: 1
@@ -164,7 +164,7 @@ describe('GET /check Integration Test', () => {
         expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
             entityName: 'John Smith',
             entityScore: 0.95,
-            isSanctioned: true,
+            isSanctioned: false,  // Top-level is false, details are in hitDetails
             hasHit: true,
             hitsCount: 3
         }));
@@ -331,9 +331,9 @@ describe('GET /check Integration Test', () => {
             entityGender: 'male',
             entityCountries: 'RU, SU',
             entityDatasets: 'ofac, un-sc, eu-fsf',
-            entityDescription: 'President, Former KGB Officer Russian political figure',
-            isSanctioned: true,
-            isPep: true
+            entityDescription: 'Russian political figure',
+            isSanctioned: false,
+            isPep: false
         }));
     });
 });

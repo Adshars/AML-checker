@@ -47,8 +47,13 @@ jest.unstable_mockModule('../src/models/User.js', () => ({
 jest.unstable_mockModule('../src/utils/logger.js', () => ({
     default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }
 }));
+
+const mockSendWelcomeEmail = jest.fn().mockResolvedValue(undefined);
+const mockSendResetEmail = jest.fn().mockResolvedValue(undefined);
+
 jest.unstable_mockModule('../src/utils/emailSender.js', () => ({
-    sendResetEmail: jest.fn()
+    sendResetEmail: mockSendResetEmail,
+    sendWelcomeEmail: mockSendWelcomeEmail
 }));
 
 // Imports (Dynamic imports after mocks)
@@ -73,18 +78,37 @@ describe('Auth Service Integration Tests', () => {
             // Mocking the service success response
             // The structure matches what registerOrgService returns in authService.js
             AuthService.registerOrgService.mockResolvedValue({
-                savedOrg: { _id: 'org1', apiKey: 'key1' },
-                newUser: { _id: 'user1', email: 'test@co.com', role: 'admin' },
-                apiKey: 'key1',
+                savedOrg: { 
+                    _id: 'org1', 
+                    apiKey: 'key1', 
+                    name: 'Test Co',
+                    city: 'Gdańsk',
+                    country: 'PL'
+                },
+                newUser: { 
+                    _id: 'user1', 
+                    email: 'test@co.com', 
+                    role: 'admin', 
+                    firstName: 'Jan', 
+                    lastName: 'Kowalski' 
+                },
                 apiSecret: 'secret1'
             });
 
-            const res = await request(app).post('/auth/register-organization').send({
-                orgName: 'Test Co', 
-                email: 'test@co.com', 
-                password: 'password123',
-                firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
-            });
+            const res = await request(app)
+                .post('/auth/register-organization')
+                .set('x-role', 'superadmin')
+                .send({
+                    orgName: 'Test Co', 
+                    email: 'test@co.com', 
+                    password: 'password123',
+                    firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+                });
+
+            if (res.statusCode !== 201) {
+                console.log('Response body:', res.body);
+                console.log('Status:', res.statusCode);
+            }
 
             expect(res.statusCode).toBe(201);
             expect(res.body.message).toContain('registered successfully');
@@ -101,10 +125,13 @@ describe('Auth Service Integration Tests', () => {
             // Mocking service error "User exists" (matches error string in authService.js)
             AuthService.registerOrgService.mockRejectedValue(new Error('Email already registered'));
 
-            const res = await request(app).post('/auth/register-organization').send({
-                orgName: 'Test Co', email: 'exists@co.com', password: 'password123',
-                firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
-            });
+            const res = await request(app)
+                .post('/auth/register-organization')
+                .set('x-role', 'superadmin')
+                .send({
+                    orgName: 'Test Co', email: 'exists@co.com', password: 'password123',
+                    firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+                });
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toBe('Email already registered');
@@ -112,11 +139,14 @@ describe('Auth Service Integration Tests', () => {
 
         it('should fail Validation (short password) -> 400', async () => {
             // Joi validation middleware should block this BEFORE calling the service
-            const res = await request(app).post('/auth/register-organization').send({
-                orgName: 'Test Co', email: 'valid@co.com', 
-                password: '123', // <--- TOO SHORT
-                firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
-            });
+            const res = await request(app)
+                .post('/auth/register-organization')
+                .set('x-role', 'superadmin')
+                .send({
+                    orgName: 'Test Co', email: 'valid@co.com', 
+                    password: '123', // <--- TOO SHORT
+                    firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+                });
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toMatch(/Password must be at least/);
@@ -461,11 +491,14 @@ describe('Auth Service Integration Tests', () => {
         });
 
         it('should reject registration with missing fields -> 400', async () => {
-            const res = await request(app).post('/auth/register-organization').send({
-                orgName: 'Test Co',
-                email: 'test@example.com'
-                // Missing required fields
-            });
+            const res = await request(app)
+                .post('/auth/register-organization')
+                .set('x-role', 'superadmin')
+                .send({
+                    orgName: 'Test Co',
+                    email: 'test@example.com'
+                    // Missing required fields
+                });
 
             expect(res.statusCode).toBe(400);
         });

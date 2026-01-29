@@ -2,10 +2,11 @@
   "name": "aml-checker-root",
   "version": "1.0.0",
   "scripts": {
-    "test": "npm run test:auth && npm run test:core && npm run test:adapter && npm run test:gateway",
+    "test": "npm run test:auth && npm run test:core && npm run test:adapter && npm run test:gateway && npm run test:frontend",
     "test:auth": "cd auth-service && npm test",
     "test:core": "cd core-service && npm test",
     "test:adapter": "cd op-adapter && npm test",
-    "test:gateway": "cd api-gateway && npm test"
+    "test:gateway": "cd api-gateway && npm test",
+    "test:frontend": "cd frontend && npm test"
   }
 }

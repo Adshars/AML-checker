@@ -1,16 +1,35 @@
 import { jest } from '@jest/globals';
 
-// Mocking
+// AuditLog model mock (for repository)
+const mockAuditLogModel = {
+    create: jest.fn(),
+    count: jest.fn(),
+    findAll: jest.fn(),
+    findAndCountAll: jest.fn()
+};
 
-// Mockujemy AuditLog model
-jest.unstable_mockModule('../src/models/AuditLog.js', () => ({
-    default: {
-        findAndCountAll: jest.fn()
+jest.unstable_mockModule('../src/infrastructure/database/sequelize/models/AuditLogModel.js', () => ({
+    createAuditLogModel: () => mockAuditLogModel
+}));
+
+// Mock SequelizeConnection
+jest.unstable_mockModule('../src/infrastructure/database/sequelize/connection.js', () => ({
+    SequelizeConnection: class {
+        constructor() {}
+        async connect() {}
+        async disconnect() {}
+        getSequelize() {
+            return {
+                authenticate: jest.fn(),
+                sync: jest.fn()
+            };
+        }
+        async isHealthy() { return true; }
     }
 }));
 
-// Logger mock (to avoid cluttering the console during tests)
-jest.unstable_mockModule('../src/utils/logger.js', () => ({
+// Logger mock
+jest.unstable_mockModule('../src/shared/logger/index.js', () => ({
     default: {
         info: jest.fn(),
         warn: jest.fn(),
@@ -19,17 +38,35 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
     }
 }));
 
-// OpAdapterClient mock (index wiring creates it)
-jest.unstable_mockModule('../src/clients/OpAdapterClient.js', () => ({
-    default: class {
-        checkSanctions() { return Promise.resolve({ data: { hits_count: 0, data: [] }, duration: 10 }); }
+// OpAdapterClient mock
+jest.unstable_mockModule('../src/infrastructure/clients/OpAdapterClient.js', () => ({
+    OpAdapterClient: class {
+        constructor() {}
+        async checkSanctions() { return { data: { hits_count: 0, data: [] }, duration: 10 }; }
     }
 }));
 
-// Imports 
+// Config mock
+jest.unstable_mockModule('../src/shared/config/index.js', () => ({
+    config: {
+        database: {},
+        opAdapter: { baseUrl: 'http://test', timeout: 5000 },
+        pagination: { defaultLimit: 20, maxLimit: 100 },
+        port: 3000
+    }
+}));
+
+// Imports
 const request = (await import('supertest')).default;
-const AuditLog = (await import('../src/models/AuditLog.js')).default;
-const { app } = await import('../src/index.js');
+const { Application } = await import('../src/app.js');
+
+// Create test app
+let app;
+beforeAll(async () => {
+    const application = new Application();
+    await application.initialize();
+    app = application.getApp();
+});
 
 describe('GET /history Integration Test', () => {
 
@@ -43,7 +80,7 @@ describe('GET /history Integration Test', () => {
     });
 
     it('should return paginated results (Pagination)', async () => {
-        
+
         // SCENARIO: The database has 100 records, we want the 1st page with 5 items
         const mockDbResponse = {
             count: 100, // Total number of records in the database
@@ -51,7 +88,7 @@ describe('GET /history Integration Test', () => {
         };
 
         // Configure the mock
-        AuditLog.findAndCountAll.mockResolvedValue(mockDbResponse);
+        mockAuditLogModel.findAndCountAll.mockResolvedValue(mockDbResponse);
 
         const res = await request(app)
             .get('/history?page=1&limit=5')
@@ -62,7 +99,7 @@ describe('GET /history Integration Test', () => {
         // Assertions
         expect(res.statusCode).toBe(200);
         expect(res.body.data).toHaveLength(5);
-        
+
         // Check if meta data is correct
         expect(res.body.meta).toEqual({
             totalItems: 100,
@@ -76,8 +113,8 @@ describe('GET /history Integration Test', () => {
 
         // SCENARIO: A user from 'ORG-A' tries to fetch history.
         // We test if the database query includes a mandatory filter on the organization.
-        
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history')
@@ -87,7 +124,7 @@ describe('GET /history Integration Test', () => {
 
         // CHECKING SECURITY:
         // Was the database function called with a filter organizationId: 'ORG-A'?
-        expect(AuditLog.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({
                 organizationId: 'ORG-A'
             })
@@ -95,7 +132,7 @@ describe('GET /history Integration Test', () => {
     });
 
     it('should allow filtering by search query', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history?search=Putin')
@@ -103,14 +140,14 @@ describe('GET /history Integration Test', () => {
             .set('x-role', 'user');
 
         // Check if search filter was added
-        // Note: Sequelize uses Symbols for operators (Op.iLike), 
+        // Note: Sequelize uses Symbols for operators (Op.iLike),
         // so we only check if the where structure contains searchQuery.
-        const callArgs = AuditLog.findAndCountAll.mock.calls[0][0];
+        const callArgs = mockAuditLogModel.findAndCountAll.mock.calls[0][0];
         expect(callArgs.where).toHaveProperty('searchQuery');
     });
 
     it('should allow superadmin to access without x-org-id', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         const res = await request(app)
             .get('/history')
@@ -118,17 +155,17 @@ describe('GET /history Integration Test', () => {
 
         expect(res.statusCode).toBe(200);
         // Should not filter by organizationId for superadmin
-        expect(AuditLog.findAndCountAll).toHaveBeenCalled();
+        expect(mockAuditLogModel.findAndCountAll).toHaveBeenCalled();
     });
 
     it('should filter by organization for superadmin when orgId provided', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history?orgId=specific-org')
             .set('x-role', 'superadmin');
 
-        expect(AuditLog.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({
                 organizationId: 'specific-org'
             })
@@ -136,38 +173,38 @@ describe('GET /history Integration Test', () => {
     });
 
     it('should filter by hasHit parameter', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history?hasHit=true')
             .set('x-org-id', 'org-1')
             .set('x-role', 'user');
 
-        const callArgs = AuditLog.findAndCountAll.mock.calls[0][0];
+        const callArgs = mockAuditLogModel.findAndCountAll.mock.calls[0][0];
         expect(callArgs.where.hasHit).toBe(true);
     });
 
     it('should filter by hasHit=false parameter', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history?hasHit=false')
             .set('x-org-id', 'org-1')
             .set('x-role', 'user');
 
-        const callArgs = AuditLog.findAndCountAll.mock.calls[0][0];
+        const callArgs = mockAuditLogModel.findAndCountAll.mock.calls[0][0];
         expect(callArgs.where.hasHit).toBe(false);
     });
 
     it('should filter by userId parameter', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history?userId=user-123')
             .set('x-org-id', 'org-1')
             .set('x-role', 'admin');
 
-        expect(AuditLog.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({
                 userId: 'user-123'
             })
@@ -175,19 +212,19 @@ describe('GET /history Integration Test', () => {
     });
 
     it('should filter by date range (startDate and endDate)', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
 
         await request(app)
             .get('/history?startDate=2024-01-01&endDate=2024-12-31')
             .set('x-org-id', 'org-1')
             .set('x-role', 'user');
 
-        const callArgs = AuditLog.findAndCountAll.mock.calls[0][0];
+        const callArgs = mockAuditLogModel.findAndCountAll.mock.calls[0][0];
         expect(callArgs.where.createdAt).toBeDefined();
     });
 
     it('should use default pagination values when not provided', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 10, rows: Array(10).fill({}) });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 10, rows: Array(10).fill({}) });
 
         const res = await request(app)
             .get('/history')
@@ -203,14 +240,14 @@ describe('GET /history Integration Test', () => {
         });
 
         // Check default values were used
-        expect(AuditLog.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
             limit: 20,
             offset: 0
         }));
     });
 
     it('should handle page beyond available data', async () => {
-        AuditLog.findAndCountAll.mockResolvedValue({ count: 10, rows: [] });
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({ count: 10, rows: [] });
 
         const res = await request(app)
             .get('/history?page=100&limit=10')
@@ -224,7 +261,7 @@ describe('GET /history Integration Test', () => {
     });
 
     it('should return 500 on database error', async () => {
-        AuditLog.findAndCountAll.mockRejectedValue(new Error('Database connection lost'));
+        mockAuditLogModel.findAndCountAll.mockRejectedValue(new Error('Database connection lost'));
 
         const res = await request(app)
             .get('/history')

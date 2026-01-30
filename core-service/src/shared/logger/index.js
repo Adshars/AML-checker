@@ -2,8 +2,11 @@ import winston from 'winston';
 import 'winston-daily-rotate-file';
 
 // Format configuration
-const logFormat = winston.format.printf(({ level, message, label, timestamp }) => {
-  return `[${timestamp}] [${level.toUpperCase()}] [${label}]: ${message}`;
+const logFormat = winston.format.printf((info) => {
+  const { level, message, label, timestamp, ...meta } = info;
+  const metaKeys = Object.keys(meta).filter(key => meta[key] !== undefined);
+  const metaString = metaKeys.length ? ` ${JSON.stringify(meta)}` : '';
+  return `[${timestamp}] [${level.toUpperCase()}] [${label}]: ${message}${metaString}`;
 });
 
 const logger = winston.createLogger({

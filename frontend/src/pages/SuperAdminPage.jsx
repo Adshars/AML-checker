@@ -1,6 +1,7 @@
 import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Container, Card, Form, Button, Alert, Row, Col, Spinner } from 'react-bootstrap';
+import { Container, Card, Form, Button, Alert, Row, Col, Spinner, InputGroup } from 'react-bootstrap';
+import { Eye, EyeSlash } from 'react-bootstrap-icons';
 import { registerOrganization } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 
@@ -20,6 +21,7 @@ const SuperAdminPage = () => {
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Auth context for logout
   const { logout } = useContext(AuthContext);
@@ -111,6 +113,7 @@ const SuperAdminPage = () => {
         password: '',
       });
       setFormErrors({});
+      setShowPassword(false);
 
       // ✅ SUCCESS MESSAGE REMAINS VISIBLE - User must manually dismiss it
       // Removed: setTimeout(() => setSuccessMessage(''), 5000);
@@ -285,17 +288,27 @@ const SuperAdminPage = () => {
 
               <Form.Group className="mb-4" controlId="password">
                 <Form.Label>Password</Form.Label>
-                <Form.Control
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  isInvalid={!!formErrors.password}
-                  disabled={loading}
-                  placeholder="Minimum 8 characters"
-                  required
-                />
-                <Form.Control.Feedback type="invalid">
+                <InputGroup>
+                  <Form.Control
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    isInvalid={!!formErrors.password}
+                    disabled={loading}
+                    placeholder="Minimum 8 characters"
+                    required
+                  />
+                  <Button
+                    variant="outline-secondary"
+                    onClick={() => setShowPassword(!showPassword)}
+                    disabled={loading}
+                    type="button"
+                  >
+                    {showPassword ? <EyeSlash /> : <Eye />}
+                  </Button>
+                </InputGroup>
+                <Form.Control.Feedback type="invalid" style={{ display: formErrors.password ? 'block' : 'none' }}>
                   {formErrors.password}
                 </Form.Control.Feedback>
                 <Form.Text className="text-muted">

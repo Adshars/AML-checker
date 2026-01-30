@@ -9,7 +9,9 @@ import {
   Alert,
   Spinner,
   Badge,
+  InputGroup,
 } from 'react-bootstrap';
+import { Eye, EyeSlash } from 'react-bootstrap-icons';
 import { getUsers, createUser, deleteUser } from '../services/api';
 
 const UsersPage = () => {
@@ -33,6 +35,7 @@ const UsersPage = () => {
   });
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Fetch users on component mount
   useEffect(() => {
@@ -97,6 +100,7 @@ const UsersPage = () => {
       password: '',
     });
     setFormErrors({});
+    setShowPassword(false);
   };
 
   /**
@@ -392,17 +396,27 @@ const UsersPage = () => {
 
             <Form.Group className="mb-3" controlId="password">
               <Form.Label>Password</Form.Label>
-              <Form.Control
-                type="password"
-                name="password"
-                placeholder="Minimum 8 characters"
-                value={formData.password}
-                onChange={handleInputChange}
-                isInvalid={!!formErrors.password}
-                disabled={submitting}
-                required
-              />
-              <Form.Control.Feedback type="invalid">
+              <InputGroup>
+                <Form.Control
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  placeholder="Minimum 8 characters"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  isInvalid={!!formErrors.password}
+                  disabled={submitting}
+                  required
+                />
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => setShowPassword(!showPassword)}
+                  disabled={submitting}
+                  type="button"
+                >
+                  {showPassword ? <EyeSlash /> : <Eye />}
+                </Button>
+              </InputGroup>
+              <Form.Control.Feedback type="invalid" style={{ display: formErrors.password ? 'block' : 'none' }}>
                 {formErrors.password}
               </Form.Control.Feedback>
               <Form.Text className="text-muted">

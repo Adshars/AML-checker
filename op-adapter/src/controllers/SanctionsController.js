@@ -1,14 +1,7 @@
 import logger from '../utils/logger.js';
 import { UpstreamError } from '../services/SanctionsService.js';
-
-const DEFAULT_LIMIT = 15;
-const MAX_LIMIT = 100;
-
-const toBoolean = (value) => {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') return value.toLowerCase() === 'true';
-  return false;
-};
+import { CheckSanctionsRequestDto, ValidationError } from '../application/dtos/requests/index.js';
+import { CheckSanctionsResponseDto } from '../application/dtos/responses/index.js';
 
 export default class SanctionsController {
   constructor({ sanctionsService }) {
@@ -21,47 +14,41 @@ export default class SanctionsController {
   };
 
   checkSanctions = async (req, res) => {
-    const requestId = req.headers['x-request-id'] || `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-    const name = (req.query.name || '').trim();
-    if (!name) {
-      logger.warn('Missing name parameter in check request', { requestId });
-      return res.status(400).json({ error: 'Missing name parameter' });
-    }
-
-    const limitRaw = parseInt(req.query.limit, 10);
-    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), MAX_LIMIT) : DEFAULT_LIMIT;
-    const fuzzy = toBoolean(req.query.fuzzy ?? 'false');
-    const schema = req.query.schema?.trim();
-    const country = req.query.country?.trim();
-
-    logger.info('Received check request', { requestId, name, limit, fuzzy, schema, country });
+    let requestDto;
 
     try {
-      const { results, stats } = await this.sanctionsService.findEntities({
-        name,
-        limit,
-        fuzzy,
-        schema,
-        country,
-        requestId,
+      requestDto = CheckSanctionsRequestDto.fromRequest(req);
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        logger.warn(error.message, { requestId: req.headers['x-request-id'] });
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+
+    logger.info('Received check request', {
+      requestId: requestDto.requestId,
+      name: requestDto.name,
+      ...requestDto.getSearchParams(),
+    });
+
+    try {
+      const { results, stats } = await this.sanctionsService.findEntities(
+        requestDto.toServiceParams()
+      );
+
+      const responseDto = CheckSanctionsResponseDto.fromServiceResult({
+        query: requestDto.name,
+        searchParams: requestDto.getSearchParams(),
+        results,
+        stats,
       });
 
-      res.json({
-        meta: {
-          source: stats.source,
-          timestamp: new Date().toISOString(),
-          requestId: stats.requestId || requestId,
-        },
-        query: name,
-        search_params: { limit, fuzzy, schema, country },
-        hits_count: stats.hitsCount,
-        data: results,
-      });
+      res.json(responseDto.toJSON());
     } catch (error) {
       if (error instanceof UpstreamError) {
         logger.error('Error connecting to Yente (after retries)', {
-          requestId,
+          requestId: requestDto.requestId,
           error: error.message,
           cause: error.cause?.message,
         });
@@ -71,7 +58,10 @@ export default class SanctionsController {
         });
       }
 
-      logger.error('Unexpected error during check', { requestId, error: error.message });
+      logger.error('Unexpected error during check', {
+        requestId: requestDto.requestId,
+        error: error.message,
+      });
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   };

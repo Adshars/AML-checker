@@ -143,7 +143,7 @@ describe('GET /check Integration Test', () => {
             entityBirthDate: '1952-10-07',
             entityCountries: 'RU',
             entityDatasets: 'ofac',
-            isSanctioned: false,
+            isSanctioned: true,  // Direct flag from adapter response
             isPep: false,
             hasHit: true,
             hitsCount: 1
@@ -200,7 +200,8 @@ describe('GET /check Integration Test', () => {
         expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             entityName: 'John Smith',
             entityScore: 0.95,
-            isSanctioned: false,  // Top-level is false, details are in hitDetails
+            isSanctioned: true,  // Direct flag from first (best) match
+            isPep: false,
             hasHit: true,
             hitsCount: 3
         }));
@@ -369,8 +370,8 @@ describe('GET /check Integration Test', () => {
             entityCountries: 'RU, SU',
             entityDatasets: 'ofac, un-sc, eu-fsf',
             entityDescription: 'Russian political figure',
-            isSanctioned: false,
-            isPep: false
+            isSanctioned: true,  // Direct flag from adapter response
+            isPep: true          // Direct flag from adapter response
         }));
     });
 });

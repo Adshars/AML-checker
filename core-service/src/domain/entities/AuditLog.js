@@ -86,13 +86,25 @@ export class AuditLog {
     let isPep = false;
 
     if (bestHit) {
-      const properties = bestHit.properties || {};
-      const topics = properties.topics || bestHit.topics || [];
-
       // Check for sanctions and PEP status
-      // Support both topics-based (OpenSanctions) and direct flags (legacy)
-      isSanctioned = topics.some(t => t.includes('sanction'));
-      isPep = topics.some(t => t.includes('role.pep'));
+      // Support both direct boolean flags (new flat structure) and topics-based (legacy)
+      if (typeof bestHit.isSanctioned === 'boolean') {
+        isSanctioned = bestHit.isSanctioned;
+      } else {
+        const properties = bestHit.properties || {};
+        const topics = properties.topics || bestHit.topics || [];
+        isSanctioned = Array.isArray(topics) && topics.some(t => t.includes('sanction'));
+      }
+
+      if (typeof bestHit.isPep === 'boolean') {
+        isPep = bestHit.isPep;
+      } else {
+        const properties = bestHit.properties || {};
+        const topics = properties.topics || bestHit.topics || [];
+        isPep = Array.isArray(topics) && topics.some(t => t.includes('role.pep'));
+      }
+
+      const properties = bestHit.properties || {};
 
       // Helper to get value from properties (array) or direct field
       const getValue = (propsKey, directKey) => {

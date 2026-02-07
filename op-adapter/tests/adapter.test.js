@@ -81,30 +81,34 @@ describe('OP-Adapter Integration Tests', () => {
             expect(res.body.hits_count).toBe(1);
             expect(res.body.data).toHaveLength(1);
 
-            // Verify flat DTO mapping (new structure)
+            // Verify DTO mapping with direct flags and properties object
             const mapped = res.body.data[0];
             expect(mapped.id).toBe('res-123');
+            expect(mapped.caption).toBe('Vladimir Putin');
             expect(mapped.name).toBe('Vladimir Putin');
             expect(mapped.schema).toBe('Person');
             expect(mapped.score).toBe(0.99);
             expect(mapped.datasets).toEqual(['ru-fsin-sdn', 'us-ofac-sdn']);
 
-            // Verify sanctioning flags extracted from topics
+            // Verify direct sanctioning flags extracted from topics
             expect(mapped.isSanctioned).toBe(true);
             expect(mapped.isPep).toBe(true);
 
-            // Verify first value extraction for single-value fields
+            // Verify extracted fields for core-service
             expect(mapped.birthDate).toBe('1952-10-07');
-            expect(mapped.birthPlace).toBe('Leningrad, USSR');
-            expect(mapped.gender).toBe('M');
-
-            // Verify array fields preserved
-            expect(mapped.nationality).toEqual(['Russian']);
             expect(mapped.country).toEqual(['RU']);
-            expect(mapped.position).toEqual(['President of Russia']);
-            expect(mapped.notes).toEqual(['Leader of Russian Federation']);
-            expect(mapped.alias).toEqual(['Vladimir Vladimirovich Putin', 'Wladimir Putin']);
-            expect(mapped.address).toEqual(['Moscow, Russia']);
+
+            // Verify original properties object is preserved for frontend
+            expect(mapped.properties).toBeDefined();
+            expect(mapped.properties.name).toEqual(['Vladimir Putin']);
+            expect(mapped.properties.topics).toEqual(['sanction', 'role.pep']);
+            expect(mapped.properties.birthPlace).toEqual(['Leningrad, USSR']);
+            expect(mapped.properties.gender).toEqual(['M']);
+            expect(mapped.properties.nationality).toEqual(['Russian']);
+            expect(mapped.properties.position).toEqual(['President of Russia']);
+            expect(mapped.properties.notes).toEqual(['Leader of Russian Federation']);
+            expect(mapped.properties.alias).toEqual(['Vladimir Vladimirovich Putin', 'Wladimir Putin']);
+            expect(mapped.properties.address).toEqual(['Moscow, Russia']);
         });
 
         it('should handle sparse Yente response (missing optional fields)', async () => {
@@ -142,15 +146,13 @@ describe('OP-Adapter Integration Tests', () => {
             expect(mapped.name).toBe('John Doe');
             expect(mapped.country).toEqual(['US']);
 
-            // Verify missing fields default to null or empty arrays
+            // Verify missing fields default to null
             expect(mapped.birthDate).toBeNull();
-            expect(mapped.birthPlace).toBeNull();
-            expect(mapped.gender).toBeNull();
-            expect(mapped.nationality).toEqual([]);
-            expect(mapped.position).toEqual([]);
-            expect(mapped.notes).toEqual([]);
-            expect(mapped.alias).toEqual([]);
-            expect(mapped.address).toEqual([]);
+
+            // Verify properties object is preserved (sparse)
+            expect(mapped.properties).toBeDefined();
+            expect(mapped.properties.topics).toEqual(['']);
+            expect(mapped.properties.country).toEqual(['US']);
         });
 
         it('should extract first value from multi-valued properties', async () => {
@@ -179,9 +181,12 @@ describe('OP-Adapter Integration Tests', () => {
             expect(res.statusCode).toBe(200);
             const mapped = res.body.data[0];
 
-            // For single-value fields, first value should be extracted
+            // For extracted single-value fields, first value should be used
             expect(mapped.birthDate).toBe('1980-01-01');
-            expect(mapped.birthPlace).toBe('City A');
+
+            // But properties object preserves all values
+            expect(mapped.properties.birthDate).toEqual(['1980-01-01', '1980-01-02']);
+            expect(mapped.properties.birthPlace).toEqual(['City A', 'City B']);
         });
 
         it('should return empty data array when Yente finds no results', async () => {

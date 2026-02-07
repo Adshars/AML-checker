@@ -1,50 +1,41 @@
 /**
  * SanctionEntity DTO
- * Maps Yente API response to simplified, flat structure for downstream services.
- * Extracts sanctioning flags (isSanctioned, isPep) from topics array.
+ * Maps Yente API response while preserving original properties for frontend.
+ * Extracts direct flags (isSanctioned, isPep) for downstream services.
  */
 export default class SanctionEntity {
   constructor({
     id,
+    caption,
     name,
     schema,
     score,
     isSanctioned,
     isPep,
     birthDate,
-    birthPlace,
-    gender,
-    nationality,
     country,
-    position,
-    notes,
-    alias,
-    address,
     datasets,
+    properties,
   }) {
     this.id = id;
+    this.caption = caption;
     this.name = name;
     this.schema = schema;
     this.score = score;
     this.isSanctioned = isSanctioned;
     this.isPep = isPep;
     this.birthDate = birthDate;
-    this.birthPlace = birthPlace;
-    this.gender = gender;
-    this.nationality = nationality;
     this.country = country;
-    this.position = position;
-    this.notes = notes;
-    this.alias = alias;
-    this.address = address;
     this.datasets = datasets;
+    this.properties = properties;
   }
 
   /**
    * Factory method to create SanctionEntity from Yente API response item.
-   * Safely extracts all fields with null/empty defaults.
+   * Preserves original properties object for frontend while extracting
+   * direct flags for core-service consumption.
    * @param {Object} item - Raw Yente API result item
-   * @returns {SanctionEntity} Mapped entity with flat structure
+   * @returns {SanctionEntity} Mapped entity
    */
   static fromYenteResponse(item) {
     const props = item.properties || {};
@@ -52,46 +43,37 @@ export default class SanctionEntity {
 
     return new SanctionEntity({
       id: item.id || null,
+      caption: item.caption || null,
       name: props.name?.[0] || item.caption || 'Unknown',
       schema: item.schema || null,
       score: item.score ?? 0,
       isSanctioned: topics.includes('sanction'),
       isPep: topics.includes('role.pep'),
       birthDate: props.birthDate?.[0] || null,
-      birthPlace: props.birthPlace?.[0] || null,
-      gender: props.gender?.[0] || null,
-      nationality: props.nationality || [],
       country: props.country || [],
-      position: props.position || [],
-      notes: props.notes || [],
-      alias: props.alias || [],
-      address: props.address || [],
       datasets: item.datasets || [],
+      properties: props,
     });
   }
 
   /**
    * Convert entity to plain JSON object for API response.
+   * Includes both direct flags and original properties object.
    * @returns {Object} Plain object representation
    */
   toJSON() {
     return {
       id: this.id,
+      caption: this.caption,
       name: this.name,
       schema: this.schema,
       score: this.score,
       isSanctioned: this.isSanctioned,
       isPep: this.isPep,
       birthDate: this.birthDate,
-      birthPlace: this.birthPlace,
-      gender: this.gender,
-      nationality: this.nationality,
       country: this.country,
-      position: this.position,
-      notes: this.notes,
-      alias: this.alias,
-      address: this.address,
       datasets: this.datasets,
+      properties: this.properties,
     };
   }
 }

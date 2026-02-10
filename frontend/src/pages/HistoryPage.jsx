@@ -119,11 +119,11 @@ const HistoryPage = () => {
     return <Badge bg="success">CLEAN</Badge>;
   };
 
-  const renderUserCell = (userId, userEmail) => {
+  const renderUserCell = (userId, userEmail, userName) => {
     if (userId === 'API') {
       return <Badge bg="secondary">API Key</Badge>;
     }
-    return userEmail || userId || '—';
+    return userName || userEmail || userId || '—';
   };
 
   const formatDatasets = (datasets) => {
@@ -240,7 +240,7 @@ const HistoryPage = () => {
                   {logs.map((log) => (
                     <tr key={log.id || log._id || log.createdAt}>
                       <td>{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
-                      <td>{renderUserCell(log.userId, log.userEmail)}</td>
+                      <td>{renderUserCell(log.userId, log.userEmail, log.userName)}</td>
                       <td>{log.searchQuery || '—'}</td>
                       <td>{renderResultBadge(log)}</td>
                       <td>
@@ -285,7 +285,7 @@ const HistoryPage = () => {
                     </tr>
                     <tr>
                       <td className="text-muted">User:</td>
-                      <td>{renderUserCell(selectedLog.userId, selectedLog.userEmail)}</td>
+                      <td>{renderUserCell(selectedLog.userId, selectedLog.userEmail, selectedLog.userName)}</td>
                     </tr>
                     <tr>
                       <td className="text-muted">Search Query:</td>

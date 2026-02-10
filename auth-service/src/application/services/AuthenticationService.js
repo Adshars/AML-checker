@@ -43,7 +43,10 @@ export class AuthenticationService {
     const tokenPayload = {
       userId: user.id,
       organizationId: user.organizationId,
-      role: user.role
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email
     };
 
     const accessToken = this.tokenService.generateAccessToken(tokenPayload);
@@ -82,7 +85,10 @@ export class AuthenticationService {
     const tokenPayload = {
       userId: user.id,
       organizationId: user.organizationId,
-      role: user.role
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email
     };
 
     const newAccessToken = this.tokenService.generateAccessToken(tokenPayload);

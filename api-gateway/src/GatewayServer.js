@@ -126,6 +126,9 @@ export default class GatewayServer {
       if (req.headers['x-role']) {
         proxyReq.setHeader('x-role', req.headers['x-role']);
       }
+      if (req.headers['x-user-name']) {
+        proxyReq.setHeader('x-user-name', req.headers['x-user-name']);
+      }
       if (req.headers['x-auth-type']) {
         proxyReq.setHeader('x-auth-type', req.headers['x-auth-type']);
       }

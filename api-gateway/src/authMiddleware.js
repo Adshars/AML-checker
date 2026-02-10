@@ -89,7 +89,8 @@ export default class AuthMiddleware {
         authType: 'jwt',
         userId: decoded.userId,
         email: decoded.email,
-        role: decoded.role
+        role: decoded.role,
+        userName: decoded.firstName && decoded.lastName ? `${decoded.firstName} ${decoded.lastName}` : (decoded.email || 'User')
       };
     } catch (error) {
       logger.warn('JWT Verification Failed', { requestId: req.requestId, error: error.message });
@@ -135,6 +136,7 @@ export default class AuthMiddleware {
         if (authResult.email) req.headers['x-user-email'] = authResult.email;
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
+        if (authResult.userName) req.headers['x-user-name'] = authResult.userName;
         
         logger.info('Auth Success', { requestId: req.requestId, authType: 'jwt', userId: authResult.userId });
         return next();

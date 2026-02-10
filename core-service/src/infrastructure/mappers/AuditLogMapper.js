@@ -18,6 +18,7 @@ export class AuditLogMapper {
       id: data.id,
       organizationId: data.organizationId,
       userId: data.userId,
+      userName: data.userName,
       userEmail: data.userEmail,
       searchQuery: data.searchQuery,
       hasHit: data.hasHit,
@@ -45,6 +46,7 @@ export class AuditLogMapper {
     return {
       organizationId: entity.organizationId,
       userId: entity.userId,
+      userName: entity.userName,
       userEmail: entity.userEmail,
       searchQuery: entity.searchQuery,
       hasHit: entity.hasHit,
@@ -74,6 +76,7 @@ export class AuditLogMapper {
       id: entity.id,
       organizationId: entity.organizationId,
       userId: entity.userId,
+      userName: entity.userName,
       userEmail: entity.userEmail,
       searchQuery: entity.searchQuery,
       hasHit: entity.hasHit,

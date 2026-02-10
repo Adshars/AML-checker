@@ -204,10 +204,11 @@ OpenSanctions local API instance powered by Elasticsearch.
 ### JWT Authentication (User Login)
 ```bash
 Authorization: Bearer <ACCESS_TOKEN>
+Cookie: refreshToken=<REFRESH_TOKEN> (HttpOnly)
 ```
-- Access token: 15 minutes
-- Refresh token: 7 days
-- Use `/auth/refresh` to get new token
+- Access token: 15 minutes (Storage: Memory/LocalStorage)
+- Refresh token: 7 days (Storage: HttpOnly Cookie)
+- Use `/auth/refresh` to get new access token (cookie handled automatically)
 
 ### API Key Authentication (B2B)
 ```bash

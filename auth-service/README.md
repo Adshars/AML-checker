@@ -145,9 +145,9 @@ docker compose up --build auth-service
 
 | Method | Endpoint | Rate Limit | Description | Required Fields |
 |--------|----------|------------|-------------|-----------------|
-| POST | `/auth/login` | 50 req/15min | User login; returns JWT access token (15min) + refresh token (7d) | `email`, `password` |
-| POST | `/auth/refresh` | None | Generate new access token using valid refresh token | `refreshToken` |
-| POST | `/auth/logout` | None | Revoke refresh token from database | `refreshToken` |
+| POST | `/auth/login` | 50 req/15min | User login; returns JWT access token (body) + refresh token (HttpOnly Cookie) | `email`, `password` |
+| POST | `/auth/refresh` | None | Generate new access token using valid refresh token from Cookie | - (Cookie) |
+| POST | `/auth/logout` | None | Revoke refresh token from database and clear Cookie | - (Cookie) |
 | POST | `/auth/forgot-password` | None | Request password reset email with token (valid 1 hour) | `email` |
 | POST | `/auth/reset-password` | None | Reset password using token from email | `userId`, `token`, `newPassword` |
 
@@ -285,7 +285,6 @@ curl -X POST http://localhost:3002/auth/login \
 {
   "message": "Login successful",
   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": "64a8b9c7d2f3e4a1b2c3d4e6",
     "email": "admin@acme.test",
@@ -297,7 +296,7 @@ curl -X POST http://localhost:3002/auth/login \
 }
 ```
 
-ℹ️ **Note:** Access token expires in 15 minutes, refresh token in 7 days.
+ℹ️ **Note:** Access token (body) expires in 15 minutes. Refresh token (HttpOnly Cookie) expires in 7 days.
 
 ### 3. Register User (Admin/Superadmin Only)
 
@@ -339,10 +338,8 @@ curl -X POST http://localhost:3002/auth/register-user \
 **Request:**
 ```bash
 curl -X POST http://localhost:3002/auth/refresh \
-  -H \"Content-Type: application/json\" \
-  -d '{
-    \"refreshToken\": \"<REFRESH_TOKEN_FROM_LOGIN>\"
-  }'
+  -H "Content-Type: application/json" \
+  --cookie "refreshToken=<REFRESH_TOKEN_COOKIE>"
 ```
 
 **Response (200 OK):**
@@ -358,9 +355,7 @@ curl -X POST http://localhost:3002/auth/refresh \
 ```bash
 curl -X POST http://localhost:3002/auth/logout \
   -H "Content-Type: application/json" \
-  -d '{
-    "refreshToken": "<REFRESH_TOKEN>"
-  }'
+  --cookie "refreshToken=<REFRESH_TOKEN_COOKIE>"
 ```
 
 **Response (200 OK):**

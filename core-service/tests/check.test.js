@@ -2,41 +2,77 @@ import { jest } from '@jest/globals';
 
 // Define Mocks BEFORE importing the app
 
-// OpAdapterClient mock
+// OpAdapterClient mock (new path)
 const mockCheckSanctions = jest.fn();
-jest.unstable_mockModule('../src/clients/OpAdapterClient.js', () => ({
-    default: class {
+jest.unstable_mockModule('../src/infrastructure/clients/OpAdapterClient.js', () => ({
+    OpAdapterClient: class {
+        constructor() {}
         checkSanctions(payload) { return mockCheckSanctions(payload); }
     }
 }));
 
-// AuditLog model mock
-jest.unstable_mockModule('../src/models/AuditLog.js', () => ({
-    default: {
-        create: jest.fn()
+// AuditLog model mock (for repository)
+const mockAuditLogModel = {
+    create: jest.fn(),
+    count: jest.fn(),
+    findAll: jest.fn(),
+    findAndCountAll: jest.fn()
+};
+
+jest.unstable_mockModule('../src/infrastructure/database/sequelize/models/AuditLogModel.js', () => ({
+    createAuditLogModel: () => mockAuditLogModel
+}));
+
+// Mock SequelizeConnection
+jest.unstable_mockModule('../src/infrastructure/database/sequelize/connection.js', () => ({
+    SequelizeConnection: class {
+        constructor() {}
+        async connect() {}
+        async disconnect() {}
+        getSequelize() {
+            return {
+                authenticate: jest.fn(),
+                sync: jest.fn()
+            };
+        }
+        async isHealthy() { return true; }
     }
 }));
 
 // Logger mock (to avoid cluttering the console during tests)
-jest.unstable_mockModule('../src/utils/logger.js', () => ({
+jest.unstable_mockModule('../src/shared/logger/index.js', () => ({
     default: {
         info: jest.fn(),
-        warn: jest.fn(), // You can uncomment if you want to see warnings
+        warn: jest.fn(),
         debug: jest.fn(),
-        error: jest.fn() // You can uncomment if you want to see errors
+        error: jest.fn()
+    }
+}));
+
+// Config mock
+jest.unstable_mockModule('../src/shared/config/index.js', () => ({
+    config: {
+        database: {},
+        opAdapter: { baseUrl: 'http://test', timeout: 5000 },
+        pagination: { defaultLimit: 20, maxLimit: 100 },
+        port: 3000
     }
 }));
 
 // IMPORT THE APP AND LIBRARIES NOW
-// We use await import to ensure mocks are already in place
-
 const request = (await import('supertest')).default;
-const { default: OpAdapterClient } = await import('../src/clients/OpAdapterClient.js');
-const AuditLog = (await import('../src/models/AuditLog.js')).default;
-const { app } = await import('../src/index.js'); // Import the app last
+const { Application } = await import('../src/app.js');
+
+// Create test app
+let app;
+beforeAll(async () => {
+    const application = new Application();
+    await application.initialize();
+    app = application.getApp();
+});
 
 describe('GET /check Integration Test', () => {
-    
+
     beforeEach(() => {
         jest.clearAllMocks();
         mockCheckSanctions.mockResolvedValue({
@@ -50,7 +86,7 @@ describe('GET /check Integration Test', () => {
             .get('/check')
             .set('x-org-id', 'test-org')
             .set('x-user-id', 'test-user');
-        
+
         expect(res.statusCode).toBe(400);
         expect(res.body.error).toMatch(/Missing name parameter/i);
     });
@@ -61,7 +97,7 @@ describe('GET /check Integration Test', () => {
     });
 
     it('should process successful response from Op-Adapter and save log', async () => {
-        
+
         // SCENARIO: We simulate that Op-Adapter returned correct data
         const mockAdapterResponse = {
             data: {
@@ -98,8 +134,8 @@ describe('GET /check Integration Test', () => {
         expect(res.body.data[0].name).toBe('Vladimir Putin');
 
         // Check if AuditLog.create was called correctly
-        expect(AuditLog.create).toHaveBeenCalledTimes(1);
-        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.create).toHaveBeenCalledTimes(1);
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             organizationId: 'org-123',
             userId: 'user-456',
             searchQuery: 'Putin',
@@ -107,7 +143,7 @@ describe('GET /check Integration Test', () => {
             entityBirthDate: '1952-10-07',
             entityCountries: 'RU',
             entityDatasets: 'ofac',
-            isSanctioned: false,
+            isSanctioned: true,  // Direct flag from adapter response
             isPep: false,
             hasHit: true,
             hitsCount: 1
@@ -130,7 +166,7 @@ describe('GET /check Integration Test', () => {
         expect(res.body.data).toEqual([]);
 
         // AuditLog should still be created with hasHit=false
-        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             hasHit: false,
             hitsCount: 0,
             isSanctioned: false,
@@ -161,10 +197,11 @@ describe('GET /check Integration Test', () => {
         expect(res.body.data).toHaveLength(3);
 
         // AuditLog should save best match (first one)
-        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             entityName: 'John Smith',
             entityScore: 0.95,
-            isSanctioned: false,  // Top-level is false, details are in hitDetails
+            isSanctioned: true,  // Direct flag from first (best) match
+            isPep: false,
             hasHit: true,
             hitsCount: 3
         }));
@@ -214,7 +251,8 @@ describe('GET /check Integration Test', () => {
             .set('x-org-id', 'org-123')
             .set('x-user-id', 'user-456');
 
-        expect(res.statusCode).toBe(502);
+        // Unexpected errors without response property return 500
+        expect(res.statusCode).toBe(500);
     });
 
     it('should handle missing userID gracefully (API key authentication)', async () => {
@@ -229,7 +267,7 @@ describe('GET /check Integration Test', () => {
             // No x-user-id header
 
         expect(res.statusCode).toBe(200);
-        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             userId: 'API',
             userEmail: null
         }));
@@ -247,7 +285,7 @@ describe('GET /check Integration Test', () => {
             .set('x-user-id', 'user-456')
             .set('x-user-email', 'user@example.com');
 
-        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             userId: 'user-456',
             userEmail: 'user@example.com'
         }));
@@ -286,7 +324,7 @@ describe('GET /check Integration Test', () => {
         });
 
         // Mock AuditLog.create to fail
-        AuditLog.create.mockRejectedValue(new Error('Database connection lost'));
+        mockAuditLogModel.create.mockRejectedValue(new Error('Database connection lost'));
 
         const res = await request(app)
             .get('/check?name=Test')
@@ -324,7 +362,7 @@ describe('GET /check Integration Test', () => {
             .set('x-org-id', 'org-123')
             .set('x-user-id', 'user-456');
 
-        expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
             entityName: 'Vladimir Putin',
             entityScore: 1.0,
             entityBirthDate: '1952-10-07',
@@ -332,8 +370,8 @@ describe('GET /check Integration Test', () => {
             entityCountries: 'RU, SU',
             entityDatasets: 'ofac, un-sc, eu-fsf',
             entityDescription: 'Russian political figure',
-            isSanctioned: false,
-            isPep: false
+            isSanctioned: true,  // Direct flag from adapter response
+            isPep: true          // Direct flag from adapter response
         }));
     });
 });

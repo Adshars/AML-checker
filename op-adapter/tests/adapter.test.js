@@ -56,6 +56,7 @@ describe('OP-Adapter Integration Tests', () => {
                         score: 0.99,
                         datasets: ['ru-fsin-sdn', 'us-ofac-sdn'],
                         properties: {
+                            name: ['Vladimir Putin'],
                             topics: ['sanction', 'role.pep'],
                             birthDate: ['1952-10-07'],
                             birthPlace: ['Leningrad, USSR'],
@@ -80,22 +81,30 @@ describe('OP-Adapter Integration Tests', () => {
             expect(res.body.hits_count).toBe(1);
             expect(res.body.data).toHaveLength(1);
 
-            // Verify DTO mapping
+            // Verify DTO mapping with direct flags and properties object
             const mapped = res.body.data[0];
             expect(mapped.id).toBe('res-123');
+            expect(mapped.caption).toBe('Vladimir Putin');
             expect(mapped.name).toBe('Vladimir Putin');
             expect(mapped.schema).toBe('Person');
-            expect(mapped.country).toEqual(['RU']);
+            expect(mapped.score).toBe(0.99);
             expect(mapped.datasets).toEqual(['ru-fsin-sdn', 'us-ofac-sdn']);
-            
-            // Verify properties object contains all Yente data
+
+            // Verify direct sanctioning flags extracted from topics
+            expect(mapped.isSanctioned).toBe(true);
+            expect(mapped.isPep).toBe(true);
+
+            // Verify extracted fields for core-service
+            expect(mapped.birthDate).toBe('1952-10-07');
+            expect(mapped.country).toEqual(['RU']);
+
+            // Verify original properties object is preserved for frontend
             expect(mapped.properties).toBeDefined();
+            expect(mapped.properties.name).toEqual(['Vladimir Putin']);
             expect(mapped.properties.topics).toEqual(['sanction', 'role.pep']);
-            expect(mapped.properties.birthDate).toEqual(['1952-10-07']);
             expect(mapped.properties.birthPlace).toEqual(['Leningrad, USSR']);
             expect(mapped.properties.gender).toEqual(['M']);
             expect(mapped.properties.nationality).toEqual(['Russian']);
-            expect(mapped.properties.country).toEqual(['RU']);
             expect(mapped.properties.position).toEqual(['President of Russia']);
             expect(mapped.properties.notes).toEqual(['Leader of Russian Federation']);
             expect(mapped.properties.alias).toEqual(['Vladimir Vladimirovich Putin', 'Wladimir Putin']);
@@ -126,19 +135,24 @@ describe('OP-Adapter Integration Tests', () => {
                 .get('/check?name=John%20Doe');
 
             expect(res.statusCode).toBe(200);
-            
+
             const mapped = res.body.data[0];
+
+            // Verify sanctioning flags
+            expect(mapped.isSanctioned).toBe(false);
+            expect(mapped.isPep).toBe(false);
+
+            // Verify name falls back to caption
+            expect(mapped.name).toBe('John Doe');
+            expect(mapped.country).toEqual(['US']);
+
+            // Verify missing fields default to null
+            expect(mapped.birthDate).toBeNull();
+
+            // Verify properties object is preserved (sparse)
             expect(mapped.properties).toBeDefined();
             expect(mapped.properties.topics).toEqual(['']);
             expect(mapped.properties.country).toEqual(['US']);
-            expect(mapped.properties.birthDate).toBeUndefined();
-            expect(mapped.properties.birthPlace).toBeUndefined();
-            expect(mapped.properties.gender).toBeUndefined();
-            expect(mapped.properties.nationality).toBeUndefined();
-            expect(mapped.properties.position).toBeUndefined();
-            expect(mapped.properties.notes).toBeUndefined();
-            expect(mapped.properties.alias).toBeUndefined();
-            expect(mapped.properties.address).toBeUndefined();
         });
 
         it('should extract first value from multi-valued properties', async () => {
@@ -166,8 +180,13 @@ describe('OP-Adapter Integration Tests', () => {
 
             expect(res.statusCode).toBe(200);
             const mapped = res.body.data[0];
-            expect(mapped.properties.birthDate).toEqual(['1980-01-01', '1980-01-02']); // All values preserved
-            expect(mapped.properties.birthPlace).toEqual(['City A', 'City B']); // All values preserved
+
+            // For extracted single-value fields, first value should be used
+            expect(mapped.birthDate).toBe('1980-01-01');
+
+            // But properties object preserves all values
+            expect(mapped.properties.birthDate).toEqual(['1980-01-01', '1980-01-02']);
+            expect(mapped.properties.birthPlace).toEqual(['City A', 'City B']);
         });
 
         it('should return empty data array when Yente finds no results', async () => {
@@ -434,8 +453,8 @@ describe('OP-Adapter Integration Tests', () => {
                 name: 'Vladimir Putin',
                 limit: 15,
                 fuzzy: false,
-                schema: undefined,
-                country: undefined,
+                schema: null,
+                country: null,
                 requestId: expect.any(String)
             }));
         });
@@ -530,7 +549,7 @@ describe('OP-Adapter Integration Tests', () => {
             }));
         });
 
-        it('should not include optional parameters when not provided', async () => {
+        it('should set optional parameters to null when not provided', async () => {
             const successResponse = {
                 data: { results: [] }
             };
@@ -544,8 +563,8 @@ describe('OP-Adapter Integration Tests', () => {
             expect(callArgs.name).toBe('Putin');
             expect(callArgs.limit).toBe(15);
             expect(callArgs.fuzzy).toBe(false);
-            expect(callArgs.country).toBeUndefined();
-            expect(callArgs.schema).toBeUndefined();
+            expect(callArgs.country).toBeNull();
+            expect(callArgs.schema).toBeNull();
         });
 
         it('should combine multiple parameters correctly', async () => {

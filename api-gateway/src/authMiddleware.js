@@ -1,10 +1,16 @@
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
+import crypto from 'crypto';
 import NodeCache from 'node-cache';
 import logger from './utils/logger.js';
 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// SECURITY: Fail-fast if JWT_SECRET is not configured
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('SECURITY ERROR: JWT_SECRET environment variable is required. Application cannot start without it.');
+}
 
 export default class AuthMiddleware {
   constructor() {
@@ -23,7 +29,8 @@ export default class AuthMiddleware {
 
     if (!apiKey || !apiSecret) return null;
 
-    const cacheKey = `${apiKey}:${apiSecret}`;
+    // SECURITY: Hash cache key to avoid storing secrets in plaintext
+    const cacheKey = crypto.createHash('sha256').update(`${apiKey}:${apiSecret}`).digest('hex');
 
     // Check cache first (performance optimization)
     const cached = this.apiKeyCache.get(cacheKey);

@@ -29,9 +29,23 @@ export default class GatewayServer {
    * Global middleware: CORS, logging, Swagger
    */
   setupGlobalMiddleware() {
-    // CORS configuration
+    // SECURITY: Whitelist allowed origins (configure via ALLOWED_ORIGINS env variable)
+    const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+      : ['http://localhost', 'http://localhost:80', 'http://localhost:3000', 'http://localhost:5173'];
+
     const corsOptions = {
-      origin: (origin, callback) => callback(null, true),
+      origin: (origin, callback) => {
+        // Allow requests with no origin (server-to-server, curl, Postman)
+        if (!origin) {
+          return callback(null, true);
+        }
+        if (ALLOWED_ORIGINS.includes(origin)) {
+          return callback(null, true);
+        }
+        logger.warn('CORS: Blocked request from unauthorized origin', { origin });
+        return callback(new Error(`CORS: Origin ${origin} not allowed`));
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-api-secret', 'x-org-id', 'x-user-id', 'x-role'],

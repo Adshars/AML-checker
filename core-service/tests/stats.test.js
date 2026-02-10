@@ -1,15 +1,35 @@
 import { jest } from '@jest/globals';
 
-// Mocking AuditLog model
-jest.unstable_mockModule('../src/models/AuditLog.js', () => ({
-    default: {
-        count: jest.fn(),
-        findAll: jest.fn()
+// AuditLog model mock (for repository)
+const mockAuditLogModel = {
+    create: jest.fn(),
+    count: jest.fn(),
+    findAll: jest.fn(),
+    findAndCountAll: jest.fn()
+};
+
+jest.unstable_mockModule('../src/infrastructure/database/sequelize/models/AuditLogModel.js', () => ({
+    createAuditLogModel: () => mockAuditLogModel
+}));
+
+// Mock SequelizeConnection
+jest.unstable_mockModule('../src/infrastructure/database/sequelize/connection.js', () => ({
+    SequelizeConnection: class {
+        constructor() {}
+        async connect() {}
+        async disconnect() {}
+        getSequelize() {
+            return {
+                authenticate: jest.fn(),
+                sync: jest.fn()
+            };
+        }
+        async isHealthy() { return true; }
     }
 }));
 
 // Logger mock
-jest.unstable_mockModule('../src/utils/logger.js', () => ({
+jest.unstable_mockModule('../src/shared/logger/index.js', () => ({
     default: {
         info: jest.fn(),
         warn: jest.fn(),
@@ -18,17 +38,35 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
     }
 }));
 
-// OpAdapterClient mock (needed for app initialization)
-jest.unstable_mockModule('../src/clients/OpAdapterClient.js', () => ({
-    default: class {
-        checkSanctions() { return Promise.resolve({ data: { hits_count: 0, data: [] }, duration: 10 }); }
+// OpAdapterClient mock
+jest.unstable_mockModule('../src/infrastructure/clients/OpAdapterClient.js', () => ({
+    OpAdapterClient: class {
+        constructor() {}
+        async checkSanctions() { return { data: { hits_count: 0, data: [] }, duration: 10 }; }
+    }
+}));
+
+// Config mock
+jest.unstable_mockModule('../src/shared/config/index.js', () => ({
+    config: {
+        database: {},
+        opAdapter: { baseUrl: 'http://test', timeout: 5000 },
+        pagination: { defaultLimit: 20, maxLimit: 100 },
+        port: 3000
     }
 }));
 
 // Imports
 const request = (await import('supertest')).default;
-const AuditLog = (await import('../src/models/AuditLog.js')).default;
-const { app } = await import('../src/index.js');
+const { Application } = await import('../src/app.js');
+
+// Create test app
+let app;
+beforeAll(async () => {
+    const application = new Application();
+    await application.initialize();
+    app = application.getApp();
+});
 
 describe('GET /stats Integration Test', () => {
 
@@ -38,16 +76,16 @@ describe('GET /stats Integration Test', () => {
 
     it('should return statistics for organization (Happy Path)', async () => {
         // Mock statistics data
-        AuditLog.count.mockResolvedValueOnce(150); // totalChecks
-        AuditLog.count.mockResolvedValueOnce(25);  // sanctionHits
-        AuditLog.count.mockResolvedValueOnce(10);  // pepHits
-        
+        mockAuditLogModel.count.mockResolvedValueOnce(150); // totalChecks
+        mockAuditLogModel.count.mockResolvedValueOnce(25);  // sanctionHits
+        mockAuditLogModel.count.mockResolvedValueOnce(10);  // pepHits
+
         const mockRecentLogs = [
             { id: 1, searchQuery: 'John Doe', isSanctioned: false, isPep: false, createdAt: '2026-01-27T12:00:00.000Z' },
             { id: 2, searchQuery: 'Vladimir Putin', isSanctioned: true, isPep: true, createdAt: '2026-01-27T12:00:00.000Z' },
             { id: 3, searchQuery: 'Test Person', isSanctioned: false, isPep: false, createdAt: '2026-01-27T12:00:00.000Z' }
         ];
-        AuditLog.findAll.mockResolvedValue(mockRecentLogs);
+        mockAuditLogModel.findAll.mockResolvedValue(mockRecentLogs);
 
         const res = await request(app)
             .get('/stats')
@@ -62,12 +100,12 @@ describe('GET /stats Integration Test', () => {
         });
 
         // Verify correct queries were made
-        expect(AuditLog.count).toHaveBeenCalledTimes(3);
-        expect(AuditLog.count).toHaveBeenNthCalledWith(1, { where: { organizationId: 'org-123' } });
-        expect(AuditLog.count).toHaveBeenNthCalledWith(2, { where: { organizationId: 'org-123', isSanctioned: true } });
-        expect(AuditLog.count).toHaveBeenNthCalledWith(3, { where: { organizationId: 'org-123', isPep: true } });
-        
-        expect(AuditLog.findAll).toHaveBeenCalledWith({
+        expect(mockAuditLogModel.count).toHaveBeenCalledTimes(3);
+        expect(mockAuditLogModel.count).toHaveBeenNthCalledWith(1, { where: { organizationId: 'org-123' } });
+        expect(mockAuditLogModel.count).toHaveBeenNthCalledWith(2, { where: { organizationId: 'org-123', isSanctioned: true } });
+        expect(mockAuditLogModel.count).toHaveBeenNthCalledWith(3, { where: { organizationId: 'org-123', isPep: true } });
+
+        expect(mockAuditLogModel.findAll).toHaveBeenCalledWith({
             where: { organizationId: 'org-123' },
             order: [['createdAt', 'DESC']],
             limit: 100,
@@ -83,8 +121,8 @@ describe('GET /stats Integration Test', () => {
     });
 
     it('should handle organization with no data', async () => {
-        AuditLog.count.mockResolvedValue(0);
-        AuditLog.findAll.mockResolvedValue([]);
+        mockAuditLogModel.count.mockResolvedValue(0);
+        mockAuditLogModel.findAll.mockResolvedValue([]);
 
         const res = await request(app)
             .get('/stats')
@@ -100,21 +138,21 @@ describe('GET /stats Integration Test', () => {
     });
 
     it('should enforce data isolation (only stats for specified org)', async () => {
-        AuditLog.count.mockResolvedValue(42);
-        AuditLog.findAll.mockResolvedValue([]);
+        mockAuditLogModel.count.mockResolvedValue(42);
+        mockAuditLogModel.findAll.mockResolvedValue([]);
 
         await request(app)
             .get('/stats')
             .set('x-org-id', 'org-456');
 
         // Verify all queries included organizationId filter
-        expect(AuditLog.count).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.count).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({
                 organizationId: 'org-456'
             })
         }));
 
-        expect(AuditLog.findAll).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mockAuditLogModel.findAll).toHaveBeenCalledWith(expect.objectContaining({
             where: expect.objectContaining({
                 organizationId: 'org-456'
             })
@@ -122,7 +160,7 @@ describe('GET /stats Integration Test', () => {
     });
 
     it('should return 500 on database error', async () => {
-        AuditLog.count.mockRejectedValue(new Error('Database connection lost'));
+        mockAuditLogModel.count.mockRejectedValue(new Error('Database connection lost'));
 
         const res = await request(app)
             .get('/stats')

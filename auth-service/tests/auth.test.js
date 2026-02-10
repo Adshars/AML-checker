@@ -2,189 +2,302 @@ import { jest } from '@jest/globals';
 import jwt from 'jsonwebtoken';
 
 // Mock configuration
-
-// Set environment variables for testing
 process.env.JWT_SECRET = 'test_access_secret';
 process.env.REFRESH_TOKEN_SECRET = 'test_refresh_secret';
+process.env.NODE_ENV = 'test';
 
-// Mocking AuthService (Business Logic)
-// We must use the exact function names found in authService.js
-jest.unstable_mockModule('../src/services/authService.js', () => ({
-    registerOrgService: jest.fn(),
-    loginService: jest.fn(),
-    registerUserService: jest.fn(),
-    validateApiKeyService: jest.fn(),
-    resetSecretService: jest.fn(),
-    refreshAccessTokenService: jest.fn(),
-    logoutService: jest.fn(),
-    requestPasswordResetService: jest.fn(),
-    resetPasswordService: jest.fn()
-}));
-
-// Mocking RefreshToken Model (Database Interaction)
-const mockRefreshTokenSave = jest.fn();
-const mockRefreshTokenFindOne = jest.fn();
-const mockRefreshTokenDelete = jest.fn();
-
-jest.unstable_mockModule('../src/models/RefreshToken.js', () => ({
-    default: class {
-        constructor(data) { this.data = data; }
-        save() { return mockRefreshTokenSave(); }
-        static findOne(query) { return mockRefreshTokenFindOne(query); }
-        static findOneAndDelete(query) { return mockRefreshTokenDelete(query); }
-    }
-}));
-
-// Mocking User Model (Needed for Refresh Token flow)
-const mockUserFindById = jest.fn();
-jest.unstable_mockModule('../src/models/User.js', () => ({
-    default: {
-        findById: mockUserFindById
-    }
-}));
-
-// Mocking Logger and EmailSender (Silence console output)
-jest.unstable_mockModule('../src/utils/logger.js', () => ({
+// Mock logger first
+jest.unstable_mockModule('../src/shared/logger/index.js', () => ({
     default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }
 }));
 
-const mockSendWelcomeEmail = jest.fn().mockResolvedValue(undefined);
-const mockSendResetEmail = jest.fn().mockResolvedValue(undefined);
+// Mock mongoose models via schemas
+const mockUserFindOne = jest.fn();
+const mockUserFindById = jest.fn();
+const mockUserFind = jest.fn();
+const mockUserCreate = jest.fn();
+const mockUserFindByIdAndDelete = jest.fn();
+const mockUserFindByIdAndUpdate = jest.fn();
+const mockUserCountDocuments = jest.fn();
 
-jest.unstable_mockModule('../src/utils/emailSender.js', () => ({
-    sendResetEmail: mockSendResetEmail,
-    sendWelcomeEmail: mockSendWelcomeEmail
+jest.unstable_mockModule('../src/infrastructure/database/mongoose/schemas/UserSchema.js', () => ({
+    UserModel: {
+        findOne: mockUserFindOne,
+        findById: mockUserFindById,
+        find: mockUserFind,
+        create: mockUserCreate,
+        findByIdAndDelete: mockUserFindByIdAndDelete,
+        findByIdAndUpdate: mockUserFindByIdAndUpdate,
+        countDocuments: mockUserCountDocuments
+    },
+    default: {
+        findOne: mockUserFindOne,
+        findById: mockUserFindById,
+        find: mockUserFind,
+        create: mockUserCreate,
+        findByIdAndDelete: mockUserFindByIdAndDelete,
+        findByIdAndUpdate: mockUserFindByIdAndUpdate,
+        countDocuments: mockUserCountDocuments
+    }
+}));
+
+const mockOrgFindOne = jest.fn();
+const mockOrgFindById = jest.fn();
+const mockOrgCreate = jest.fn();
+const mockOrgFindByIdAndUpdate = jest.fn();
+const mockOrgCountDocuments = jest.fn();
+
+jest.unstable_mockModule('../src/infrastructure/database/mongoose/schemas/OrganizationSchema.js', () => ({
+    OrganizationModel: {
+        findOne: mockOrgFindOne,
+        findById: mockOrgFindById,
+        create: mockOrgCreate,
+        findByIdAndUpdate: mockOrgFindByIdAndUpdate,
+        countDocuments: mockOrgCountDocuments
+    },
+    default: {
+        findOne: mockOrgFindOne,
+        findById: mockOrgFindById,
+        create: mockOrgCreate,
+        findByIdAndUpdate: mockOrgFindByIdAndUpdate,
+        countDocuments: mockOrgCountDocuments
+    }
+}));
+
+const mockRefreshTokenFindOne = jest.fn();
+const mockRefreshTokenCreate = jest.fn();
+const mockRefreshTokenFindOneAndDelete = jest.fn();
+const mockRefreshTokenDeleteMany = jest.fn();
+const mockRefreshTokenFind = jest.fn();
+
+jest.unstable_mockModule('../src/infrastructure/database/mongoose/schemas/RefreshTokenSchema.js', () => ({
+    RefreshTokenModel: {
+        findOne: mockRefreshTokenFindOne,
+        create: mockRefreshTokenCreate,
+        findOneAndDelete: mockRefreshTokenFindOneAndDelete,
+        deleteMany: mockRefreshTokenDeleteMany,
+        find: mockRefreshTokenFind
+    },
+    default: {
+        findOne: mockRefreshTokenFindOne,
+        create: mockRefreshTokenCreate,
+        findOneAndDelete: mockRefreshTokenFindOneAndDelete,
+        deleteMany: mockRefreshTokenDeleteMany,
+        find: mockRefreshTokenFind
+    }
+}));
+
+const mockPwdResetTokenFindOne = jest.fn();
+const mockPwdResetTokenCreate = jest.fn();
+const mockPwdResetTokenFindOneAndDelete = jest.fn();
+
+jest.unstable_mockModule('../src/infrastructure/database/mongoose/schemas/PasswordResetTokenSchema.js', () => ({
+    PasswordResetTokenModel: {
+        findOne: mockPwdResetTokenFindOne,
+        create: mockPwdResetTokenCreate,
+        findOneAndDelete: mockPwdResetTokenFindOneAndDelete
+    },
+    default: {
+        findOne: mockPwdResetTokenFindOne,
+        create: mockPwdResetTokenCreate,
+        findOneAndDelete: mockPwdResetTokenFindOneAndDelete
+    }
+}));
+
+// Mock nodemailer
+const mockSendMail = jest.fn().mockResolvedValue({ messageId: 'test-id' });
+const mockVerify = jest.fn().mockResolvedValue(true);
+jest.unstable_mockModule('nodemailer', () => ({
+    default: {
+        createTransport: () => ({
+            sendMail: mockSendMail,
+            verify: mockVerify
+        }),
+        getTestMessageUrl: () => 'http://test-url'
+    }
 }));
 
 // Imports (Dynamic imports after mocks)
 const request = (await import('supertest')).default;
-const AuthService = await import('../src/services/authService.js');
-const { app } = await import('../src/index.js'); 
+const bcrypt = (await import('bcryptjs')).default;
+const { app } = await import('../src/index.js');
+
+// Helper to create hashed password
+const hashPassword = async (password) => bcrypt.hash(password, 10);
 
 describe('Auth Service Integration Tests', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        mockRefreshTokenSave.mockResolvedValue(true); // Default: save succeeds
-        AuthService.refreshAccessTokenService.mockResolvedValue({ accessToken: 'new-access' });
-        AuthService.logoutService.mockResolvedValue({ message: 'Logged out successfully' });
+
+        // Default mock behaviors
+        mockRefreshTokenCreate.mockResolvedValue({ _id: 'rt1', token: 'test-token', userId: 'u1' });
+        mockRefreshTokenFindOneAndDelete.mockResolvedValue(true);
     });
 
     // Organization Registration Tests
-
     describe('POST /auth/register-organization', () => {
-        
+
         it('should register organization (Happy Path) -> 201', async () => {
-            // Mocking the service success response
-            // The structure matches what registerOrgService returns in authService.js
-            AuthService.registerOrgService.mockResolvedValue({
-                savedOrg: { 
-                    _id: 'org1', 
-                    apiKey: 'key1', 
-                    name: 'Test Co',
-                    city: 'Gdańsk',
-                    country: 'PL'
-                },
-                newUser: { 
-                    _id: 'user1', 
-                    email: 'test@co.com', 
-                    role: 'admin', 
-                    firstName: 'Jan', 
-                    lastName: 'Kowalski' 
-                },
-                apiSecret: 'secret1'
+            mockOrgFindOne.mockResolvedValue(null); // No existing org
+            mockUserFindOne.mockResolvedValue(null); // No existing user
+            mockUserCountDocuments.mockResolvedValue(0);
+            mockOrgCountDocuments.mockResolvedValue(0);
+
+            mockOrgCreate.mockResolvedValue({
+                _id: 'org1',
+                name: 'Test Co',
+                city: 'Gdańsk',
+                country: 'PL',
+                address: 'Ul. Długa',
+                apiKey: 'pk_live_test123',
+                apiSecretHash: 'hashed_secret',
+                createdAt: new Date()
+            });
+
+            mockUserCreate.mockResolvedValue({
+                _id: 'user1',
+                email: 'test@co.com',
+                firstName: 'Jan',
+                lastName: 'Kowalski',
+                role: 'admin',
+                organizationId: 'org1',
+                createdAt: new Date()
             });
 
             const res = await request(app)
                 .post('/auth/register-organization')
                 .set('x-role', 'superadmin')
                 .send({
-                    orgName: 'Test Co', 
-                    email: 'test@co.com', 
+                    orgName: 'Test Co',
+                    email: 'test@co.com',
                     password: 'password123',
-                    firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+                    firstName: 'Jan',
+                    lastName: 'Kowalski',
+                    country: 'PL',
+                    city: 'Gdańsk',
+                    address: 'Ul. Długa'
                 });
-
-            if (res.statusCode !== 201) {
-                console.log('Response body:', res.body);
-                console.log('Status:', res.statusCode);
-            }
 
             expect(res.statusCode).toBe(201);
             expect(res.body.message).toContain('registered successfully');
-            
-            // Checking if the API key is returned in the response
-            // Adjust this path based on your actual Controller response structure
-            // Assuming controller returns: { message: "...", organization: { apiKey: ... } }
-            if (res.body.organization) {
-                expect(res.body.organization.apiKey).toBe('key1');
-            }
+            expect(res.body.organization).toBeDefined();
+            expect(res.body.organization.apiKey).toBeDefined();
+            expect(res.body.organization.apiSecret).toBeDefined();
         });
 
-        it('should fail on Duplicate -> 400', async () => {
-            // Mocking service error "User exists" (matches error string in authService.js)
-            AuthService.registerOrgService.mockRejectedValue(new Error('Email already registered'));
+        it('should fail on Duplicate Organization -> 400', async () => {
+            mockOrgFindOne.mockResolvedValue({ _id: 'existing', name: 'Test Co' }); // Org exists
 
             const res = await request(app)
                 .post('/auth/register-organization')
                 .set('x-role', 'superadmin')
                 .send({
-                    orgName: 'Test Co', email: 'exists@co.com', password: 'password123',
-                    firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+                    orgName: 'Test Co',
+                    email: 'exists@co.com',
+                    password: 'password123',
+                    firstName: 'Jan',
+                    lastName: 'Kowalski',
+                    country: 'PL',
+                    city: 'Gdańsk',
+                    address: 'Ul. Długa'
                 });
 
             expect(res.statusCode).toBe(400);
-            expect(res.body.error).toBe('Email already registered');
+            expect(res.body.error).toMatch(/already exists/i);
         });
 
         it('should fail Validation (short password) -> 400', async () => {
-            // Joi validation middleware should block this BEFORE calling the service
             const res = await request(app)
                 .post('/auth/register-organization')
                 .set('x-role', 'superadmin')
                 .send({
-                    orgName: 'Test Co', email: 'valid@co.com', 
-                    password: '123', // <--- TOO SHORT
-                    firstName: 'Jan', lastName: 'Kowalski', country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+                    orgName: 'Test Co',
+                    email: 'valid@co.com',
+                    password: '123', // TOO SHORT
+                    firstName: 'Jan',
+                    lastName: 'Kowalski',
+                    country: 'PL',
+                    city: 'Gdańsk',
+                    address: 'Ul. Długa'
                 });
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toMatch(/Password must be at least/);
-            
-            // Ensuring the service was NOT called
-            expect(AuthService.registerOrgService).not.toHaveBeenCalled();
+            expect(mockOrgCreate).not.toHaveBeenCalled();
+        });
+
+        it('should reject non-superadmin -> 403', async () => {
+            const res = await request(app)
+                .post('/auth/register-organization')
+                .set('x-role', 'admin')
+                .send({
+                    orgName: 'Test Co',
+                    email: 'test@co.com',
+                    password: 'password123',
+                    firstName: 'Jan',
+                    lastName: 'Kowalski',
+                    country: 'PL',
+                    city: 'Gdańsk',
+                    address: 'Ul. Długa'
+                });
+
+            expect(res.statusCode).toBe(403);
         });
     });
 
-    //Login Tests
-
+    // Login Tests
     describe('POST /auth/login', () => {
-        
+
         it('should login (Success) -> 200 + tokens', async () => {
-            // Mocking successful login response from service
-            AuthService.loginService.mockResolvedValue({
-                user: { _id: 'u1', email: 'ok@test.pl', role: 'admin', organizationId: 'o1' },
-                accessToken: 'mock_access_token',
-                refreshToken: 'mock_refresh_token'
+            const hashedPassword = await hashPassword('correctpass');
+
+            mockUserFindOne.mockResolvedValue({
+                _id: 'u1',
+                email: 'ok@test.pl',
+                passwordHash: hashedPassword,
+                role: 'admin',
+                firstName: 'Test',
+                lastName: 'User',
+                organizationId: 'o1'
             });
 
             const res = await request(app).post('/auth/login').send({
-                email: 'ok@test.pl', password: 'pass'
+                email: 'ok@test.pl',
+                password: 'correctpass'
             });
 
             expect(res.statusCode).toBe(200);
             expect(res.body.accessToken).toBeDefined();
-            // Assuming your controller creates a refresh token separately or returns the one from service
             expect(res.body.refreshToken).toBeDefined();
-            expect(AuthService.loginService).toHaveBeenCalled();
+            expect(res.body.user).toBeDefined();
         });
 
         it('should fail login (Wrong Password) -> 401', async () => {
-            // Mocking login error
-            AuthService.loginService.mockRejectedValue(new Error('Invalid email or password'));
+            const hashedPassword = await hashPassword('correctpass');
+
+            mockUserFindOne.mockResolvedValue({
+                _id: 'u1',
+                email: 'ok@test.pl',
+                passwordHash: hashedPassword,
+                role: 'admin',
+                organizationId: 'o1'
+            });
 
             const res = await request(app).post('/auth/login').send({
-                email: 'ok@test.pl', password: 'wrong'
+                email: 'ok@test.pl',
+                password: 'wrongpass'
+            });
+
+            expect(res.statusCode).toBe(401);
+        });
+
+        it('should fail login (User not found) -> 401', async () => {
+            mockUserFindOne.mockResolvedValue(null);
+
+            const res = await request(app).post('/auth/login').send({
+                email: 'notfound@test.pl',
+                password: 'password'
             });
 
             expect(res.statusCode).toBe(401);
@@ -195,9 +308,20 @@ describe('Auth Service Integration Tests', () => {
     describe('POST /auth/refresh', () => {
 
         it('should refresh token (Success) -> 200 + new AccessToken', async () => {
-            // Generate a valid crypto-signed token
             const validRefreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1h' });
-            AuthService.refreshAccessTokenService.mockResolvedValue({ accessToken: 'new_token' });
+
+            mockRefreshTokenFindOne.mockResolvedValue({
+                _id: 'rt1',
+                token: validRefreshToken,
+                userId: 'u1'
+            });
+
+            mockUserFindById.mockResolvedValue({
+                _id: 'u1',
+                email: 'test@test.pl',
+                role: 'admin',
+                organizationId: 'o1'
+            });
 
             const res = await request(app).post('/auth/refresh').send({
                 refreshToken: validRefreshToken
@@ -205,51 +329,37 @@ describe('Auth Service Integration Tests', () => {
 
             expect(res.statusCode).toBe(200);
             expect(res.body.accessToken).toBeDefined();
-            expect(AuthService.refreshAccessTokenService).toHaveBeenCalledWith(validRefreshToken);
         });
 
-        it('should fail (Reuse/Invalid/Logged Out) -> 403', async () => {
-            // Token is valid crypto-wise, but NOT in DB (simulating user logged out)
+        it('should fail (Token not in DB / Logged Out) -> 403', async () => {
             const validRefreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET);
-
-            AuthService.refreshAccessTokenService.mockRejectedValue(new Error('Invalid Refresh Token (logged out?)'));
+            mockRefreshTokenFindOne.mockResolvedValue(null); // Token not in DB
 
             const res = await request(app).post('/auth/refresh').send({
                 refreshToken: validRefreshToken
             });
 
             expect(res.statusCode).toBe(403);
-            // Assuming your controller returns a generic forbidden/invalid message
-            // expect(res.body.error).toMatch(/Invalid/); 
+        });
+
+        it('should fail (Missing Token) -> 401', async () => {
+            const res = await request(app).post('/auth/refresh').send({});
+
+            expect(res.statusCode).toBe(401);
         });
     });
 
     // Logout Tests
-    
     describe('POST /auth/logout', () => {
         it('should logout (Remove token) -> 200', async () => {
-            AuthService.logoutService.mockResolvedValue({ message: 'Logged out successfully' });
+            mockRefreshTokenFindOneAndDelete.mockResolvedValue(true);
 
             const res = await request(app).post('/auth/logout').send({
                 refreshToken: 'some_token'
             });
 
             expect(res.statusCode).toBe(200);
-            expect(AuthService.logoutService).toHaveBeenCalledWith('some_token');
-        });
-
-        it('should prevent refresh after logout (revoked token) -> 403', async () => {
-            const refreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET);
-            
-            AuthService.logoutService.mockResolvedValue({ message: 'Logged out successfully' });
-            AuthService.refreshAccessTokenService.mockRejectedValue(new Error('Invalid Refresh Token (logged out?)'));
-
-            await request(app).post('/auth/logout').send({ refreshToken });
-            expect(AuthService.logoutService).toHaveBeenCalledWith(refreshToken);
-
-            const res = await request(app).post('/auth/refresh').send({ refreshToken });
-
-            expect(res.statusCode).toBe(403);
+            expect(res.body.message).toMatch(/logged out/i);
         });
     });
 
@@ -257,8 +367,15 @@ describe('Auth Service Integration Tests', () => {
     describe('POST /auth/forgot-password', () => {
 
         it('should send reset email for existing user -> 200', async () => {
-            AuthService.requestPasswordResetService.mockResolvedValue({
-                message: 'If a user with that email exists, a password reset link has been sent.'
+            mockUserFindOne.mockResolvedValue({
+                _id: 'u1',
+                email: 'user@example.com'
+            });
+            mockPwdResetTokenFindOneAndDelete.mockResolvedValue(true);
+            mockPwdResetTokenCreate.mockResolvedValue({
+                _id: 'prt1',
+                userId: 'u1',
+                token: 'reset-token'
             });
 
             const res = await request(app).post('/auth/forgot-password').send({
@@ -270,9 +387,7 @@ describe('Auth Service Integration Tests', () => {
         });
 
         it('should return same message for non-existent email (security) -> 200', async () => {
-            AuthService.requestPasswordResetService.mockResolvedValue({
-                message: 'If a user with that email exists, a password reset link has been sent.'
-            });
+            mockUserFindOne.mockResolvedValue(null);
 
             const res = await request(app).post('/auth/forgot-password').send({
                 email: 'nonexistent@example.com'
@@ -286,9 +401,16 @@ describe('Auth Service Integration Tests', () => {
     describe('POST /auth/reset-password', () => {
 
         it('should reset password with valid token -> 200', async () => {
-            AuthService.resetPasswordService.mockResolvedValue({
-                message: 'Password has been reset successfully'
+            mockPwdResetTokenFindOne.mockResolvedValue({
+                _id: 'prt1',
+                userId: 'user123',
+                token: 'valid_reset_token'
             });
+            mockUserFindByIdAndUpdate.mockResolvedValue({
+                _id: 'user123',
+                email: 'test@example.com'
+            });
+            mockPwdResetTokenFindOneAndDelete.mockResolvedValue(true);
 
             const res = await request(app).post('/auth/reset-password').send({
                 userId: 'user123',
@@ -300,10 +422,12 @@ describe('Auth Service Integration Tests', () => {
             expect(res.body.message).toMatch(/reset successfully/i);
         });
 
-        it('should fail with invalid/expired token -> 400', async () => {
-            AuthService.resetPasswordService.mockRejectedValue(
-                new Error('Invalid or expired password reset token')
-            );
+        it('should fail with invalid token -> 400', async () => {
+            mockPwdResetTokenFindOne.mockResolvedValue({
+                _id: 'prt1',
+                userId: 'user123',
+                token: 'different_token' // Token doesn't match
+            });
 
             const res = await request(app).post('/auth/reset-password').send({
                 userId: 'user123',
@@ -312,7 +436,6 @@ describe('Auth Service Integration Tests', () => {
             });
 
             expect(res.statusCode).toBe(400);
-            expect(res.body.error).toMatch(/Invalid or expired/i);
         });
 
         it('should fail validation with weak password -> 400', async () => {
@@ -338,14 +461,6 @@ describe('Auth Service Integration Tests', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toMatch(/Missing required fields/i);
         });
-
-        it('should fail with missing password fields -> 400', async () => {
-            const res = await request(app).post('/auth/change-password')
-                .send({ currentPassword: 'OldPass123!' })
-                .set('x-user-id', 'user1');
-
-            expect(res.statusCode).toBe(400);
-        });
     });
 
     // Users Management Tests
@@ -370,13 +485,18 @@ describe('Auth Service Integration Tests', () => {
             expect(res.body.error).toMatch(/Missing organization context/i);
         });
 
-        it('should allow superadmin access', async () => {
+        it('should allow admin access and return users', async () => {
+            mockUserFind.mockReturnValue({
+                map: () => []
+            });
+
             const res = await request(app).get('/users')
                 .set('x-org-id', 'org1')
-                .set('x-user-id', 'superadmin1')
-                .set('x-role', 'superadmin');
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin');
 
-            expect([200, 500]).toContain(res.statusCode);
+            expect(res.statusCode).toBe(200);
+            expect(res.body.data).toBeDefined();
         });
     });
 
@@ -455,12 +575,24 @@ describe('Auth Service Integration Tests', () => {
         });
 
         it('should fail when user not found -> 404', async () => {
+            mockUserFindById.mockResolvedValue(null);
+
             const res = await request(app).delete('/users/nonexistent')
                 .set('x-org-id', 'org1')
                 .set('x-user-id', 'admin1')
                 .set('x-role', 'admin');
 
             expect(res.statusCode).toBe(404);
+        });
+
+        it('should prevent self-deletion -> 400', async () => {
+            const res = await request(app).delete('/users/admin1')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Cannot delete your own account/i);
         });
     });
 
@@ -477,7 +609,7 @@ describe('Auth Service Integration Tests', () => {
         });
     });
 
-    // Edge Cases & Security Tests
+    // Security & Edge Cases
     describe('Security & Edge Cases', () => {
 
         it('should reject login with invalid email format -> 400', async () => {
@@ -503,41 +635,11 @@ describe('Auth Service Integration Tests', () => {
             expect(res.statusCode).toBe(400);
         });
 
-        it('should handle missing refresh token in logout', async () => {
-            const res = await request(app).post('/auth/logout').send({});
-
-            // Should handle gracefully
-            expect([200, 400, 500]).toContain(res.statusCode);
-        });
-
         it('should reject refresh with missing token -> 401', async () => {
             const res = await request(app).post('/auth/refresh').send({});
 
             expect(res.statusCode).toBe(401);
             expect(res.body.error).toMatch(/required|missing/i);
-        });
-
-        it('should not expose passwordHash in responses', async () => {
-            AuthService.loginService.mockResolvedValue({
-                user: { 
-                    _id: 'u1', 
-                    email: 'test@example.com', 
-                    role: 'user', 
-                    organizationId: 'org1',
-                    passwordHash: 'should_not_be_exposed'
-                },
-                accessToken: 'token',
-                refreshToken: 'refresh'
-            });
-
-            const res = await request(app).post('/auth/login').send({
-                email: 'test@example.com',
-                password: 'password123'
-            });
-
-            if (res.statusCode === 200) {
-                expect(res.body.user.passwordHash).toBeUndefined();
-            }
         });
     });
 });

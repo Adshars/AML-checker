@@ -25,6 +25,7 @@ export class SanctionsCheckService {
       country,
       organizationId,
       userId,
+      userName,
       userEmail,
       requestId
     } = requestDto;
@@ -47,6 +48,7 @@ export class SanctionsCheckService {
       const auditLog = AuditLog.fromCheckResult({
         organizationId,
         userId: userId || 'API',
+        userName: userName || (userId ? 'User' : 'API'),
         userEmail,
         searchQuery: name,
         adapterResponse

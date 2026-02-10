@@ -19,6 +19,10 @@ export const createAuditLogModel = (sequelize) => {
       type: DataTypes.STRING,
       allowNull: true
     },
+    userName: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     userEmail: {
       type: DataTypes.STRING,
       allowNull: true

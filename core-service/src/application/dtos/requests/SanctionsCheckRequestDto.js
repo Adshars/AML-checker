@@ -10,6 +10,7 @@ export class SanctionsCheckRequestDto {
     country,
     organizationId,
     userId,
+    userName,
     userEmail,
     requestId
   }) {
@@ -20,6 +21,7 @@ export class SanctionsCheckRequestDto {
     this.country = country;
     this.organizationId = organizationId;
     this.userId = userId;
+    this.userName = userName;
     this.userEmail = userEmail;
     this.requestId = requestId;
   }
@@ -33,6 +35,7 @@ export class SanctionsCheckRequestDto {
       country: req.query.country,
       organizationId: req.headers['x-org-id'],
       userId: req.headers['x-user-id'],
+      userName: req.headers['x-user-name'],
       userEmail: req.headers['x-user-email'],
       requestId: req.headers['x-request-id'] || `req-${Date.now()}`
     });

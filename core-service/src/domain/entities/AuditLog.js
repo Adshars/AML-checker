@@ -7,6 +7,7 @@ export class AuditLog {
     id,
     organizationId,
     userId = null,
+    userName = null,
     userEmail = null,
     searchQuery,
     hasHit = false,
@@ -26,6 +27,7 @@ export class AuditLog {
     this.id = id;
     this.organizationId = organizationId;
     this.userId = userId;
+    this.userName = userName;
     this.userEmail = userEmail;
     this.searchQuery = searchQuery;
     this.hasHit = hasHit;
@@ -73,6 +75,7 @@ export class AuditLog {
   static fromCheckResult({
     organizationId,
     userId,
+    userName,
     userEmail,
     searchQuery,
     adapterResponse
@@ -148,6 +151,7 @@ export class AuditLog {
     return new AuditLog({
       organizationId,
       userId,
+      userName,
       userEmail,
       searchQuery,
       hasHit,

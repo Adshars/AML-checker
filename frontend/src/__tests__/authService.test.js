@@ -16,11 +16,10 @@ describe('authService', () => {
   });
 
   describe('login', () => {
-    it('should save tokens and user to localStorage on successful login', async () => {
+    it('should save accessToken and user to localStorage (no refreshToken)', async () => {
       const mockResponse = {
         data: {
           accessToken: 'test-access-token',
-          refreshToken: 'test-refresh-token',
           user: {
             id: 'user-123',
             email: 'test@example.com',
@@ -41,8 +40,9 @@ describe('authService', () => {
       });
 
       expect(localStorage.setItem).toHaveBeenCalledWith('token', 'test-access-token');
-      expect(localStorage.setItem).toHaveBeenCalledWith('refreshToken', 'test-refresh-token');
       expect(localStorage.setItem).toHaveBeenCalledWith('user', JSON.stringify(mockResponse.data.user));
+      // refreshToken should NOT be stored in localStorage
+      expect(localStorage.setItem).not.toHaveBeenCalledWith('refreshToken', expect.anything());
       expect(result).toEqual(mockResponse.data);
     });
 
@@ -72,66 +72,47 @@ describe('authService', () => {
   });
 
   describe('logout', () => {
-    it('should call logout API and clear localStorage', async () => {
-      const mockStorage = {};
-      mockStorage['refreshToken'] = 'test-refresh-token';
-      mockStorage['token'] = 'test-access-token';
-      mockStorage['user'] = JSON.stringify({ id: 'user-123' });
-
-      // Override getItem to read from mockStorage
-      const originalGetItem = localStorage.getItem;
-      localStorage.getItem = vi.fn((key) => mockStorage[key] || null);
-
+    it('should call logout API (no body) and clear localStorage', async () => {
       api.post.mockResolvedValue({ data: { message: 'Logged out' } });
 
       await authService.logout();
 
-      expect(api.post).toHaveBeenCalledWith('/auth/logout', {
-        refreshToken: 'test-refresh-token'
-      });
+      // Should call without refreshToken in body (cookie sent automatically)
+      expect(api.post).toHaveBeenCalledWith('/auth/logout');
       expect(localStorage.removeItem).toHaveBeenCalledWith('token');
-      expect(localStorage.removeItem).toHaveBeenCalledWith('refreshToken');
       expect(localStorage.removeItem).toHaveBeenCalledWith('user');
-
-      // Restore
-      localStorage.getItem = originalGetItem;
     });
 
     it('should clear localStorage even if API call fails', async () => {
-      const mockStorage = {};
-      mockStorage['refreshToken'] = 'test-refresh-token';
-      mockStorage['token'] = 'test-access-token';
-      mockStorage['user'] = JSON.stringify({ id: 'user-123' });
-
-      const originalGetItem = localStorage.getItem;
-      localStorage.getItem = vi.fn((key) => mockStorage[key] || null);
-
       api.post.mockRejectedValue(new Error('Network error'));
 
       await authService.logout();
 
       expect(localStorage.removeItem).toHaveBeenCalledWith('token');
-      expect(localStorage.removeItem).toHaveBeenCalledWith('refreshToken');
       expect(localStorage.removeItem).toHaveBeenCalledWith('user');
+    });
+  });
 
-      localStorage.getItem = originalGetItem;
+  describe('silentRefresh', () => {
+    it('should return token data on successful refresh', async () => {
+      const mockResponse = {
+        data: { accessToken: 'new-access-token' }
+      };
+      api.post.mockResolvedValue(mockResponse);
+
+      const result = await authService.silentRefresh();
+
+      expect(api.post).toHaveBeenCalledWith('/auth/refresh');
+      expect(localStorage.setItem).toHaveBeenCalledWith('token', 'new-access-token');
+      expect(result).toEqual(mockResponse.data);
     });
 
-    it('should work when no refreshToken exists', async () => {
-      const mockStorage = {};
-      mockStorage['token'] = 'test-access-token';
+    it('should return null on failed refresh', async () => {
+      api.post.mockRejectedValue(new Error('Unauthorized'));
 
-      const originalGetItem = localStorage.getItem;
-      localStorage.getItem = vi.fn((key) => mockStorage[key] || null);
+      const result = await authService.silentRefresh();
 
-      await authService.logout();
-
-      expect(api.post).not.toHaveBeenCalled();
-      expect(localStorage.removeItem).toHaveBeenCalledWith('token');
-      expect(localStorage.removeItem).toHaveBeenCalledWith('refreshToken');
-      expect(localStorage.removeItem).toHaveBeenCalledWith('user');
-
-      localStorage.getItem = originalGetItem;
+      expect(result).toBeNull();
     });
   });
 
@@ -168,7 +149,7 @@ describe('authService', () => {
 
       expect(user).toBeNull();
       expect(consoleErrorSpy).toHaveBeenCalled();
-      
+
       consoleErrorSpy.mockRestore();
     });
   });

@@ -102,10 +102,43 @@ use auth_db
 
 AML-Checker uses a **microservice-based architecture** with 7 independent services:
 
-```
-Frontend (React) → API Gateway (8080) → {Auth Service, Core Service, OP-Adapter}
-                                                     ↓
-                                        {MongoDB, PostgreSQL, Yente+Elasticsearch}
+```mermaid
+graph TD
+    %% Client Layer
+    User((👤 User))
+    FE[💻 Frontend<br/>(React + Vite)]
+
+    %% Entry Point
+    GW[🛡️ API Gateway<br/>(Express + Proxy)]
+
+    %% Services Layer
+    subgraph Backend [Microservices Cluster]
+        direction TB
+        AS[🔐 Auth Service]
+        CS[⚡ Core Service]
+        OP[🔌 OP Adapter]
+    end
+
+    %% Data Layer
+    subgraph Data [Data & External]
+        Mongo[(🍃 MongoDB)]
+        PG[(🐘 PostgreSQL)]
+        Yente[🔎 Yente API<br/>(OpenSanctions)]
+        ES[(Elasticsearch)]
+    end
+
+    %% Flows
+    User -->|Interaction| FE
+    FE -->|HTTP/REST| GW
+
+    GW -->|Route /auth & /users| AS
+    GW -->|Route /sanctions| CS
+
+    AS -->|Mongoose| Mongo
+    CS -->|Sequelize| PG
+    CS -->|Sanctions Check| OP
+    OP -->|Search Query| Yente
+    Yente -->|Index Lookup| ES
 ```
 
 **Services:**

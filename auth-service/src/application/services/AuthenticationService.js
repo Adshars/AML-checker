@@ -81,7 +81,9 @@ export class AuthenticationService {
       throw new NotFoundError('User not found');
     }
 
-    // Generate new access token
+    // Token rotation: revoke old, issue new
+    await this.tokenService.revokeRefreshToken(refreshToken);
+
     const tokenPayload = {
       userId: user.id,
       organizationId: user.organizationId,
@@ -92,10 +94,12 @@ export class AuthenticationService {
     };
 
     const newAccessToken = this.tokenService.generateAccessToken(tokenPayload);
+    const newRefreshToken = this.tokenService.generateRefreshToken({ userId: user.id });
+    await this.tokenService.storeRefreshToken(newRefreshToken, user.id);
 
-    logger.info('Access Token refreshed', { userId: user.id });
+    logger.info('Tokens refreshed (rotation)', { userId: user.id });
 
-    return { accessToken: newAccessToken };
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   }
 
   /**

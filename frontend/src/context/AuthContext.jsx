@@ -7,11 +7,33 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if user is already logged in on app startup
+  // On app startup: try silent refresh to validate session via HttpOnly cookie
   useEffect(() => {
-    const currentUser = authService.getCurrentUser();
-    setUser(currentUser);
-    setLoading(false);
+    const initAuth = async () => {
+      const cachedUser = authService.getCurrentUser();
+
+      if (!cachedUser) {
+        // No cached user — no session to restore
+        setLoading(false);
+        return;
+      }
+
+      // Attempt silent refresh to verify the cookie is still valid
+      const result = await authService.silentRefresh();
+
+      if (result) {
+        // Session valid — keep user
+        setUser(cachedUser);
+      } else {
+        // Session expired — clear stale data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+
+      setLoading(false);
+    };
+
+    initAuth();
   }, []);
 
   /**
@@ -21,13 +43,9 @@ export const AuthProvider = ({ children }) => {
    * @returns {Promise} Response data
    */
   const login = async (email, password) => {
-    try {
-      const response = await authService.login(email, password);
-      setUser(response.user);
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    const response = await authService.login(email, password);
+    setUser(response.user);
+    return response;
   };
 
   /**

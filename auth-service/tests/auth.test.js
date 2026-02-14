@@ -249,7 +249,7 @@ describe('Auth Service Integration Tests', () => {
     // Login Tests
     describe('POST /auth/login', () => {
 
-        it('should login (Success) -> 200 + tokens', async () => {
+        it('should login (Success) -> 200 + accessToken in body + refreshToken in HttpOnly cookie', async () => {
             const hashedPassword = await hashPassword('correctpass');
 
             mockUserFindOne.mockResolvedValue({
@@ -269,8 +269,16 @@ describe('Auth Service Integration Tests', () => {
 
             expect(res.statusCode).toBe(200);
             expect(res.body.accessToken).toBeDefined();
-            expect(res.body.refreshToken).toBeDefined();
+            expect(res.body.refreshToken).toBeUndefined();
             expect(res.body.user).toBeDefined();
+
+            // Verify refreshToken is set as HttpOnly cookie
+            const cookies = res.headers['set-cookie'];
+            expect(cookies).toBeDefined();
+            const refreshCookie = cookies.find(c => c.startsWith('refreshToken='));
+            expect(refreshCookie).toBeDefined();
+            expect(refreshCookie).toContain('HttpOnly');
+            expect(refreshCookie).toContain('Path=/auth');
         });
 
         it('should fail login (Wrong Password) -> 401', async () => {
@@ -307,7 +315,7 @@ describe('Auth Service Integration Tests', () => {
     // Token Refresh Tests
     describe('POST /auth/refresh', () => {
 
-        it('should refresh token (Success) -> 200 + new AccessToken', async () => {
+        it('should refresh token (Success) -> 200 + new AccessToken + rotated cookie', async () => {
             const validRefreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1h' });
 
             mockRefreshTokenFindOne.mockResolvedValue({
@@ -323,27 +331,34 @@ describe('Auth Service Integration Tests', () => {
                 organizationId: 'o1'
             });
 
-            const res = await request(app).post('/auth/refresh').send({
-                refreshToken: validRefreshToken
-            });
+            const res = await request(app)
+                .post('/auth/refresh')
+                .set('Cookie', `refreshToken=${validRefreshToken}`);
 
             expect(res.statusCode).toBe(200);
             expect(res.body.accessToken).toBeDefined();
+
+            // Verify rotated refreshToken cookie is set
+            const cookies = res.headers['set-cookie'];
+            expect(cookies).toBeDefined();
+            const refreshCookie = cookies.find(c => c.startsWith('refreshToken='));
+            expect(refreshCookie).toBeDefined();
+            expect(refreshCookie).toContain('HttpOnly');
         });
 
         it('should fail (Token not in DB / Logged Out) -> 403', async () => {
             const validRefreshToken = jwt.sign({ userId: 'u1' }, process.env.REFRESH_TOKEN_SECRET);
             mockRefreshTokenFindOne.mockResolvedValue(null); // Token not in DB
 
-            const res = await request(app).post('/auth/refresh').send({
-                refreshToken: validRefreshToken
-            });
+            const res = await request(app)
+                .post('/auth/refresh')
+                .set('Cookie', `refreshToken=${validRefreshToken}`);
 
             expect(res.statusCode).toBe(403);
         });
 
-        it('should fail (Missing Token) -> 401', async () => {
-            const res = await request(app).post('/auth/refresh').send({});
+        it('should fail (Missing Token / No cookie) -> 401', async () => {
+            const res = await request(app).post('/auth/refresh');
 
             expect(res.statusCode).toBe(401);
         });
@@ -351,12 +366,25 @@ describe('Auth Service Integration Tests', () => {
 
     // Logout Tests
     describe('POST /auth/logout', () => {
-        it('should logout (Remove token) -> 200', async () => {
+        it('should logout (Remove token from cookie) -> 200 + clear cookie', async () => {
             mockRefreshTokenFindOneAndDelete.mockResolvedValue(true);
 
-            const res = await request(app).post('/auth/logout').send({
-                refreshToken: 'some_token'
-            });
+            const res = await request(app)
+                .post('/auth/logout')
+                .set('Cookie', 'refreshToken=some_token');
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/logged out/i);
+
+            // Verify cookie is cleared
+            const cookies = res.headers['set-cookie'];
+            expect(cookies).toBeDefined();
+            const refreshCookie = cookies.find(c => c.startsWith('refreshToken='));
+            expect(refreshCookie).toBeDefined();
+        });
+
+        it('should logout gracefully even without cookie -> 200', async () => {
+            const res = await request(app).post('/auth/logout');
 
             expect(res.statusCode).toBe(200);
             expect(res.body.message).toMatch(/logged out/i);
@@ -635,8 +663,8 @@ describe('Auth Service Integration Tests', () => {
             expect(res.statusCode).toBe(400);
         });
 
-        it('should reject refresh with missing token -> 401', async () => {
-            const res = await request(app).post('/auth/refresh').send({});
+        it('should reject refresh with missing cookie -> 401', async () => {
+            const res = await request(app).post('/auth/refresh');
 
             expect(res.statusCode).toBe(401);
             expect(res.body.error).toMatch(/required|missing/i);

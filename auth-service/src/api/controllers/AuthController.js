@@ -1,5 +1,29 @@
 import logger from '../../shared/logger/index.js';
+import config from '../../shared/config/index.js';
 import { LoginRequestDto } from '../../application/dtos/requests/LoginRequestDto.js';
+
+const REFRESH_COOKIE_NAME = 'refreshToken';
+
+/**
+ * Parse duration string (e.g. '7d', '24h', '30m') to milliseconds
+ */
+function parseExpiryToMs(expiresIn) {
+  const match = String(expiresIn).match(/^(\d+)([smhd])$/);
+  if (!match) return 7 * 24 * 60 * 60 * 1000; // default 7 days
+  const value = parseInt(match[1], 10);
+  const multipliers = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
+  return value * multipliers[match[2]];
+}
+
+function getRefreshCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/auth',
+    maxAge: parseExpiryToMs(config.refreshTokenExpiresIn),
+  };
+}
 
 /**
  * Authentication Controller
@@ -30,10 +54,12 @@ export class AuthController {
         orgId: result.user.organizationId
       });
 
+      // Set refresh token as HttpOnly cookie
+      res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions());
+
       res.json({
         message: 'Login successful',
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
         user: result.user
       });
     } catch (error) {
@@ -51,7 +77,7 @@ export class AuthController {
    * POST /auth/refresh
    */
   refreshAccessToken = async (req, res) => {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
 
     if (!refreshToken) {
       return res.status(401).json({ error: 'Refresh Token required' });
@@ -59,8 +85,15 @@ export class AuthController {
 
     try {
       const result = await this.authenticationService.refreshAccessToken(refreshToken);
-      res.json(result);
+
+      // Set rotated refresh token as HttpOnly cookie
+      res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions());
+
+      res.json({ accessToken: result.accessToken });
     } catch (error) {
+      // Clear invalid cookie
+      res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
+
       if (error.message.includes('Invalid') || error.message.includes('logged out')) {
         logger.warn('Refresh attempt with invalid/revoked token', { error: error.message });
         return res.status(403).json({ error: error.message });
@@ -75,12 +108,20 @@ export class AuthController {
    * POST /auth/logout
    */
   logout = async (req, res) => {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
 
     try {
-      const result = await this.authenticationService.logout(refreshToken);
-      res.json(result);
+      if (refreshToken) {
+        await this.authenticationService.logout(refreshToken);
+      }
+
+      // Always clear the cookie
+      res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
+
+      res.json({ message: 'Logged out successfully' });
     } catch (error) {
+      // Clear cookie even on error
+      res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth' });
       logger.error('Logout Error', { error: error.message });
       res.status(500).json({ error: 'Internal Server Error' });
     }

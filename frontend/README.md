@@ -111,10 +111,10 @@ Single-page application for AML (Anti-Money Laundering) sanctions screening syst
 **Application Configuration:**
 - Development server port: `5173`
 - Production build output: `dist/` directory
-- Authentication storage: Browser `localStorage`
-  - `token` – JWT access token (15 min expiry)
-  - `refreshToken` – JWT refresh token (7 days expiry)
-  - `user` – JSON-serialized user object
+- Authentication storage:
+  - `token` – JWT access token (LocalStorage, 15 min expiry)
+  - `refreshToken` – JWT refresh token (HttpOnly Cookie, 7 days expiry)
+  - `user` – JSON-serialized user object (LocalStorage)
 
 **Axios Configuration:**
 - Automatic `Authorization: Bearer <token>` header injection on all requests
@@ -314,8 +314,8 @@ All routes require JWT authentication. Redirected to `/login` if token missing/e
 
 | Method | Endpoint | Service File | Description | Request Payload | Response |
 |--------|----------|--------------|-------------|-----------------|----------|
-| POST | `/auth/login` | `authService.js` | User authentication; stores JWT tokens in localStorage | `{ email, password }` | `{ accessToken, refreshToken, user }` |
-| POST | `/auth/logout` | `authService.js` | Invalidate refresh token; clears localStorage | `{ refreshToken }` | `{ message }` |
+| POST | `/auth/login` | `authService.js` | User authentication; stores Access Token in localStorage, Refresh Token in Cookie | `{ email, password }` | `{ accessToken, user }` |
+| POST | `/auth/logout` | `authService.js` | Invalidate refresh token; clears Cookie & localStorage | - | `{ message }` |
 | POST | `/auth/change-password` | `api.js` | Change authenticated user's password | `{ currentPassword, newPassword }` | `{ message }` |
 | POST | `/auth/forgot-password` | `api.js` | Request password reset email with token | `{ email }` | `{ message }` |
 | POST | `/auth/reset-password` | `api.js` | Reset password using token from email | `{ userId, token, newPassword }` | `{ message }` |
@@ -550,14 +550,14 @@ All routes require JWT authentication. Redirected to `/login` if token missing/e
 **`login(email, password)`**
 - Calls `api.post('/auth/login', { email, password })`
 - If `response.data.accessToken` exists:
-  - Saves `token`, `refreshToken`, `user` to localStorage
+  - Saves `token`, `user` to localStorage
+  - (Refresh token handled automatically via HttpOnly Cookie)
 - Returns `response.data`
 
 **`logout()`**
-- Reads `refreshToken` from localStorage
-- Tries `api.post('/auth/logout', { refreshToken })`
+- Calls `api.post('/auth/logout')` (Cookie sent automatically)
 - Always clears localStorage in finally block (graceful degradation)
-- Clears: `token`, `refreshToken`, `user`
+- Clears: `token`, `user`
 
 **`getCurrentUser()`**
 - Reads `user` from localStorage

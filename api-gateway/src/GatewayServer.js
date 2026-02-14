@@ -138,6 +138,7 @@ export default class GatewayServer {
       target: AUTH_SERVICE_URL,
       changeOrigin: true,
       pathRewrite: { '^/auth': '/auth' },
+      cookieDomainRewrite: '',
       onProxyReq: (proxyReq, req) => {
         injectHeaders(proxyReq, req);
         logger.debug('Proxying to Auth Service', { requestId: req.requestId, path: req.path });

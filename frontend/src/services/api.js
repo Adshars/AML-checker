@@ -7,6 +7,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
 // Variables for handling token refresh
@@ -48,7 +49,7 @@ api.interceptors.response.use(
 
     // If error is 401 and not a retry attempt (prevents loops)
     if (error.response && error.response.status === 401 && !originalRequest._retry) {
-      
+
       // Skip refresh for auth endpoints themselves
       if (originalRequest.url.includes('/auth/refresh') || originalRequest.url.includes('/auth/login')) {
         return Promise.reject(error);
@@ -72,23 +73,18 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-
-        if (!refreshToken) {
-            throw new Error('No refresh token available');
-        }
-
-        // Call backend for new token (use clean axios instance to bypass this interceptor)
-        const response = await axios.post(`${API_URL}/auth/refresh`, {
-            refreshToken: refreshToken
+        // Call backend for new token (cookie carries refreshToken automatically)
+        // Use clean axios instance to bypass this interceptor
+        const response = await axios.post(`${API_URL}/auth/refresh`, {}, {
+          withCredentials: true,
         });
 
         if (response.status === 200 && response.data.accessToken) {
           const { accessToken } = response.data;
-          
-          // Save new token
+
+          // Save new access token
           localStorage.setItem('token', accessToken);
-          
+
           // Update API instance headers and original request
           api.defaults.headers.common['Authorization'] = 'Bearer ' + accessToken;
           originalRequest.headers['Authorization'] = 'Bearer ' + accessToken;
@@ -104,9 +100,8 @@ api.interceptors.response.use(
         // If refresh failed, log out
         processQueue(err, null);
         isRefreshing = false;
-        
+
         localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
         window.location.href = '/login';
         return Promise.reject(err);

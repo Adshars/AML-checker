@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 
 // Shared
@@ -110,8 +110,9 @@ export const createApp = () => {
   // ==========================================
   // Express Middleware
   // ==========================================
-  app.use(cors());
+  // No CORS here — auth-service is internal, gateway handles CORS
   app.use(express.json());
+  app.use(cookieParser());
 
   // ==========================================
   // Health Check

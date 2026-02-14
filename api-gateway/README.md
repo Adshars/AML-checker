@@ -1,7 +1,7 @@
 API Gateway
 ===========
 
-Central reverse proxy and authentication gateway for the AML Checker platform. Routes requests to microservices (Auth Service, Core Service), enforces authentication on protected routes via JWT tokens or API keys, and forwards authentication context (organization ID, user ID, auth type, role, user email) to downstream services.
+Central reverse proxy and authentication gateway for the AML Checker platform. Routes requests to microservices (Auth Service, Core Service), enforces authentication on protected routes via JWT tokens or API keys, and forwards authentication context (organization ID, user ID, auth type, role, user email, user name) to downstream services.
 
 **Version:** 1.0.0  
 **Node.js:** 18+ (Alpine)  
@@ -77,7 +77,7 @@ Central reverse proxy and authentication gateway for the AML Checker platform. R
 
 **Logging:**
 - **winston** v3.19.0 – Structured logging with multiple transports
-- **winston-daily-rotate-file** v5.0.0 – Automatic log rotation (daily, error/combined logs)
+- **winston-daily-rotate-file** v5.0.0 – Automatic log rotation (daily app/error logs)
 
 **Development & Testing:**
 - **jest** v30.2.0 – Test runner with ES Modules support
@@ -88,9 +88,10 @@ Central reverse proxy and authentication gateway for the AML Checker platform. R
 Environment and Configuration
 - `AUTH_SERVICE_URL` – address of Auth Service; defaults to `http://auth-service:3000` in Docker network.
 - `CORE_SERVICE_URL` – address of Core Service; defaults to `http://core-service:3000` in Docker network.
-- `JWT_SECRET` – secret key for JWT token verification (must match Auth Service's `JWT_SECRET` for valid token verification).
+- `JWT_SECRET` – **required** secret key for JWT token verification (must match Auth Service's `JWT_SECRET`). Gateway fails fast if missing.
 - `PORT` – application port (default 8080).
 - `NODE_ENV` – environment (set to `test` during tests to prevent server startup).
+- `ALLOWED_ORIGINS` – comma-separated list of allowed CORS origins. Defaults to `http://localhost`, `http://localhost:80`, `http://localhost:3000`, `http://localhost:5173`.
 
 ## Rate Limiting
 
@@ -103,14 +104,17 @@ Environment and Configuration
 - Applies to: sanctions screening, history, statistics, user management
 
 **Behavior:**
-- Exceeded limit: HTTP 429 with error message `"Too many requests from this IP, please try again later."`
+- Exceeded limit:
+  - `/auth/*` responds with `"Too many auth requests from this IP, please try again later."`
+  - `/sanctions/*` and `/users/*` respond with `"Too many requests from this IP, please try again later."`
 - Rate limit headers: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
 - Tracking: Per IP address using express-rate-limit
 
 Local Setup
 1) `npm install`
-2) `node src/index.js` (optionally set service URLs and `JWT_SECRET` environment variables)
-3) `npm test` (for running E2E tests)
+2) Set `JWT_SECRET` (required); optionally set service URLs and `ALLOWED_ORIGINS`
+3) `node src/index.js`
+4) `npm test` (for running E2E tests)
 
 Docker Compose Setup
 - From project root directory: `docker compose up --build api-gateway`
@@ -130,11 +134,11 @@ Docker Compose Setup
 - **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) – Standalone class handling dual authentication
   - JWT verification: Local signature check using `JWT_SECRET` (no external calls)
   - API Key validation: Cached validation with 60-second TTL (reduces Auth Service calls by ~60x)
-  - Context injection: Attaches `x-org-id`, `x-user-id`, `x-role`, `x-auth-type` to request headers
+  - Context injection: Attaches `x-org-id`, `x-user-id`, `x-role`, `x-auth-type`, `x-user-email`, `x-user-name` to request headers
 
 **Routing Strategy:**
-- **Route Priority**: Protected routes registered **before** wildcard routes
-  - Example: `/auth/register-user` before `/auth/*` to prevent proxy conflicts
+- **Route Priority**: Protected routes registered **before** public routes to prevent proxy conflicts
+  - Example: `/auth/register-user` before `/auth/login`
 - **Route Configuration**: Defined in [src/config/routes.js](src/config/routes.js) (reference), implemented in `GatewayServer.setupRoutes()`
 
 **Proxy Architecture:**
@@ -143,6 +147,8 @@ Docker Compose Setup
   - `x-request-id` – unique request identifier
   - `x-org-id` – organization UUID
   - `x-user-id` – user UUID (JWT only)
+  - `x-user-email` – user email or `"api@system"`
+  - `x-user-name` – full name when available
   - `x-role` – user role (JWT only)
   - `x-auth-type` – authentication method (`jwt`/`api-key`)
 - **Error Handling**: Custom `onError` callbacks return 502 for upstream failures
@@ -156,7 +162,7 @@ Docker Compose Setup
 **Logging Infrastructure:**
 - **Winston Logger** ([src/utils/logger.js](src/utils/logger.js))
   - Console transport: Colorized, timestamped logs
-  - File transports: Daily rotation (logs/combined-*.log, logs/error-*.log)
+  - File transports: Daily rotation (logs/%DATE%-app.log, logs/%DATE%-error.log)
   - Log levels: info, debug, warn, error
   - Structured format: JSON with metadata (requestId, userId, orgId, etc.)
 
@@ -184,15 +190,15 @@ All public routes are rate limited to **20 requests per 15 minutes per IP**.
 
 ### Auth Service Proxy (PROTECTED Routes)
 
-All protected routes require **JWT authentication** and are rate limited to **20 requests per 15 minutes per IP**.
+All protected routes require authentication and are rate limited to **20 requests per 15 minutes per IP**. Role context is only available when using JWT.
 
 | Method | Endpoint | Auth Required | Role Required | Proxied To | Description |
 |--------|----------|---------------|---------------|------------|-------------|
-| POST | `/auth/register-organization` | ✅ JWT | superadmin | Auth Service | Register new organization with admin user (SuperAdmin only) |
-| POST | `/auth/register-user` | ✅ JWT | admin/superadmin | Auth Service | Register new user in organization |
-| POST | `/auth/reset-secret` | ✅ JWT | admin/superadmin | Auth Service | Reset organization's API secret (requires password confirmation) |
-| POST | `/auth/change-password` | ✅ JWT | - | Auth Service | Change user's password (requires current password) |
-| GET | `/auth/organization/keys` | ✅ JWT | - | Auth Service | Get organization's public API key |
+| POST | `/auth/register-organization` | ✅ JWT or API Key | superadmin | Auth Service | Register new organization with admin user (SuperAdmin only) |
+| POST | `/auth/register-user` | ✅ JWT or API Key | admin/superadmin | Auth Service | Register new user in organization |
+| POST | `/auth/reset-secret` | ✅ JWT or API Key | admin/superadmin | Auth Service | Reset organization's API secret (requires password confirmation) |
+| POST | `/auth/change-password` | ✅ JWT or API Key | - | Auth Service | Change user's password (requires current password) |
+| GET | `/auth/organization/keys` | ✅ JWT or API Key | - | Auth Service | Get organization's public API key |
 
 ### Sanctions Service Proxy (Core Service)
 
@@ -203,7 +209,7 @@ All sanctions routes require **JWT or API Key authentication** and are rate limi
 | GET | `/sanctions/check` | ✅ JWT or API Key | Core Service | Check entity against sanctions/PEP lists | `name` (required), `limit`, `fuzzy`, `schema`, `country` |
 | GET | `/sanctions/history` | ✅ JWT or API Key | Core Service | Retrieve audit logs with pagination and filtering | `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId`, `orgId` |
 | GET | `/sanctions/stats` | ✅ JWT or API Key | Core Service | Get aggregated statistics for organization | - |
-| GET | `/sanctions/health` | ❌ No | Core Service | Health check for Core Service | - |
+| GET | `/sanctions/health` | ✅ JWT or API Key | Core Service | Health check for Core Service | - |
 
 ### Users Management Proxy (Auth Service)
 
@@ -224,7 +230,8 @@ After successful authentication, the gateway automatically injects these headers
 | `x-request-id` | Gateway | Unique request identifier for end-to-end tracing |
 | `x-org-id` | JWT payload or API Key validation | Organization ID (UUID) |
 | `x-user-id` | JWT payload | User ID (UUID) - not present for API Key auth |
-| `x-user-email` | JWT payload | User email or `"api@system"` for API Key auth |
+| `x-user-email` | JWT payload or API Key auth | User email or `"api@system"` for API Key auth |
+| `x-user-name` | JWT payload | Full name when available (falls back to email) |
 | `x-auth-type` | Gateway | Authentication method: `"jwt"` or `"api-key"` |
 | `x-role` | JWT payload | User role: `"superadmin"`, `"admin"`, or `"user"` - not present for API Key auth |
 
@@ -244,7 +251,7 @@ The **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) validate
    - **Cache Miss**: Proceed to step 2
 2. **Auth Service Validation**: POST to `{AUTH_SERVICE_URL}/auth/internal/validate-api-key` (2000ms timeout)
 3. **Cache Result**: Store `{ orgId, authType: 'api-key' }` for 60 seconds
-4. **Inject Headers**: Attach `x-org-id`, `x-auth-type: api-key` to request
+4. **Inject Headers**: Attach `x-org-id`, `x-auth-type: api-key`, `x-user-email: api@system` to request
 
 **Response Structure:**
 ```json
@@ -263,8 +270,8 @@ The **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) validate
 **Validation Flow:**
 1. **Extract Token**: Parse Bearer token from Authorization header
 2. **Local Verification**: Verify JWT signature using `JWT_SECRET` (no external API call)
-3. **Decode Payload**: Extract `userId`, `organizationId`, `role`, `email`
-4. **Inject Headers**: Attach `x-org-id`, `x-user-id`, `x-role`, `x-auth-type: jwt` to request
+3. **Decode Payload**: Extract `userId`, `organizationId`, `role`, `email`, optional `firstName`, `lastName`
+4. **Inject Headers**: Attach `x-org-id`, `x-user-id`, `x-role`, `x-auth-type: jwt`, `x-user-email`, `x-user-name` to request
 
 **JWT Payload Requirements:**
 ```json
@@ -273,6 +280,8 @@ The **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) validate
   "organizationId": "uuid",
   "role": "admin|user|superadmin",
   "email": "user@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
   "iat": 1234567890,
   "exp": 1234571490
 }
@@ -288,10 +297,9 @@ The **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) validate
 - OPTIONS requests bypass authentication (return 204 immediately)
 
 **Authentication Failures:**
-- Missing credentials: `401 Unauthorized` – `"Missing authentication credentials"`
-- Invalid JWT signature: `401 Unauthorized` – `"Invalid or expired JWT token"`
-- Expired JWT: `401 Unauthorized` – `"Invalid or expired JWT token"`
-- Invalid API Key/Secret: `401 Unauthorized` – `"Invalid API Key or Secret"`
+- Missing or invalid credentials: `401 Unauthorized` – `"Unauthorized: Missing or invalid credentials"`
+- Invalid/expired JWT: `401 Unauthorized` – `"Unauthorized: Invalid or expired JWT token"`
+- Invalid API Key/Secret: `401 Unauthorized` – `"Unauthorized: Invalid API Key or Secret"`
 
 ## Usage Examples
 
@@ -435,6 +443,7 @@ Response Headers (Forwarded to Downstream Services)
 - `x-org-id` – organization ID from JWT payload or API Key validation
 - `x-user-id` – user ID from JWT payload (not present for API Key auth)
 - `x-user-email` – user email from JWT payload or "api@system" for API Key auth
+- `x-user-name` – full name from JWT payload when available
 - `x-auth-type` – authentication method used: "jwt" or "api-key"
 - `x-role` – user role from JWT payload (not present for API Key auth)
 
@@ -445,7 +454,7 @@ Response Headers (Forwarded to Downstream Services)
 | **401** | Unauthorized | No valid credentials or expired/invalid token | `{"error":"Unauthorized: <reason>"}` |
 | **403** | Forbidden | Valid auth but insufficient permissions (e.g., non-admin trying admin action) | `{"error":"Forbidden: <reason>"}` |
 | **404** | Not Found | Route does not exist | `{"error":"Not found"}` |
-| **429** | Too Many Requests | Rate limit exceeded for IP address | `{"error":"Too many requests from this IP, please try again later."}` |
+| **429** | Too Many Requests | Rate limit exceeded for IP address | `{"error":"Too many auth requests from this IP, please try again later."}` (auth) / `{"error":"Too many requests from this IP, please try again later."}` (api) |
 | **502** | Bad Gateway | Upstream service (Auth/Core) unavailable | `{"error":"<service> service unavailable"}` |
 | **500** | Internal Error | Gateway internal error | `{"error":"Internal server error"}` |
 
@@ -463,7 +472,7 @@ How It Works (High Level)
   5. Proxy middleware: Forward request to upstream service with auth context headers
   6. Response: Upstream service response returned to client with rate limit headers
   
-- **Rate Limiting**: express-rate-limit tracks requests per IP. Auth routes (10-20 req/15min), API routes (100 req/15min).
+- **Rate Limiting**: express-rate-limit tracks requests per IP. Auth routes (20 req/15min), API routes (100 req/15min).
   
 - **JWT Verification**: Instant local verification using `JWT_SECRET`. No external API call.
   
@@ -471,7 +480,7 @@ How It Works (High Level)
   - If cached (< 60s old): Use cache hit (no Auth Service call)
   - If not cached: POST to Auth Service `/auth/internal/validate-api-key`, cache result for 60s
   
-- **Header Forwarding**: Proxy middleware injects `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-role` into upstream request headers.
+- **Header Forwarding**: Proxy middleware injects `x-request-id`, `x-org-id`, `x-user-id`, `x-auth-type`, `x-user-email`, `x-user-name`, `x-role` into upstream request headers.
   
 - **Logging**: Winston logger (console + daily rotating files in logs/). Logs request details (method, URL, ID, IP), auth outcomes, proxy errors.
   

@@ -3,7 +3,7 @@ Frontend
 
 Single-page application for the AML sanctions screening system. Provides entity screening, history browsing, user management, and analytics dashboard. Communicates with backend services via the API Gateway using JWT access tokens and refresh cookies.
 
-**Version:** 0.0.0  
+**Version:** 1.0.0  
 **React:** 19.2.0  
 **Build Tool:** Vite 7.2.4
 
@@ -27,8 +27,11 @@ Single-page application for the AML sanctions screening system. Provides entity 
 - **React 19.2.0** with hooks and Context API
 - **React Router DOM 7.12.0** for routing and guarded routes
 - **React Bootstrap 2.10.10 + Bootstrap 5.3.8** for UI
+- **React Bootstrap Icons 1.11.6 + React Icons 5.5.0** for iconography
 - **Axios 1.13.2** with interceptors and refresh queue
 - **Recharts 3.7.0** for dashboard charts
+- **date-fns 4.1.0** for date formatting
+- **React Toastify 11.0.5** for toast notifications
 - **Vitest 2.1.5** + Testing Library for tests
 
 ## Environment

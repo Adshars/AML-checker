@@ -74,52 +74,47 @@ print("SuperAdmin created");
 
 ### Service Communication Diagram
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                          DOCKER COMPOSE                              │
-│                                                                      │
-│  ┌─────────────┐         HTTP (port 80 → 5173)                      │
-│  │   Frontend   │◄──────── Browser                                   │
-│  │  React/Vite  │                                                    │
-│  └──────┬───────┘                                                    │
-│         │ axios (withCredentials: true)                               │
-│         ▼                                                            │
-│  ┌──────────────┐                                                    │
-│  │  API Gateway  │◄──────── External API clients (x-api-key/secret)  │
-│  │  Express :8080│                                                   │
-│  │  JWT verify   │                                                   │
-│  │  Rate limiting│                                                   │
-│  └──┬─────────┬──┘                                                   │
-│     │ /auth/* │ /sanctions/*                                         │
-│     │ /users/*│                                                      │
-│     ▼         ▼                                                      │
-│  ┌─────────┐  ┌──────────┐                                          │
-│  │  Auth    │  │  Core     │                                         │
-│  │ Service  │  │ Service   │                                         │
-│  │ :3000    │  │ :3000     │                                         │
-│  └────┬─────┘  └──┬────┬──┘                                         │
-│       │           │    │                                             │
-│       ▼           │    ▼                                             │
-│  ┌─────────┐      │  ┌──────────┐                                   │
-│  │ MongoDB  │      │  │PostgreSQL│                                   │
-│  │ :27017   │      │  │ :5432    │                                   │
-│  │ users,   │      │  │ audit    │                                   │
-│  │ orgs,    │      │  │ logs     │                                   │
-│  │ tokens   │      │  └──────────┘                                   │
-│  └──────────┘      │                                                 │
-│                    ▼                                                 │
-│             ┌────────────┐                                           │
-│             │ OP-Adapter  │                                          │
-│             │ :3000       │                                          │
-│             └──────┬──────┘                                          │
-│                    │ HTTP + retry                                    │
-│                    ▼                                                 │
-│             ┌────────────┐     ┌───────────────┐                    │
-│             │   Yente     │───▶│ Elasticsearch  │                    │
-│             │ OpenSanctions│   │ :9200          │                    │
-│             │ :8000       │   │ sanctions data  │                    │
-│             └─────────────┘   └────────────────┘                    │
-└──────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Clients
+        Browser([Browser])
+        APIClient([External API Clients])
+    end
+
+    subgraph "API Layer"
+        Gateway[API Gateway - Express :8080]
+    end
+
+    subgraph "Web Layer"
+        Frontend[Frontend - React/Vite :80]
+    end
+
+    subgraph "Service Layer"
+        Auth[Auth Service :3000]
+        Core[Core Service :3000]
+        Adapter[OP-Adapter :3000]
+    end
+
+    subgraph "Data Layer"
+        MongoDB[(MongoDB :27017)]
+        Postgres[(PostgreSQL :5432)]
+        Yente[Yente - OpenSanctions :8000]
+        ES[(Elasticsearch :9200)]
+    end
+
+    Browser -->|HTTP| Frontend
+    Frontend -->|axios + cookies| Gateway
+    APIClient -->|x-api-key| Gateway
+    
+    Gateway -->|/auth, /users| Auth
+    Gateway -->|/sanctions| Core
+    
+    Auth -->|users, orgs, tokens| MongoDB
+    Core -->|audit logs| Postgres
+    Core -->|HTTP| Adapter
+    
+    Adapter -->|HTTP + retry| Yente
+    Yente -->|sanctions data| ES
 ```
 
 ### Data Flow

@@ -41,7 +41,7 @@ docker compose up --build
 
 4) Create the first SuperAdmin (MongoDB):
 ```bash
-docker exec -it mongo-1 mongosh
+docker compose exec mongo mongosh
 use auth_db
 
 var orgId = new ObjectId();
@@ -72,7 +72,65 @@ print("SuperAdmin created");
 
 ## Architecture
 
-Services (Docker Compose defaults):
+### Service Communication Diagram
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                          DOCKER COMPOSE                              │
+│                                                                      │
+│  ┌─────────────┐         HTTP (port 80 → 5173)                      │
+│  │   Frontend   │◄──────── Browser                                   │
+│  │  React/Vite  │                                                    │
+│  └──────┬───────┘                                                    │
+│         │ axios (withCredentials: true)                               │
+│         ▼                                                            │
+│  ┌──────────────┐                                                    │
+│  │  API Gateway  │◄──────── External API clients (x-api-key/secret)  │
+│  │  Express :8080│                                                   │
+│  │  JWT verify   │                                                   │
+│  │  Rate limiting│                                                   │
+│  └──┬─────────┬──┘                                                   │
+│     │ /auth/* │ /sanctions/*                                         │
+│     │ /users/*│                                                      │
+│     ▼         ▼                                                      │
+│  ┌─────────┐  ┌──────────┐                                          │
+│  │  Auth    │  │  Core     │                                         │
+│  │ Service  │  │ Service   │                                         │
+│  │ :3000    │  │ :3000     │                                         │
+│  └────┬─────┘  └──┬────┬──┘                                         │
+│       │           │    │                                             │
+│       ▼           │    ▼                                             │
+│  ┌─────────┐      │  ┌──────────┐                                   │
+│  │ MongoDB  │      │  │PostgreSQL│                                   │
+│  │ :27017   │      │  │ :5432    │                                   │
+│  │ users,   │      │  │ audit    │                                   │
+│  │ orgs,    │      │  │ logs     │                                   │
+│  │ tokens   │      │  └──────────┘                                   │
+│  └──────────┘      │                                                 │
+│                    ▼                                                 │
+│             ┌────────────┐                                           │
+│             │ OP-Adapter  │                                          │
+│             │ :3000       │                                          │
+│             └──────┬──────┘                                          │
+│                    │ HTTP + retry                                    │
+│                    ▼                                                 │
+│             ┌────────────┐     ┌───────────────┐                    │
+│             │   Yente     │───▶│ Elasticsearch  │                    │
+│             │ OpenSanctions│   │ :9200          │                    │
+│             │ :8000       │   │ sanctions data  │                    │
+│             └─────────────┘   └────────────────┘                    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+1. **Screening request**: Frontend → API Gateway (JWT) → Core Service → OP-Adapter → Yente/Elasticsearch
+2. **Authentication**: Frontend → API Gateway → Auth Service → MongoDB
+3. **B2B API**: External client → API Gateway (API Key) → Core Service → OP-Adapter → Yente
+4. **Audit logging**: Core Service → PostgreSQL (every sanctions check is logged)
+
+### Services (Docker Compose defaults)
+
 - **API Gateway**: exposed on `GATEWAY_PORT` (default 8080)
 - **Frontend**: exposed on port 80 (Vite dev server on 5173)
 - **Auth Service**: internal only by default

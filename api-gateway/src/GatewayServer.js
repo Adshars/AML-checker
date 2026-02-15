@@ -221,7 +221,7 @@ export default class GatewayServer {
     );
 
     this.app.get('/auth/organization/keys',
-      this.authLimiter,
+      this.apiLimiter,
       this.authMiddleware.middleware,
       this.authProxy
     );

@@ -326,7 +326,6 @@ curl -X POST http://localhost:8080/auth/login \
 {
   "message": "Login successful",
   "accessToken": "<JWT>",
-  "refreshToken": "<REFRESH_TOKEN>",
   "user": {
     "id": "uuid",
     "email": "admin@acme.test",
@@ -337,24 +336,25 @@ curl -X POST http://localhost:8080/auth/login \
   }
 }
 ```
+Note: Refresh token is set as an HttpOnly cookie (`refreshToken`), not returned in the response body.
 
 ### Refresh JWT Token (Public)
 ```bash
 curl -X POST http://localhost:8080/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken":"<REFRESH_TOKEN>"}'
+  --cookie "refreshToken=<REFRESH_TOKEN>"
 ```
 **Response:**
 ```json
 {"accessToken":"<NEW_JWT>"}
 ```
+Note: Refresh token is read from the HttpOnly cookie. A rotated refresh token is set as a new cookie in the response.
 
 ### Logout (Public)
 ```bash
 curl -X POST http://localhost:8080/auth/logout \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken":"<REFRESH_TOKEN>"}'
+  --cookie "refreshToken=<REFRESH_TOKEN>"
 ```
+Note: Refresh token cookie is cleared in the response.
 
 ### Forgot Password (Public)
 ```bash

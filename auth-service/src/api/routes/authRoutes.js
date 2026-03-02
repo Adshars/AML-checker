@@ -1,5 +1,4 @@
 import express from 'express';
-import { loginLimiter } from '../middlewares/rateLimitMiddleware.js';
 import { validate, loginSchema } from '../validators/index.js';
 
 /**
@@ -10,8 +9,8 @@ import { validate, loginSchema } from '../validators/index.js';
 export const createAuthRoutes = (authController) => {
   const router = express.Router();
 
-  // Login with rate limiting and validation
-  router.post('/login', loginLimiter, validate(loginSchema), authController.login);
+  // Login with validation (rate limiting handled by API Gateway)
+  router.post('/login', validate(loginSchema), authController.login);
 
   // Refresh access token
   router.post('/refresh', authController.refreshAccessToken);

@@ -42,7 +42,7 @@ user_id = (set after login)
 ```json
 {
   "email": "super@admin.com",
-  "password": "admin123"
+  "password": "superadmin"
 }
 ```
 

@@ -52,7 +52,7 @@ const DashboardPage = () => {
           <Card bg="primary" text="white">
             <Card.Body>
               <Card.Title>Total Checks</Card.Title>
-              <h1 className="display-4">{stats.totalChecks}</h1>
+              <h1 className="display-4" data-testid="stat-total-checks">{stats.totalChecks}</h1>
             </Card.Body>
           </Card>
         </Col>
@@ -60,7 +60,7 @@ const DashboardPage = () => {
           <Card bg="danger" text="white">
             <Card.Body>
               <Card.Title>Sanction Hits</Card.Title>
-              <h1 className="display-4">{stats.sanctionHits}</h1>
+              <h1 className="display-4" data-testid="stat-sanction-hits">{stats.sanctionHits}</h1>
             </Card.Body>
           </Card>
         </Col>
@@ -68,7 +68,7 @@ const DashboardPage = () => {
           <Card bg="warning" text="dark">
             <Card.Body>
               <Card.Title>PEP Hits</Card.Title>
-              <h1 className="display-4">{stats.pepHits}</h1>
+              <h1 className="display-4" data-testid="stat-pep-hits">{stats.pepHits}</h1>
             </Card.Body>
           </Card>
         </Col>
@@ -101,7 +101,7 @@ const DashboardPage = () => {
         <Card.Body>
           <Card.Title>Recent Activity</Card.Title>
           {recentActivity.length > 0 ? (
-            <Table striped bordered hover responsive>
+            <Table striped bordered hover responsive data-testid="recent-activity-table">
               <thead>
                 <tr>
                   <th>Name</th>

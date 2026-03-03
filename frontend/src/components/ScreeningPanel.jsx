@@ -39,10 +39,11 @@ function ScreeningPanel() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                data-testid="screening-input"
               />
             </Form.Group>
 
-            <Button type="submit" variant="primary" disabled={loading}>
+            <Button type="submit" variant="primary" disabled={loading} data-testid="check-btn">
               {loading ? 'Checking…' : 'Check'}
             </Button>
           </Form>
@@ -63,12 +64,12 @@ function ScreeningPanel() {
           {!loading && results && (
             <div className="mt-3">
               {isClean && (
-                <Alert variant="success">✓ No sanctions found (CLEAN)</Alert>
+                <Alert variant="success" data-testid="result-clean">✓ No sanctions found (CLEAN)</Alert>
               )}
 
               {isHit && (
                 <>
-                  <Alert variant="danger">⚠ Sanction hits detected!</Alert>
+                  <Alert variant="danger" data-testid="result-hit">⚠ Sanction hits detected!</Alert>
 
                   {hasEntities ? (
                     <ListGroup>
@@ -78,6 +79,7 @@ function ScreeningPanel() {
                           onClick={() => handleEntityClick(entity)}
                           style={{ cursor: 'pointer' }}
                           className="action"
+                          data-testid="entity-item"
                         >
                           <div className="d-flex justify-content-between align-items-start">
                             <div>
@@ -122,7 +124,7 @@ function ScreeningPanel() {
         </Card.Body>
       </Card>
 
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered>
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered data-testid="entity-modal">
         <Modal.Header closeButton>
           <Modal.Title>{selectedEntity?.name}</Modal.Title>
         </Modal.Header>
@@ -153,7 +155,7 @@ function ScreeningPanel() {
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
+          <Button variant="secondary" onClick={() => setShowModal(false)} data-testid="entity-modal-close">
             Close
           </Button>
         </Modal.Footer>

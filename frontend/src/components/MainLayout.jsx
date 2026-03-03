@@ -26,32 +26,32 @@ const MainLayout = () => {
             <Nav className="me-auto">
               {isSuperAdmin ? (
                 // SuperAdmin menu - only New Organization
-                <Nav.Link as={NavLink} to="/superadmin">
+                <Nav.Link as={NavLink} to="/superadmin" data-testid="nav-new-org">
                   New Organization
                 </Nav.Link>
               ) : (
                 // Regular user menu
                 <>
-                  <Nav.Link as={NavLink} to="/dashboard">
+                  <Nav.Link as={NavLink} to="/dashboard" data-testid="nav-dashboard">
                     Dashboard
                   </Nav.Link>
-                  <Nav.Link as={NavLink} to="/check">
+                  <Nav.Link as={NavLink} to="/check" data-testid="nav-check">
                     Check
                   </Nav.Link>
-                  <Nav.Link as={NavLink} to="/history">
+                  <Nav.Link as={NavLink} to="/history" data-testid="nav-history">
                     History
                   </Nav.Link>
                   {isAdmin && (
-                    <Nav.Link as={NavLink} to="/users">
+                    <Nav.Link as={NavLink} to="/users" data-testid="nav-users">
                       Users
                     </Nav.Link>
                   )}
                   {isAdmin && (
-                    <Nav.Link as={NavLink} to="/developer">
+                    <Nav.Link as={NavLink} to="/developer" data-testid="nav-developer">
                       Developer
                     </Nav.Link>
                   )}
-                  <Nav.Link as={NavLink} to="/settings">
+                  <Nav.Link as={NavLink} to="/settings" data-testid="nav-settings">
                     Settings
                   </Nav.Link>
                 </>
@@ -61,7 +61,7 @@ const MainLayout = () => {
               <Navbar.Text className="me-3">
                 Welcome: <strong>{user?.email}</strong> | Role: <strong>{user?.role}</strong>
               </Navbar.Text>
-              <Button variant="outline-light" size="sm" onClick={handleLogout}>
+              <Button variant="outline-light" size="sm" onClick={handleLogout} data-testid="logout-btn">
                 Logout
               </Button>
             </Nav>

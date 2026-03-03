@@ -176,11 +176,11 @@ All sanctions endpoints require **organization context** via `x-org-id` header (
 **Purpose:** Retrieve paginated audit logs with filtering; supports organization-scoped access and superadmin queries.
 
 **Data Isolation:**
-- Regular users: see only their organization's logs (via `x-org-id`)
-- Superadmins: can view all logs or filter by `orgId` parameter
+- Regular users: see only their organization's logs (`x-org-id` header required)
+- Superadmins: bypass the `x-org-id` requirement when `x-role: superadmin` is present; can view all logs or narrow results with the `orgId` query parameter
 
 **Error Responses:**
-- 403 - Missing `x-org-id` for non-superadmin users (`Unauthorized`)
+- 403 - Missing `x-org-id` for non-superadmin requests (`Unauthorized`)
 - 500 - Database error
 
 #### `/stats` - Organization Statistics

@@ -113,8 +113,8 @@ Root `/` redirects to `/dashboard`.
 ## Authentication and Session
 
 - Login stores `token` and `user` in localStorage; refresh token is managed by HttpOnly cookie.
-- On app startup, [AuthContext](src/context/AuthContext.jsx) checks cached user and performs a silent refresh.
-- [api.js](src/services/api.js) intercepts 401s and performs refresh with a queue to replay failed requests.
+- On app startup, [AuthContext](src/context/AuthContext.jsx) checks the cached user and calls `silentRefresh`. If the stored JWT is still valid (expiry > 60 s from now), the API call is skipped and the cached token is reused; otherwise `POST /auth/refresh` is called to obtain a fresh access token.
+- [api.js](src/services/api.js) attaches `Authorization: Bearer <token>` to every request, intercepts 401 responses, queues concurrent in-flight requests, performs a single refresh, then replays the queued requests with the new token.
 - Refresh failure clears localStorage and redirects to `/login`.
 
 ## API Integration

@@ -186,15 +186,47 @@ See the service READMEs for detailed request/response formats.
 
 ## Testing
 
+### Unit / Integration Tests
+
 Root scripts (see [package.json](package.json)):
 ```bash
-npm test
+npm test              # run all service tests
 npm run test:auth
 npm run test:core
 npm run test:adapter
 npm run test:gateway
 npm run test:frontend
 ```
+
+### E2E Tests (Playwright)
+
+E2E tests live in [`tests/e2e/`](tests/e2e/) and require the full Docker Compose stack to be running.
+
+1. Copy and fill the E2E environment file:
+   ```bash
+   cp .env.test.example .env.test
+   # Set E2E_SUPERADMIN_EMAIL, E2E_SUPERADMIN_PASSWORD, E2E_BASE_URL, E2E_GATEWAY_URL
+   ```
+
+2. Start the stack:
+   ```bash
+   docker compose up --build
+   ```
+
+3. Install Playwright dependencies from the project root:
+   ```bash
+   npm install
+   npx playwright install chromium
+   ```
+
+4. Run E2E tests (from project root):
+   ```bash
+   npm run test:e2e           # headless
+   npm run test:e2e:headed    # headed (watch the browser)
+   npm run test:e2e:ui        # Playwright UI mode
+   npm run test:e2e:debug     # step-through debugger
+   npm run test:e2e:report    # open last HTML report
+   ```
 
 ---
 

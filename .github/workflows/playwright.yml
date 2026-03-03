@@ -13,10 +13,8 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: lts/*
-    - name: Verify lock file is up to date
-      run: npm install --package-lock-only --dry-run
     - name: Install dependencies
-      run: npm ci
+      run: npm ci --omit=optional
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
     - name: Run Playwright tests

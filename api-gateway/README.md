@@ -438,15 +438,6 @@ curl -X GET http://localhost:8080/users \
   -H "Authorization: Bearer <ADMIN_JWT>"
 ```
 
-Response Headers (Forwarded to Downstream Services)
-- `x-request-id` – unique request identifier for end-to-end tracing
-- `x-org-id` – organization ID from JWT payload or API Key validation
-- `x-user-id` – user ID from JWT payload (not present for API Key auth)
-- `x-user-email` – user email from JWT payload or "api@system" for API Key auth
-- `x-user-name` – full name from JWT payload when available
-- `x-auth-type` – authentication method used: "jwt" or "api-key"
-- `x-role` – user role from JWT payload (not present for API Key auth)
-
 ## Error Responses
 
 | Status | Error | Description | Response |

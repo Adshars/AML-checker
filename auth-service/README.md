@@ -65,11 +65,11 @@ Authentication and user management service for the AML Checker platform. Handles
 - `JWT_ACCESS_EXPIRATION` – Alternative access token TTL (takes precedence over `JWT_EXPIRES_IN` if set)
 - `REFRESH_TOKEN_EXPIRES_IN` – Refresh token TTL (default: `7d`)
 - `FRONTEND_URL` – Frontend URL for password reset links (default: `http://localhost:5173`)
-- `SMTP_HOST` – SMTP host for email delivery (default: `smtp.ethereal.email`)
-- `SMTP_PORT` – SMTP port (default: 587)
-- `SMTP_SECURE` – Use TLS for SMTP (`true`/`false`)
-- `SMTP_USER` – SMTP username
-- `SMTP_PASS` – SMTP password
+- `EMAIL_HOST` – SMTP host for email delivery (default: `smtp.ethereal.email`)
+- `EMAIL_PORT` – SMTP port (default: 587)
+- `SMTP_SECURE` – Use TLS for SMTP (`true`/`false`; not in `.env.example`, defaults to `false`)
+- `EMAIL_USER` – SMTP username
+- `EMAIL_PASS` – SMTP password
 - `PORT` – Application port (default: 3000)
 
 ## Local Setup

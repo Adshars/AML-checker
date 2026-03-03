@@ -190,10 +190,10 @@ const HistoryPage = () => {
               </Col>
 
               <Col md={2} className="d-flex align-items-end gap-2">
-                <Button type="submit" variant="primary" className="w-100" disabled={loading}>
+                <Button type="submit" variant="primary" className="w-100" disabled={loading} data-testid="filter-btn">
                   Filter
                 </Button>
-                <Button type="button" variant="outline-secondary" className="w-100" onClick={handleClear} disabled={loading}>
+                <Button type="button" variant="outline-secondary" className="w-100" onClick={handleClear} disabled={loading} data-testid="clear-filter-btn">
                   Clear
                 </Button>
               </Col>
@@ -218,7 +218,7 @@ const HistoryPage = () => {
             </div>
           ) : (
             <>
-              <Table striped bordered hover responsive className="mb-3">
+              <Table striped bordered hover responsive className="mb-3" data-testid="history-table">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -238,13 +238,13 @@ const HistoryPage = () => {
                   )}
 
                   {logs.map((log) => (
-                    <tr key={log.id || log._id || log.createdAt}>
+                    <tr key={log.id || log._id || log.createdAt} data-testid="history-row">
                       <td>{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
                       <td>{renderUserCell(log.userId, log.userEmail, log.userName)}</td>
                       <td>{log.searchQuery || '—'}</td>
                       <td>{renderResultBadge(log)}</td>
                       <td>
-                        <Button variant="outline-primary" size="sm" onClick={() => openDetails(log)}>
+                        <Button variant="outline-primary" size="sm" onClick={() => openDetails(log)} data-testid="history-details-btn">
                           Details
                         </Button>
                       </td>
@@ -254,10 +254,10 @@ const HistoryPage = () => {
               </Table>
 
               <div className="d-flex align-items-center justify-content-between">
-                <div className="text-muted">Page {meta.currentPage} of {meta.totalPages}</div>
+                <div className="text-muted" data-testid="pagination-info">Page {meta.currentPage} of {meta.totalPages}</div>
                 <Pagination className="mb-0">
-                  <Pagination.Prev disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} />
-                  <Pagination.Next disabled={page >= (meta.totalPages || 1)} onClick={() => setPage((p) => p + 1)} />
+                  <Pagination.Prev disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} data-testid="pagination-prev" />
+                  <Pagination.Next disabled={page >= (meta.totalPages || 1)} onClick={() => setPage((p) => p + 1)} data-testid="pagination-next" />
                 </Pagination>
               </div>
             </>
@@ -265,7 +265,7 @@ const HistoryPage = () => {
         </Card.Body>
       </Card>
 
-      <Modal show={showModal} onHide={closeDetails} size="lg" centered>
+      <Modal show={showModal} onHide={closeDetails} size="lg" centered data-testid="history-details-modal">
         <Modal.Header closeButton>
           <Modal.Title>Log Details</Modal.Title>
         </Modal.Header>

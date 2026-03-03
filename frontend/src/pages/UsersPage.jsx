@@ -132,7 +132,7 @@ const UsersPage = () => {
     <Container className="mt-4">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2>Team Management</h2>
-        <Button variant="primary" onClick={handleAddUserClick} disabled={loading}>
+        <Button variant="primary" onClick={handleAddUserClick} disabled={loading} data-testid="add-user-btn">
           + Add User
         </Button>
       </div>
@@ -153,7 +153,7 @@ const UsersPage = () => {
               No users found in your organization. Click "Add User" to invite team members.
             </Alert>
           ) : (
-            <Table striped bordered hover responsive>
+            <Table striped bordered hover responsive data-testid="users-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -165,7 +165,7 @@ const UsersPage = () => {
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id}>
+                  <tr key={user.id} data-testid="user-row">
                     <td>{user.firstName} {user.lastName}</td>
                     <td>{user.email}</td>
                     <td>{renderRoleBadge(user.role)}</td>
@@ -176,6 +176,7 @@ const UsersPage = () => {
                         size="sm"
                         onClick={() => handleDeleteClick(user)}
                         disabled={submitting}
+                        data-testid="delete-user-btn"
                       >
                         Delete
                       </Button>
@@ -189,7 +190,7 @@ const UsersPage = () => {
       </Card>
 
       {/* Add User Modal */}
-      <Modal show={showAddModal} onHide={handleCloseAddModal} centered>
+      <Modal show={showAddModal} onHide={handleCloseAddModal} centered data-testid="add-user-modal">
         <Modal.Header closeButton>
           <Modal.Title>Add New User</Modal.Title>
         </Modal.Header>
@@ -268,8 +269,8 @@ const UsersPage = () => {
             </Alert>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={handleCloseAddModal} disabled={submitting}>Cancel</Button>
-            <Button variant="primary" type="submit" disabled={submitting}>
+            <Button variant="secondary" onClick={handleCloseAddModal} disabled={submitting} data-testid="cancel-add-user-btn">Cancel</Button>
+            <Button variant="primary" type="submit" disabled={submitting} data-testid="save-user-btn">
               {submitting ? <><Spinner animation="border" size="sm" className="me-2" />Saving...</> : 'Save User'}
             </Button>
           </Modal.Footer>
@@ -277,7 +278,7 @@ const UsersPage = () => {
       </Modal>
 
       {/* Delete Confirmation Modal */}
-      <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered>
+      <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered data-testid="confirm-delete-modal">
         <Modal.Header closeButton>
           <Modal.Title>Confirm Deletion</Modal.Title>
         </Modal.Header>
@@ -295,7 +296,7 @@ const UsersPage = () => {
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowDeleteModal(false)} disabled={submitting}>Cancel</Button>
-          <Button variant="danger" onClick={handleConfirmDelete} disabled={submitting}>
+          <Button variant="danger" onClick={handleConfirmDelete} disabled={submitting} data-testid="confirm-delete-btn">
             {submitting ? <><Spinner animation="border" size="sm" className="me-2" />Deleting...</> : 'Delete User'}
           </Button>
         </Modal.Footer>

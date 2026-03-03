@@ -107,14 +107,17 @@ Returns service status.
 ### `GET /check`
 
 Query parameters:
-- `name` (required, trimmed)
-- `limit` (optional, default 15, clamped 1..100)
-- `fuzzy` (optional, string or boolean; only "true" yields true)
-- `schema` (optional)
-- `country` (optional, mapped to Yente `countries`)
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `name` | Yes | — | Entity name to search for (trimmed) |
+| `limit` | No | `15` | Max results to return (clamped to 1–100) |
+| `fuzzy` | No | `false` | Enable fuzzy matching (only the string `"true"` enables it) |
+| `schema` | No | — | Restrict search to a Yente entity schema (e.g. `Person`) |
+| `country` | No | — | Country filter; mapped to Yente `countries` param |
 
 Optional header:
-- `x-request-id` for request tracking
+- `x-request-id` — passed through for end-to-end request tracking
 
 Yente request shape:
 - `GET /search/default?q={name}&limit={limit}&fuzzy={fuzzy}&schema={schema}&countries={country}`
@@ -160,6 +163,8 @@ Successful response includes metadata, the normalized search parameters, hit cou
 ```
 
 Notes:
+- `isSanctioned` is `true` when `properties.topics` contains `"sanction"`.
+- `isPep` is `true` when `properties.topics` contains `"pep"`.
 - `properties` preserves raw Yente properties for downstream consumers.
 - Top-level fields are limited to the DTO in [src/models/SanctionEntity.dto.js](src/models/SanctionEntity.dto.js).
 

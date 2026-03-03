@@ -45,7 +45,11 @@ const SettingsPage = () => {
             <Card.Body>
               <Card.Title>Security</Card.Title>
               {status.message && (
-                <Alert variant={status.type === 'success' ? 'success' : 'danger'} className="mt-3">
+                <Alert
+                  variant={status.type === 'success' ? 'success' : 'danger'}
+                  className="mt-3"
+                  data-testid={status.type === 'success' ? 'settings-success-alert' : 'settings-error-alert'}
+                >
                   {status.message}
                 </Alert>
               )}

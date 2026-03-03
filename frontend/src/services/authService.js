@@ -44,6 +44,21 @@ const authService = {
    */
   silentRefresh: async () => {
     try {
+      // Skip the network round-trip if the stored access token is still valid.
+      // We only read the 'exp' claim — no signature verification needed here.
+      const stored = localStorage.getItem('token');
+      if (stored) {
+        try {
+          const payload = JSON.parse(atob(stored.split('.')[1]));
+          // Keep a 60-second buffer so the token doesn't expire mid-request
+          if (payload.exp && payload.exp * 1000 > Date.now() + 60_000) {
+            return { accessToken: stored };
+          }
+        } catch {
+          // Malformed token — fall through to real refresh
+        }
+      }
+
       const response = await api.post('/auth/refresh');
 
       if (response.data.accessToken) {

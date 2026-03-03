@@ -73,12 +73,13 @@ const DeveloperPage = () => {
           <Card.Body>
             <Card.Title>Public API Key</Card.Title>
             <InputGroup className="mt-2">
-              <Form.Control value={apiKey} readOnly />
+              <Form.Control value={apiKey} readOnly data-testid="api-key-display" />
               <Button
                 variant="outline-secondary"
                 type="button"
                 onClick={() => copyToClipboard(apiKey, setCopiedApi)}
                 disabled={!apiKey}
+                data-testid="copy-api-key-btn"
               >
                 {copiedApi ? <Check /> : <Clipboard />}
               </Button>
@@ -92,7 +93,7 @@ const DeveloperPage = () => {
             <p className="text-muted mb-3">
               Reset reveals a new secret once. Store it securely.
             </p>
-            <Button variant="danger" type="button" onClick={onOpenReset}>
+            <Button variant="danger" type="button" onClick={onOpenReset} data-testid="reset-secret-btn">
               Reset Secret Key
             </Button>
           </Card.Body>
@@ -106,7 +107,7 @@ const DeveloperPage = () => {
           {modalStep === 'confirm' && (
             <Form onSubmit={onConfirmReset}>
               <Modal.Body>
-                {modalError && <Alert variant="danger">{modalError}</Alert>}
+                {modalError && <Alert variant="danger" data-testid="reset-error-alert">{modalError}</Alert>}
                 <Form.Group controlId="confirmPassword">
                   <Form.Label>Enter your password to confirm</Form.Label>
                   <Form.Control
@@ -135,11 +136,12 @@ const DeveloperPage = () => {
                   This key will be shown only once. Copy it now!
                 </Alert>
                 <InputGroup className="mb-2">
-                  <Form.Control value={newSecret} readOnly />
+                  <Form.Control value={newSecret} readOnly data-testid="new-secret-display" />
                   <Button
                     variant="outline-secondary"
                     type="button"
                     onClick={() => copyToClipboard(newSecret, setCopiedSecret)}
+                    data-testid="copy-secret-btn"
                   >
                     {copiedSecret ? <Check /> : <Clipboard />}
                   </Button>

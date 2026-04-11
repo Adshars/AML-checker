@@ -489,6 +489,58 @@ describe('Auth Service Integration Tests', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toMatch(/Missing required fields/i);
         });
+
+        it('should change password successfully (Happy Path) -> 200', async () => {
+            const hashedPassword = await hashPassword('OldPass123!');
+
+            mockUserFindById.mockResolvedValue({
+                _id: 'user1',
+                passwordHash: hashedPassword,
+                email: 'user@example.com',
+                firstName: 'Test',
+                lastName: 'User',
+                role: 'user',
+                organizationId: 'org1',
+                createdAt: new Date()
+            });
+            mockUserFindByIdAndUpdate.mockResolvedValue({
+                _id: 'user1',
+                email: 'user@example.com',
+                firstName: 'Test',
+                lastName: 'User',
+                role: 'user',
+                organizationId: 'org1',
+                createdAt: new Date()
+            });
+
+            const res = await request(app).post('/auth/change-password')
+                .set('x-user-id', 'user1')
+                .send({ currentPassword: 'OldPass123!', newPassword: 'NewPass123!' });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/updated successfully/i);
+        });
+
+        it('should fail with wrong current password -> 400', async () => {
+            const hashedPassword = await hashPassword('CorrectPass123!');
+
+            mockUserFindById.mockResolvedValue({
+                _id: 'user1',
+                passwordHash: hashedPassword,
+                email: 'user@example.com',
+                firstName: 'Test',
+                lastName: 'User',
+                role: 'user',
+                organizationId: 'org1',
+                createdAt: new Date()
+            });
+
+            const res = await request(app).post('/auth/change-password')
+                .set('x-user-id', 'user1')
+                .send({ currentPassword: 'WrongPass123!', newPassword: 'NewPass123!' });
+
+            expect(res.statusCode).toBe(400);
+        });
     });
 
     // Users Management Tests
@@ -588,6 +640,59 @@ describe('Auth Service Integration Tests', () => {
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toMatch(/Invalid email/i);
         });
+
+        it('should create user successfully (Happy Path) -> 201', async () => {
+            mockOrgFindById.mockResolvedValue({
+                _id: 'org1', name: 'Test Org', apiKey: 'pk_test',
+                country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+            });
+            mockUserFindOne.mockResolvedValue(null); // No duplicate
+            mockUserCreate.mockResolvedValue({
+                _id: 'newuser1',
+                email: 'newuser@example.com',
+                firstName: 'New',
+                lastName: 'User',
+                role: 'user',
+                organizationId: 'org1',
+                createdAt: new Date()
+            });
+
+            const res = await request(app).post('/users').send({
+                email: 'newuser@example.com',
+                password: 'SecurePass123!',
+                firstName: 'New',
+                lastName: 'User'
+            })
+            .set('x-org-id', 'org1')
+            .set('x-user-id', 'admin1')
+            .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(201);
+            expect(res.body.user.email).toBe('newuser@example.com');
+            expect(res.body.user.role).toBe('user');
+            expect(res.body.user.organizationId).toBe('org1');
+        });
+
+        it('should fail with duplicate email -> 400', async () => {
+            mockOrgFindById.mockResolvedValue({
+                _id: 'org1', name: 'Test Org', apiKey: 'pk_test',
+                country: 'PL', city: 'Gdańsk', address: 'Ul. Długa'
+            });
+            mockUserFindOne.mockResolvedValue({ _id: 'existing', email: 'duplicate@example.com' });
+
+            const res = await request(app).post('/users').send({
+                email: 'duplicate@example.com',
+                password: 'SecurePass123!',
+                firstName: 'New',
+                lastName: 'User'
+            })
+            .set('x-org-id', 'org1')
+            .set('x-user-id', 'admin1')
+            .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/already registered/i);
+        });
     });
 
     describe('DELETE /users/:id', () => {
@@ -621,6 +726,28 @@ describe('Auth Service Integration Tests', () => {
 
             expect(res.statusCode).toBe(400);
             expect(res.body.error).toMatch(/Cannot delete your own account/i);
+        });
+
+        it('should delete user successfully (Happy Path) -> 200', async () => {
+            mockUserFindById.mockResolvedValue({
+                _id: 'user123',
+                organizationId: 'org1',
+                role: 'user',
+                email: 'user@example.com',
+                firstName: 'Test',
+                lastName: 'User',
+                createdAt: new Date()
+            });
+            mockUserFindByIdAndDelete.mockResolvedValue({ _id: 'user123' });
+
+            const res = await request(app).delete('/users/user123')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin');
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/deleted successfully/i);
+            expect(mockUserFindByIdAndDelete).toHaveBeenCalled();
         });
     });
 
@@ -668,6 +795,138 @@ describe('Auth Service Integration Tests', () => {
 
             expect(res.statusCode).toBe(401);
             expect(res.body.error).toMatch(/required|missing/i);
+        });
+    });
+
+    // Organization Keys Tests
+    describe('GET /auth/organization/keys', () => {
+
+        it('should return apiKey for admin (Happy Path) -> 200', async () => {
+            mockOrgFindById.mockResolvedValue({
+                _id: 'org1',
+                name: 'Test Org',
+                apiKey: 'pk_live_test123',
+                country: 'PL',
+                city: 'Gdańsk',
+                address: 'Ul. Długa',
+                createdAt: new Date()
+            });
+
+            const res = await request(app).get('/auth/organization/keys')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1');
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.apiKey).toBe('pk_live_test123');
+        });
+
+        it('should fail with missing context -> 401', async () => {
+            const res = await request(app).get('/auth/organization/keys');
+
+            expect(res.statusCode).toBe(401);
+            expect(res.body.error).toMatch(/Unauthorized/i);
+        });
+
+        it('should return 404 when organization not found -> 404', async () => {
+            mockOrgFindById.mockResolvedValue(null);
+
+            const res = await request(app).get('/auth/organization/keys')
+                .set('x-org-id', 'nonexistent')
+                .set('x-user-id', 'admin1');
+
+            expect(res.statusCode).toBe(404);
+        });
+    });
+
+    // Reset Secret Tests
+    describe('POST /auth/reset-secret', () => {
+
+        it('should reset API secret successfully (Happy Path) -> 200', async () => {
+            const hashedPassword = await hashPassword('AdminPass123!');
+
+            mockUserFindById.mockResolvedValue({
+                _id: 'admin1',
+                passwordHash: hashedPassword,
+                email: 'admin@example.com',
+                firstName: 'Admin',
+                lastName: 'User',
+                role: 'admin',
+                organizationId: 'org1',
+                createdAt: new Date()
+            });
+            mockOrgFindByIdAndUpdate.mockResolvedValue({
+                _id: 'org1',
+                name: 'Test Org',
+                apiKey: 'pk_live_new123',
+                country: 'PL',
+                city: 'Gdańsk',
+                address: 'Ul. Długa',
+                createdAt: new Date()
+            });
+
+            const res = await request(app).post('/auth/reset-secret')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin')
+                .send({ password: 'AdminPass123!' });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.message).toMatch(/reset successfully/i);
+            expect(res.body.newApiSecret).toBeDefined();
+            expect(res.body.apiKey).toBeDefined();
+        });
+
+        it('should fail for non-admin role -> 403', async () => {
+            const res = await request(app).post('/auth/reset-secret')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'user1')
+                .set('x-role', 'user')
+                .send({ password: 'SomePass123!' });
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Admins only/i);
+        });
+
+        it('should fail with missing context -> 401', async () => {
+            const res = await request(app).post('/auth/reset-secret')
+                .send({ password: 'SomePass123!' });
+
+            expect(res.statusCode).toBe(401);
+        });
+
+        it('should fail with missing password -> 400', async () => {
+            const res = await request(app).post('/auth/reset-secret')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin')
+                .send({});
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.error).toMatch(/Password is required/i);
+        });
+
+        it('should fail with wrong password -> 403', async () => {
+            const hashedPassword = await hashPassword('CorrectPass123!');
+
+            mockUserFindById.mockResolvedValue({
+                _id: 'admin1',
+                passwordHash: hashedPassword,
+                email: 'admin@example.com',
+                firstName: 'Admin',
+                lastName: 'User',
+                role: 'admin',
+                organizationId: 'org1',
+                createdAt: new Date()
+            });
+
+            const res = await request(app).post('/auth/reset-secret')
+                .set('x-org-id', 'org1')
+                .set('x-user-id', 'admin1')
+                .set('x-role', 'admin')
+                .send({ password: 'WrongPass123!' });
+
+            expect(res.statusCode).toBe(403);
+            expect(res.body.error).toMatch(/Incorrect password/i);
         });
     });
 });

@@ -1,44 +1,81 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import api, { getHistory } from '../services/api';
 
-// Mock the entire api module to prevent axios initialization
-vi.mock('../services/api', () => {
-  return {
-    default: {
-      get: vi.fn(),
-      post: vi.fn()
-    }
-  };
-});
+describe('getHistory — URL construction', () => {
+  let getSpy;
 
-import api from '../services/api';
-
-describe('api service', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    getSpy = vi.spyOn(api, 'get').mockResolvedValue({ data: { data: [], meta: {} } });
   });
 
-  describe('GET requests', () => {
-    it('should make GET request', async () => {
-      const mockData = { data: [] };
-      api.get.mockResolvedValue(mockData);
-
-      const result = await api.get('/history');
-
-      expect(api.get).toHaveBeenCalledWith('/history');
-      expect(result).toEqual(mockData);
-    });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  describe('POST requests', () => {
-    it('should make POST request', async () => {
-      const userData = { email: 'test@example.com', password: 'pass' };
-      const mockResponse = { data: { user: {} } };
-      api.post.mockResolvedValue(mockResponse);
+  it('builds base URL with no params', async () => {
+    await getHistory();
+    expect(getSpy).toHaveBeenCalledWith('/sanctions/history');
+  });
 
-      const result = await api.post('/auth/login', userData);
+  it('appends page and limit', async () => {
+    await getHistory({ page: 2, limit: 5 });
+    const url = getSpy.mock.calls[0][0];
+    expect(url).toContain('page=2');
+    expect(url).toContain('limit=5');
+  });
 
-      expect(api.post).toHaveBeenCalledWith('/auth/login', userData);
-      expect(result).toEqual(mockResponse);
-    });
+  it('appends search term', async () => {
+    await getHistory({ search: 'Putin' });
+    expect(getSpy.mock.calls[0][0]).toContain('search=Putin');
+  });
+
+  it('appends hasHit=true (boolean)', async () => {
+    await getHistory({ hasHit: true });
+    expect(getSpy.mock.calls[0][0]).toContain('hasHit=true');
+  });
+
+  it('appends hasHit=false (boolean)', async () => {
+    await getHistory({ hasHit: false });
+    expect(getSpy.mock.calls[0][0]).toContain('hasHit=false');
+  });
+
+  it('appends hasHit=true (string)', async () => {
+    await getHistory({ hasHit: 'true' });
+    expect(getSpy.mock.calls[0][0]).toContain('hasHit=true');
+  });
+
+  it('omits hasHit when undefined', async () => {
+    await getHistory({ page: 1 });
+    expect(getSpy.mock.calls[0][0]).not.toContain('hasHit');
+  });
+
+  it('omits empty string params', async () => {
+    await getHistory({ search: '', startDate: '' });
+    const url = getSpy.mock.calls[0][0];
+    expect(url).not.toContain('search=');
+    expect(url).not.toContain('startDate=');
+  });
+
+  it('appends date range params', async () => {
+    await getHistory({ startDate: '2024-01-01', endDate: '2024-12-31T23:59:59' });
+    const url = getSpy.mock.calls[0][0];
+    expect(url).toContain('startDate=2024-01-01');
+    expect(url).toContain('endDate=');
+  });
+
+  it('combines all params correctly', async () => {
+    await getHistory({ page: 1, limit: 10, search: 'Test', hasHit: true });
+    const url = getSpy.mock.calls[0][0];
+    expect(url).toContain('page=1');
+    expect(url).toContain('limit=10');
+    expect(url).toContain('search=Test');
+    expect(url).toContain('hasHit=true');
+  });
+
+  it('returns response data', async () => {
+    getSpy.mockResolvedValue({ data: { data: [{ id: 1 }], meta: { totalItems: 1 } } });
+    const result = await getHistory({ page: 1 });
+    expect(result.data).toHaveLength(1);
+    expect(result.meta.totalItems).toBe(1);
   });
 });

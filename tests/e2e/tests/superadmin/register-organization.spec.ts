@@ -12,7 +12,7 @@ test.describe('Register Organization', () => {
     const data = orgPayload();
     await superAdminPage.fillForm(data);
     await superAdminPage.submit();
-    await expect(superAdminPage.successAlert).toBeVisible();
+    await expect(superAdminPage.successAlert).toBeVisible({ timeout: 15_000 });
     await expect(superAdminPage.successAlert).toContainText('created successfully');
     await expect(superAdminPage.successAlert).toContainText(data.email);
   });

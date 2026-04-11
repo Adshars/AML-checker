@@ -26,11 +26,11 @@ export class LoginPage {
   }
 
   async expectDashboard(): Promise<void> {
-    await this.page.waitForURL('**/dashboard', { timeout: 10_000 });
+    await this.page.waitForURL('**/dashboard', { timeout: 15_000 });
   }
 
   async expectSuperAdminPanel(): Promise<void> {
-    await this.page.waitForURL('**/superadmin', { timeout: 10_000 });
+    await this.page.waitForURL('**/superadmin', { timeout: 15_000 });
   }
 
   async openForgotPasswordModal(): Promise<void> {

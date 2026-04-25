@@ -18,6 +18,14 @@ Microservice-based platform for sanctions and PEP screening using OpenSanctions 
 
 ---
 
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/) v2
+- [Node.js 18+](https://nodejs.org/) — required only for running tests locally (not needed to run the stack)
+- [Git](https://git-scm.com/)
+
+---
+
 ## Quick Start
 
 1) Clone and configure:
@@ -25,24 +33,56 @@ Microservice-based platform for sanctions and PEP screening using OpenSanctions 
 git clone <repository-url>
 cd AML-Checker
 cp .env.example .env
-# Edit .env with strong secrets
+# Required: set JWT_SECRET and REFRESH_TOKEN_SECRET (min 32 chars each).
+# Required: set MONGO_INITDB_ROOT_PASSWORD and POSTGRES_PASSWORD.
+# Optional: configure EMAIL_* for password-reset emails.
 ```
 
-2) Start the stack:
+2) Configure the sanctions dataset (`manifest.yml` in project root):
+
+```yaml
+catalogs:
+  - url: "https://data.opensanctions.org/datasets/latest/index.json"
+    resource_name: "entities.ftm.json"
+    scope: "us_ofac_sdn"   # US OFAC SDN only (default, fast ~200 MB)
+    # scope: "default"     # Full global dataset (slow, ~4 GB, requires more RAM)
+```
+
+> Change `scope` before first startup. Switching datasets later requires clearing only
+> the Yente and Elasticsearch volumes (MongoDB and PostgreSQL data is preserved):
+> ```bash
+> docker compose down
+> docker volume rm $(docker volume ls -q | grep -E 'yente_data|es_data')
+> docker compose up --build
+> ```
+
+3) Start the stack:
 ```bash
 docker compose up --build
 ```
 
-3) Access:
+> **⚠️ First startup:** Yente downloads the dataset on first run — several minutes for
+> `us_ofac_sdn`, much longer for `default`. `/sanctions/check` returns errors until done.
+> Watch progress: `docker compose logs -f yente`
+>
+> **Note:** `YENTE_UPDATE_DATA=true` (default in `.env.example`) re-checks for dataset
+> updates on every container restart. Set to `false` after the initial download to skip
+> this check and start faster.
+
+4) Access the running stack:
 - Frontend: http://localhost (mapped to Vite dev server on 5173)
 - API Gateway: http://localhost:8080
 - API Docs: http://localhost:8080/api-docs
 - Yente: http://localhost:8000
 
-4) Create the first SuperAdmin (MongoDB):
+5) Create the first SuperAdmin (MongoDB):
+
+Replace `<MONGO_PASSWORD>` with `MONGO_INITDB_ROOT_PASSWORD` from `.env`.
+Replace `auth_db` with `MONGO_DB_NAME` if you changed it (default: `auth_db`).
 ```bash
-docker compose exec mongo mongosh
-use auth_db
+docker compose exec mongo mongosh \
+  -u admin -p <MONGO_PASSWORD> --authenticationDatabase admin
+use auth_db   # replace with your MONGO_DB_NAME if different
 
 var orgId = new ObjectId();
 db.organizations.insertOne({
@@ -57,7 +97,8 @@ db.organizations.insertOne({
 
 db.users.insertOne({
   email: "super@admin.com",
-  passwordHash: "$2a$10$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa",
+  // bcrypt hash of "superadmin" — change the password immediately after first login
+  passwordHash: "$2b$10$O3PkJxYIkqf50pMYiorDX.Jqyvq.7oxCv5lItV5qEJeYi01anJVXG",
   firstName: "System",
   lastName: "SuperAdmin",
   role: "superadmin",
@@ -65,7 +106,7 @@ db.users.insertOne({
   createdAt: new Date()
 });
 
-print("SuperAdmin created");
+print("SuperAdmin created. Login: super@admin.com / superadmin");
 ```
 
 ---
@@ -178,6 +219,7 @@ All requests go through the API Gateway (`http://localhost:8080`).
 - `GET /sanctions/check`
 - `GET /sanctions/history`
 - `GET /sanctions/stats`
+- `GET /sanctions/health`
 - `GET /health`
 
 See the service READMEs for detailed request/response formats.
@@ -202,24 +244,27 @@ npm run test:frontend
 
 E2E tests live in [`tests/e2e/`](tests/e2e/) and require the full Docker Compose stack to be running.
 
-1. Copy and fill the E2E environment file:
+1. Ensure the SuperAdmin exists in MongoDB (see step 5 in [Quick Start](#quick-start)).
+
+2. Copy and fill the E2E environment file:
    ```bash
    cp .env.test.example .env.test
-   # Set E2E_SUPERADMIN_EMAIL, E2E_SUPERADMIN_PASSWORD, E2E_BASE_URL, E2E_GATEWAY_URL
+   # Set E2E_SUPERADMIN_EMAIL and E2E_SUPERADMIN_PASSWORD to match the seeded superadmin.
+   # E2E_BASE_URL defaults to http://localhost, E2E_GATEWAY_URL to http://localhost:8080.
    ```
 
-2. Start the stack:
+3. Start the stack:
    ```bash
    docker compose up --build
    ```
 
-3. Install Playwright dependencies from the project root:
+4. Install Playwright dependencies from the project root:
    ```bash
    npm install
    npx playwright install chromium
    ```
 
-4. Run E2E tests (from project root):
+5. Run E2E tests (from project root):
    ```bash
    npm run test:e2e           # headless
    npm run test:e2e:headed    # headed (watch the browser)
@@ -232,10 +277,12 @@ E2E tests live in [`tests/e2e/`](tests/e2e/) and require the full Docker Compose
 
 ## Troubleshooting
 
-- Yente downloads datasets on first startup (can take minutes).
-- If gateway returns 401, verify JWT or API key headers.
-- If audit logs are missing, check core-service logs and PostgreSQL status.
-- Services not starting: `docker compose logs <service>`.
+- **Gateway fails to start** (`SECURITY ERROR: JWT_SECRET...`): `JWT_SECRET` is missing or empty in `.env`. It is required — the gateway refuses to start without it.
+- **Yente downloads datasets on first startup** (can take minutes). See the ⚠️ note in Quick Start.
+- **`/sanctions/check` returns 502**: Yente is still downloading its dataset or Elasticsearch is not yet healthy. Check with `docker compose logs -f yente elasticsearch`.
+- **Gateway returns 401**: verify `Authorization: Bearer <token>` header (JWT) or `x-api-key` / `x-api-secret` headers (API Key).
+- **Audit logs missing**: check core-service logs and PostgreSQL status — `docker compose logs core-service postgres`.
+- **Services not starting**: `docker compose logs <service>`.
 
 ---
 

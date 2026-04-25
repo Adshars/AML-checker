@@ -31,12 +31,38 @@ security:
     apiSecretAuth: []
 
 paths:
+  # ==================== GATEWAY ====================
+
+  /health:
+    get:
+      summary: Gateway health check
+      description: Returns the API Gateway service status. No authentication required.
+      tags: [Gateway]
+      security: []
+      responses:
+        200:
+          description: Gateway is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: api-gateway
+                  status:
+                    type: string
+                    example: UP
+
   # ==================== AUTH SERVICE ====================
-  
+
   /auth/login:
     post:
       summary: User login
-      description: Authenticate user and receive JWT access token and refresh token
+      description: >
+        Authenticate user and receive a short-lived JWT access token in the response body.
+        A refresh token is set as an **HttpOnly cookie** (`refreshToken`) — it is NOT
+        returned in the JSON body.
       tags: [Authentication]
       security: []
       requestBody:
@@ -58,6 +84,14 @@ paths:
       responses:
         200:
           description: Login successful
+          headers:
+            Set-Cookie:
+              description: >
+                HttpOnly refresh token cookie: `refreshToken=<token>; HttpOnly; Path=/auth;
+                SameSite=Lax`. Use `withCredentials: true` (axios) or `credentials: include`
+                (fetch) so the browser sends this cookie on subsequent requests.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -66,8 +100,6 @@ paths:
                   message:
                     type: string
                   accessToken:
-                    type: string
-                  refreshToken:
                     type: string
                   user:
                     type: object
@@ -90,22 +122,20 @@ paths:
   /auth/refresh:
     post:
       summary: Refresh access token
-      description: Get new access token using refresh token
+      description: >
+        Exchange the HttpOnly `refreshToken` cookie for a new access token.
+        No request body required — the cookie is sent automatically by the browser.
+        On success the old cookie is revoked and a new rotated `refreshToken` cookie is set.
       tags: [Authentication]
       security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [refreshToken]
-              properties:
-                refreshToken:
-                  type: string
       responses:
         200:
           description: Token refreshed
+          headers:
+            Set-Cookie:
+              description: Rotated refreshToken HttpOnly cookie.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -113,24 +143,20 @@ paths:
                 properties:
                   accessToken:
                     type: string
+        401:
+          description: Missing refresh token cookie
         403:
-          description: Invalid or expired refresh token
+          description: Invalid or revoked refresh token
 
   /auth/logout:
     post:
       summary: Logout user
-      description: Revoke refresh token
+      description: >
+        Revoke the refresh token and clear the HttpOnly cookie.
+        No request body required — the `refreshToken` cookie is read automatically.
+        Returns 200 even if no cookie is present (graceful logout).
       tags: [Authentication]
       security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                refreshToken:
-                  type: string
       responses:
         200:
           description: Logout successful
@@ -202,40 +228,59 @@ paths:
         403:
           description: Forbidden - SuperAdmin only
 
-  /auth/validate-api-key:
+  /auth/register-user:
     post:
-      summary: Validate API key and secret
-      description: Verify API credentials for B2B integration
+      summary: Register new user in organization (Admin only)
+      description: >
+        Create a new regular user within the authenticated admin's organization.
+        Role is always forced to `user` regardless of input.
+        Sends a welcome email to the new user.
       tags: [Authentication]
-      security: []
+      responses:
+        201:
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      fullName:
+                        type: string
+                      email:
+                        type: string
+                      role:
+                        type: string
+                      organizationId:
+                        type: string
+        400:
+          description: Validation error or duplicate email
+        403:
+          description: Forbidden — admin or superadmin role required
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [apiKey, apiSecret]
+              required: [email, password, firstName, lastName]
               properties:
-                apiKey:
+                email:
                   type: string
-                apiSecret:
+                  format: email
+                password:
                   type: string
-      responses:
-        200:
-          description: Valid credentials
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  valid:
-                    type: boolean
-                  organizationId:
-                    type: string
-                  organizationName:
-                    type: string
-        401:
-          description: Invalid credentials
+                  format: password
+                firstName:
+                  type: string
+                lastName:
+                  type: string
 
   /auth/forgot-password:
     post:
@@ -364,7 +409,9 @@ paths:
   /users:
     get:
       summary: Get all users
-      description: List all users in organization (Admin only)
+      description: >
+        List all regular users in the authenticated admin's organization.
+        Admins and superadmins are excluded from the returned list.
       tags: [User Management]
       responses:
         200:
@@ -374,7 +421,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  users:
+                  data:
                     type: array
                     items:
                       type: object
@@ -389,10 +436,16 @@ paths:
                           type: string
                         role:
                           type: string
-    
+                        createdAt:
+                          type: string
+                          format: date-time
+
     post:
       summary: Create new user
-      description: Register new user in organization (Admin only)
+      description: >
+        Create a new user in the authenticated admin's organization.
+        Role is always forced to `user`. The `organizationId` is derived from the
+        authenticated admin's context — it must NOT be sent in the request body.
       tags: [User Management]
       requestBody:
         required: true
@@ -400,7 +453,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, firstName, lastName, organizationId]
+              required: [email, password, firstName, lastName]
               properties:
                 email:
                   type: string
@@ -412,17 +465,13 @@ paths:
                   type: string
                 lastName:
                   type: string
-                organizationId:
-                  type: string
-                role:
-                  type: string
-                  enum: [user, admin]
-                  default: user
       responses:
         201:
           description: User created successfully
+        400:
+          description: Validation error or duplicate email
         403:
-          description: Forbidden - Admin only
+          description: Forbidden — admin or superadmin role required
 
   /users/{userId}:
     delete:
@@ -546,37 +595,72 @@ paths:
                     items:
                       type: object
                       properties:
-                        _id:
+                        id:
                           type: string
                         searchQuery:
                           type: string
                         hasHit:
                           type: boolean
-                        resultsCount:
+                        hitsCount:
                           type: integer
                         userId:
                           type: string
+                        userName:
+                          type: string
+                        userEmail:
+                          type: string
                         organizationId:
                           type: string
+                        isSanctioned:
+                          type: boolean
+                        isPep:
+                          type: boolean
                         createdAt:
                           type: string
                           format: date-time
-                  pagination:
+                  meta:
                     type: object
                     properties:
                       currentPage:
                         type: integer
                       totalPages:
                         type: integer
-                      totalResults:
+                      totalItems:
                         type: integer
-                      limit:
+                      itemsPerPage:
                         type: integer
+
+  /sanctions/health:
+    get:
+      summary: Core Service health check
+      description: Proxied health check for the Core Service. Returns Core Service and PostgreSQL status.
+      tags: [Sanctions]
+      responses:
+        200:
+          description: Core Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: core-service
+                  status:
+                    type: string
+                    example: UP
+                  database:
+                    type: string
+                    example: Connected
+        401:
+          description: Unauthorized
+        502:
+          description: Core Service unavailable
 
   /sanctions/stats:
     get:
       summary: Get dashboard statistics
-      description: Retrieve screening statistics for organization
+      description: Retrieve aggregated screening statistics for the authenticated organization.
       tags: [Sanctions]
       responses:
         200:
@@ -586,12 +670,25 @@ paths:
               schema:
                 type: object
                 properties:
-                  totalSearches:
+                  totalChecks:
                     type: integer
-                  hitsFound:
+                  sanctionHits:
                     type: integer
-                  uniqueQueries:
+                  pepHits:
                     type: integer
-                  lastSearch:
-                    type: string
-                    format: date-time
+                  recentLogs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        searchQuery:
+                          type: string
+                        isSanctioned:
+                          type: boolean
+                        isPep:
+                          type: boolean
+                        createdAt:
+                          type: string
+                          format: date-time

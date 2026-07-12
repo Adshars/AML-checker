@@ -1,15 +1,23 @@
-import { Page, Route } from '@playwright/test';
+import { Page, Route, Locator } from '@playwright/test';
 
 export class CheckPage {
-  private readonly entityInput = this.page.getByTestId('screening-input');
-  readonly checkBtn = this.page.getByTestId('check-btn');
-  readonly resultClean = this.page.getByTestId('result-clean');
-  readonly resultHit = this.page.getByTestId('result-hit');
-  readonly entityItems = this.page.getByTestId('entity-item');
-  readonly entityModal = this.page.getByTestId('entity-modal');
-  readonly entityModalClose = this.page.getByTestId('entity-modal-close');
+  private readonly entityInput: Locator;
+  readonly checkBtn: Locator;
+  readonly resultClean: Locator;
+  readonly resultHit: Locator;
+  readonly entityItems: Locator;
+  readonly entityModal: Locator;
+  readonly entityModalClose: Locator;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    this.entityInput = this.page.getByTestId('screening-input');
+    this.checkBtn = this.page.getByTestId('check-btn');
+    this.resultClean = this.page.getByTestId('result-clean');
+    this.resultHit = this.page.getByTestId('result-hit');
+    this.entityItems = this.page.getByTestId('entity-item');
+    this.entityModal = this.page.getByTestId('entity-modal');
+    this.entityModalClose = this.page.getByTestId('entity-modal-close');
+  }
 
   async goto(): Promise<void> {
     await this.page.goto('/check');

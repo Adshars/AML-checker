@@ -1,23 +1,39 @@
-import { Page } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 
 export class UsersPage {
-  readonly addUserBtn = this.page.getByTestId('add-user-btn');
-  readonly usersTable = this.page.getByTestId('users-table');
-  readonly userRows = this.page.getByTestId('user-row');
-  readonly deleteUserBtns = this.page.getByTestId('delete-user-btn');
+  readonly addUserBtn: Locator;
+  readonly usersTable: Locator;
+  readonly userRows: Locator;
+  readonly deleteUserBtns: Locator;
 
-  private readonly addUserModal = this.page.getByTestId('add-user-modal');
-  private readonly firstNameInput = this.addUserModal.getByLabel('First Name');
-  private readonly lastNameInput = this.addUserModal.getByLabel('Last Name');
-  private readonly emailInput = this.addUserModal.getByLabel('Email');
-  private readonly passwordInput = this.addUserModal.getByLabel('Password');
-  private readonly cancelAddBtn = this.page.getByTestId('cancel-add-user-btn');
-  private readonly saveUserBtn = this.page.getByTestId('save-user-btn');
+  private readonly addUserModal: Locator;
+  private readonly firstNameInput: Locator;
+  private readonly lastNameInput: Locator;
+  private readonly emailInput: Locator;
+  private readonly passwordInput: Locator;
+  private readonly cancelAddBtn: Locator;
+  private readonly saveUserBtn: Locator;
 
-  private readonly confirmDeleteModal = this.page.getByTestId('confirm-delete-modal');
-  readonly confirmDeleteBtn = this.page.getByTestId('confirm-delete-btn');
+  private readonly confirmDeleteModal: Locator;
+  readonly confirmDeleteBtn: Locator;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    this.addUserBtn = this.page.getByTestId('add-user-btn');
+    this.usersTable = this.page.getByTestId('users-table');
+    this.userRows = this.page.getByTestId('user-row');
+    this.deleteUserBtns = this.page.getByTestId('delete-user-btn');
+
+    this.addUserModal = this.page.getByTestId('add-user-modal');
+    this.firstNameInput = this.addUserModal.getByLabel('First Name');
+    this.lastNameInput = this.addUserModal.getByLabel('Last Name');
+    this.emailInput = this.addUserModal.getByLabel('Email');
+    this.passwordInput = this.addUserModal.getByLabel('Password');
+    this.cancelAddBtn = this.page.getByTestId('cancel-add-user-btn');
+    this.saveUserBtn = this.page.getByTestId('save-user-btn');
+
+    this.confirmDeleteModal = this.page.getByTestId('confirm-delete-modal');
+    this.confirmDeleteBtn = this.page.getByTestId('confirm-delete-btn');
+  }
 
   async goto(): Promise<void> {
     await this.page.goto('/users');

@@ -1,20 +1,28 @@
+import type { Request, Response } from 'express';
 import logger from '../utils/logger.js';
 import { UpstreamError } from '../services/SanctionsService.js';
+import type SanctionsService from '../services/SanctionsService.js';
 import { CheckSanctionsRequestDto, ValidationError } from '../application/dtos/requests/index.js';
 import { CheckSanctionsResponseDto } from '../application/dtos/responses/index.js';
 
+interface SanctionsControllerDeps {
+  sanctionsService: SanctionsService;
+}
+
 export default class SanctionsController {
-  constructor({ sanctionsService }) {
+  private sanctionsService: SanctionsService;
+
+  constructor({ sanctionsService }: SanctionsControllerDeps) {
     this.sanctionsService = sanctionsService;
   }
 
-  getHealth = (req, res) => {
+  getHealth = (_req: Request, res: Response): void => {
     logger.debug('Health check requested');
     res.json({ status: 'UP', service: 'op-adapter', mode: 'ES Modules + Retry' });
   };
 
-  checkSanctions = async (req, res) => {
-    let requestDto;
+  checkSanctions = async (req: Request, res: Response): Promise<Response | void> => {
+    let requestDto: CheckSanctionsRequestDto;
 
     try {
       requestDto = CheckSanctionsRequestDto.fromRequest(req);
@@ -47,10 +55,11 @@ export default class SanctionsController {
       res.json(responseDto.toJSON());
     } catch (error) {
       if (error instanceof UpstreamError) {
+        const cause = error.cause instanceof Error ? error.cause.message : undefined;
         logger.error('Error connecting to Yente (after retries)', {
           requestId: requestDto.requestId,
           error: error.message,
-          cause: error.cause?.message,
+          cause,
         });
         return res.status(502).json({
           error: 'Sanctions Service Unavailable',
@@ -58,9 +67,10 @@ export default class SanctionsController {
         });
       }
 
+      const message = error instanceof Error ? error.message : String(error);
       logger.error('Unexpected error during check', {
         requestId: requestDto.requestId,
-        error: error.message,
+        error: message,
       });
       return res.status(500).json({ error: 'Internal Server Error' });
     }

@@ -1,16 +1,25 @@
-import { jest } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 
 // Set environment variables for testing
 process.env.NODE_ENV = 'test';
 process.env.YENTE_API_URL = 'http://localhost:8000';
 
+interface YenteSearchParams {
+    name: string;
+    limit: number;
+    fuzzy: boolean;
+    schema: string | null;
+    country: string | null;
+    requestId?: string;
+}
+
 // Mock configuration
-const mockSearch = jest.fn();
+const mockSearch = jest.fn<(params: YenteSearchParams) => Promise<unknown>>();
 
 // YenteClient mock
 jest.unstable_mockModule('../src/clients/YenteClient.js', () => ({
     default: class {
-        search(params) {
+        search(params: YenteSearchParams) {
             return mockSearch(params);
         }
     }
@@ -223,8 +232,7 @@ describe('OP-Adapter Integration Tests', () => {
         });
 
         it('should return 502 when Yente is unreachable (network error)', async () => {
-            const networkError = new Error('Network Timeout');
-            networkError.code = 'ECONNREFUSED';
+            const networkError = Object.assign(new Error('Network Timeout'), { code: 'ECONNREFUSED' });
 
             mockSearch.mockRejectedValue(networkError);
 
@@ -258,8 +266,7 @@ describe('OP-Adapter Integration Tests', () => {
         });
 
         it('should return 502 when Yente returns 503 Service Unavailable', async () => {
-            const yenteError = new Error('Service Unavailable');
-            yenteError.response = { status: 503 };
+            const yenteError = Object.assign(new Error('Service Unavailable'), { response: { status: 503 } });
             mockSearch.mockRejectedValue(yenteError);
 
             const res = await request(app)

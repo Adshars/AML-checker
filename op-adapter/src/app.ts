@@ -1,9 +1,9 @@
-import express from 'express';
+import express, { type Application } from 'express';
 import YenteClient from './clients/YenteClient.js';
 import SanctionsService from './services/SanctionsService.js';
 import SanctionsController from './controllers/SanctionsController.js';
 
-export const createApp = () => {
+export const createApp = (): Application => {
   const app = express();
   app.use(express.json());
 

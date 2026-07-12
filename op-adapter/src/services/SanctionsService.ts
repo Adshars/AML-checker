@@ -1,20 +1,34 @@
 import SanctionEntity from '../models/SanctionEntity.dto.js';
 import logger from '../utils/logger.js';
+import type YenteClient from '../clients/YenteClient.js';
+import type { ServiceParams } from '../application/dtos/requests/CheckSanctionsRequestDto.js';
+import type { SearchStats } from '../application/dtos/responses/CheckSanctionsResponseDto.js';
 
 export class UpstreamError extends Error {
-  constructor(message, cause) {
+  constructor(message: string, cause?: unknown) {
     super(message);
     this.name = 'UpstreamError';
     this.cause = cause;
   }
 }
 
+interface SanctionsServiceDeps {
+  yenteClient: YenteClient;
+}
+
+export interface FindEntitiesResult {
+  results: SanctionEntity[];
+  stats: SearchStats;
+}
+
 export default class SanctionsService {
-  constructor({ yenteClient }) {
+  private yenteClient: YenteClient;
+
+  constructor({ yenteClient }: SanctionsServiceDeps) {
     this.yenteClient = yenteClient;
   }
 
-  async findEntities({ name, limit, fuzzy, schema, country, requestId }) {
+  async findEntities({ name, limit, fuzzy, schema, country, requestId }: ServiceParams): Promise<FindEntitiesResult> {
     const startedAt = Date.now();
     let yenteResponse;
 

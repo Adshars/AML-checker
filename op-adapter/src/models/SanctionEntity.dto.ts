@@ -3,7 +3,49 @@
  * Maps Yente API response while preserving original properties for frontend.
  * Extracts direct flags (isSanctioned, isPep) for downstream services.
  */
+
+export interface YenteResponseItem {
+  id?: string | null;
+  caption?: string | null;
+  schema?: string | null;
+  score?: number | null;
+  datasets?: string[];
+  properties?: {
+    name?: string[];
+    topics?: string[];
+    birthDate?: string[];
+    country?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface SanctionEntityParams {
+  id: string | null;
+  caption: string | null;
+  name: string;
+  schema: string | null;
+  score: number;
+  isSanctioned: boolean;
+  isPep: boolean;
+  birthDate: string | null;
+  country: string[];
+  datasets: string[];
+  properties: Record<string, unknown>;
+}
+
 export default class SanctionEntity {
+  id: string | null;
+  caption: string | null;
+  name: string;
+  schema: string | null;
+  score: number;
+  isSanctioned: boolean;
+  isPep: boolean;
+  birthDate: string | null;
+  country: string[];
+  datasets: string[];
+  properties: Record<string, unknown>;
+
   constructor({
     id,
     caption,
@@ -16,7 +58,7 @@ export default class SanctionEntity {
     country,
     datasets,
     properties,
-  }) {
+  }: SanctionEntityParams) {
     this.id = id;
     this.caption = caption;
     this.name = name;
@@ -34,10 +76,8 @@ export default class SanctionEntity {
    * Factory method to create SanctionEntity from Yente API response item.
    * Preserves original properties object for frontend while extracting
    * direct flags for core-service consumption.
-   * @param {Object} item - Raw Yente API result item
-   * @returns {SanctionEntity} Mapped entity
    */
-  static fromYenteResponse(item) {
+  static fromYenteResponse(item: YenteResponseItem): SanctionEntity {
     const props = item.properties || {};
     const topics = props.topics || [];
 
@@ -59,7 +99,6 @@ export default class SanctionEntity {
   /**
    * Convert entity to plain JSON object for API response.
    * Includes both direct flags and original properties object.
-   * @returns {Object} Plain object representation
    */
   toJSON() {
     return {

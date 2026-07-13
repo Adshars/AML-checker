@@ -36,7 +36,7 @@ afterAll(() => {
 
 describe('API Gateway E2E', () => {
 
-	test('Rate limiting: 101st request to /sanctions returns 429', async () => {
+	test('Rate limiting: 201st request to /sanctions returns 429', async () => {
 		const app = await setupApp();
 		const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);
 
@@ -47,7 +47,7 @@ describe('API Gateway E2E', () => {
 			.reply(200, { ok: true });
 
 		let lastResponse;
-		for (let i = 1; i <= 101; i += 1) {
+		for (let i = 1; i <= 201; i += 1) {
 			const res = await request(app)
 				.get('/sanctions/check')
 				.query({ name: 'test' })

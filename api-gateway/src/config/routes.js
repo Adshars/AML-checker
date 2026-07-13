@@ -22,7 +22,7 @@ export const ROUTES = [
 
 export const AUTH_LIMITER_CONFIG = {
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20,
+  max: 200,
   message: { error: 'Too many auth requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -30,7 +30,7 @@ export const AUTH_LIMITER_CONFIG = {
 
 export const API_LIMITER_CONFIG = {
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 200,
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

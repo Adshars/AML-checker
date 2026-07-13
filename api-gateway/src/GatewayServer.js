@@ -86,7 +86,7 @@ export default class GatewayServer {
   setupRateLimiters() {
     this.authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 20,
+      max: 200,
       message: { error: 'Too many auth requests from this IP, please try again later.' },
       standardHeaders: true,
       legacyHeaders: false,
@@ -94,7 +94,7 @@ export default class GatewayServer {
 
     this.apiLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100,
+      max: 200,
       message: { error: 'Too many requests from this IP, please try again later.' },
       standardHeaders: true,
       legacyHeaders: false,

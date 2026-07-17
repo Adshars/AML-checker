@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import axios from 'axios';
 import crypto from 'crypto';
 import NodeCache from 'node-cache';
+import type { Request, Response, NextFunction } from 'express';
 import logger from './utils/logger.js';
 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
@@ -12,7 +13,28 @@ if (!JWT_SECRET) {
   throw new Error('SECURITY ERROR: JWT_SECRET environment variable is required. Application cannot start without it.');
 }
 
+export interface AuthResult {
+  orgId?: string | null;
+  authType: 'api-key' | 'jwt';
+  userId?: string | null;
+  email?: string | null;
+  role?: string | null;
+  userName?: string;
+}
+
+interface DecodedJwtPayload {
+  userId?: string;
+  organizationId?: string;
+  role?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
 export default class AuthMiddleware {
+  apiKeyCache: NodeCache;
+  middleware: (req: Request, res: Response, next: NextFunction) => Promise<void>;
+
   constructor() {
     // Cache with 60 second TTL for API key validation
     this.apiKeyCache = new NodeCache({ stdTTL: 60, checkperiod: 120 });
@@ -23,9 +45,9 @@ export default class AuthMiddleware {
   /**
    * Validates API Key by checking cache first, then calling auth-service
    */
-  async handleApiKeyAuth(req) {
-    const apiKey = req.headers['x-api-key'];
-    const apiSecret = req.headers['x-api-secret'];
+  async handleApiKeyAuth(req: Request): Promise<AuthResult | null> {
+    const apiKey = req.headers['x-api-key'] as string | undefined;
+    const apiSecret = req.headers['x-api-secret'] as string | undefined;
 
     if (!apiKey || !apiSecret) return null;
 
@@ -33,7 +55,7 @@ export default class AuthMiddleware {
     const cacheKey = crypto.createHash('sha256').update(`${apiKey}:${apiSecret}`).digest('hex');
 
     // Check cache first (performance optimization)
-    const cached = this.apiKeyCache.get(cacheKey);
+    const cached = this.apiKeyCache.get<AuthResult>(cacheKey);
     if (cached) {
       logger.debug('API Key Auth - Cache Hit', { requestId: req.requestId, orgId: cached.orgId });
       return cached;
@@ -50,7 +72,7 @@ export default class AuthMiddleware {
       }, { timeout: 2000 });
 
       if (response.data.valid) {
-        const result = {
+        const result: AuthResult = {
           orgId: response.data.organizationId,
           authType: 'api-key',
           userId: null,
@@ -65,7 +87,8 @@ export default class AuthMiddleware {
         return result;
       }
     } catch (error) {
-      logger.warn('API Key Validation Failed', { requestId: req.requestId, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('API Key Validation Failed', { requestId: req.requestId, error: message });
       throw new Error('Invalid API Key or Secret');
     }
 
@@ -75,14 +98,14 @@ export default class AuthMiddleware {
   /**
    * Validates JWT token
    */
-  handleJwtAuth(req) {
+  handleJwtAuth(req: Request): AuthResult | null {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) return null;
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET as string) as DecodedJwtPayload;
       logger.debug('JWT Verified', { requestId: req.requestId, userId: decoded.userId, orgId: decoded.organizationId, email: decoded.email });
       return {
         orgId: decoded.organizationId,
@@ -93,7 +116,8 @@ export default class AuthMiddleware {
         userName: decoded.firstName && decoded.lastName ? `${decoded.firstName} ${decoded.lastName}` : (decoded.email || 'User')
       };
     } catch (error) {
-      logger.warn('JWT Verification Failed', { requestId: req.requestId, error: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('JWT Verification Failed', { requestId: req.requestId, error: message });
       throw new Error('Invalid or expired JWT token');
     }
   }
@@ -102,10 +126,11 @@ export default class AuthMiddleware {
    * Main middleware - tries API Key auth first, then JWT
    * Attaches auth context to BOTH req.auth (for code reference) and req.headers (for proxy forwarding)
    */
-  async validate(req, res, next) {
+  async validate(req: Request, res: Response, next: NextFunction): Promise<void> {
     // FIX: Allow CORS Preflight requests to pass without auth
     if (req.method === 'OPTIONS') {
-      return next();
+      next();
+      return;
     }
 
     try {
@@ -116,14 +141,15 @@ export default class AuthMiddleware {
       if (authResult) {
         req.auth = authResult;
         // CRITICAL: Attach to req.headers for proxy forwarding
-        req.headers['x-org-id'] = authResult.orgId;
+        req.headers['x-org-id'] = authResult.orgId as string;
         req.headers['x-auth-type'] = authResult.authType;
         req.headers['x-user-email'] = 'api@system';
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
-        
+
         logger.info('Auth Success', { requestId: req.requestId, authType: 'api-key', orgId: authResult.orgId });
-        return next();
+        next();
+        return;
       }
 
       // Try JWT auth
@@ -131,23 +157,25 @@ export default class AuthMiddleware {
       if (authResult) {
         req.auth = authResult;
         // CRITICAL: Attach to req.headers for proxy forwarding
-        req.headers['x-org-id'] = authResult.orgId;
+        req.headers['x-org-id'] = authResult.orgId as string;
         req.headers['x-auth-type'] = authResult.authType;
         if (authResult.email) req.headers['x-user-email'] = authResult.email;
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
         if (authResult.userName) req.headers['x-user-name'] = authResult.userName;
-        
+
         logger.info('Auth Success', { requestId: req.requestId, authType: 'jwt', userId: authResult.userId });
-        return next();
+        next();
+        return;
       }
 
       // No valid auth found
       logger.warn('Auth Failed - No Valid Credentials', { requestId: req.requestId });
-      return res.status(401).json({ error: 'Unauthorized: Missing or invalid credentials' });
+      res.status(401).json({ error: 'Unauthorized: Missing or invalid credentials' });
     } catch (error) {
-      logger.error('Auth Error', { requestId: req.requestId, error: error.message });
-      return res.status(401).json({ error: 'Unauthorized: ' + error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Auth Error', { requestId: req.requestId, error: message });
+      res.status(401).json({ error: 'Unauthorized: ' + message });
     }
   }
 }

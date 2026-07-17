@@ -2,13 +2,14 @@ import { jest } from '@jest/globals';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import nock from 'nock';
+import type { Application } from 'express';
 
 const JWT_SECRET = 'test-jwt-secret';
 const AUTH_URL = 'http://auth-service.test';
 const CORE_URL = 'http://core-service.test';
 
 // Helper to create a fresh app instance with env configured
-const setupApp = async () => {
+const setupApp = async (): Promise<Application> => {
 	process.env.NODE_ENV = 'test';
 	process.env.JWT_SECRET = JWT_SECRET;
 	process.env.AUTH_SERVICE_URL = AUTH_URL;
@@ -157,62 +158,62 @@ describe('API Gateway E2E', () => {
 });
 
 describe('API Gateway - Authentication & Authorization', () => {
-	
+
 	test('Auth: Invalid JWT token returns 401', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.get('/sanctions/check')
 			.query({ name: 'test' })
 			.set('Authorization', 'Bearer invalid.token.here');
-		
+
 		expect(res.statusCode).toBe(401);
 		expect(res.body.error).toMatch(/Unauthorized/i);
 	});
 
 	test('Auth: Missing Authorization header on protected route returns 401', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.get('/sanctions/check')
 			.query({ name: 'test' });
-		
+
 		expect(res.statusCode).toBe(401);
 		expect(res.body.error).toMatch(/Unauthorized/i);
 	});
 
 	test('Auth: Valid API Key and Secret passes authentication', async () => {
 		const app = await setupApp();
-		
+
 		nock(AUTH_URL)
 			.post('/auth/internal/validate-api-key')
 			.reply(200, { valid: true, organizationId: 'org1' });
-		
+
 		nock(CORE_URL)
 			.get('/test')
 			.reply(200, { ok: 'core' });
-		
+
 		const res = await request(app)
 			.get('/sanctions/test')
 			.set('x-api-key', 'pk_live_test123')
 			.set('x-api-secret', 'sk_live_secret456');
-		
+
 		expect(res.statusCode).toBe(200);
 		expect(res.body.ok).toBe('core');
 	});
 
 	test('Auth: Invalid API Key returns 401', async () => {
 		const app = await setupApp();
-		
+
 		nock(AUTH_URL)
 			.post('/auth/internal/validate-api-key')
 			.reply(401, { error: 'Invalid API Key' });
-		
+
 		const res = await request(app)
 			.get('/sanctions/test')
 			.set('x-api-key', 'invalid_key')
 			.set('x-api-secret', 'invalid_secret');
-		
+
 		expect(res.statusCode).toBe(401);
 	});
 });
@@ -221,50 +222,50 @@ describe('API Gateway - Protected Routes Enforcement', () => {
 
 	test('Protected: /auth/register-user requires authentication', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.post('/auth/register-user')
 			.send({ email: 'test@test.com', password: 'pass' });
-		
+
 		expect(res.statusCode).toBe(401);
 	});
 
 	test('Protected: /auth/reset-secret requires authentication', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.post('/auth/reset-secret')
 			.send({ password: 'mypassword' });
-		
+
 		expect(res.statusCode).toBe(401);
 	});
 
 	test('Protected: /auth/change-password requires authentication', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.post('/auth/change-password')
 			.send({ currentPassword: 'old', newPassword: 'new' });
-		
+
 		expect(res.statusCode).toBe(401);
 	});
 
 	test('Protected: /sanctions/* requires authentication', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.get('/sanctions/check')
 			.query({ name: 'test' });
-		
+
 		expect(res.statusCode).toBe(401);
 	});
 
 	test('Protected: /users/* requires authentication', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.get('/users');
-		
+
 		expect(res.statusCode).toBe(401);
 	});
 });
@@ -273,11 +274,11 @@ describe('API Gateway - CORS & Headers', () => {
 
 	test('CORS: OPTIONS preflight request allowed without auth', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.options('/sanctions/check')
 			.set('Origin', 'http://localhost:3000');
-		
+
 		expect(res.statusCode).toBe(204);
 		expect(res.headers['access-control-allow-credentials']).toBe('true');
 	});
@@ -285,19 +286,19 @@ describe('API Gateway - CORS & Headers', () => {
 	test('Headers: Auth context headers injected to proxy request', async () => {
 		const app = await setupApp();
 		const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);
-		
-		let capturedHeaders = {};
+
+		let capturedHeaders: Record<string, unknown> = {};
 		nock(CORE_URL)
 			.get('/test')
 			.reply(function() {
 				capturedHeaders = this.req.headers;
 				return [200, { ok: true }];
 			});
-		
+
 		await request(app)
 			.get('/sanctions/test')
 			.set('Authorization', `Bearer ${token}`);
-		
+
 		expect(capturedHeaders['x-org-id']).toBe('org1');
 		expect(capturedHeaders['x-user-id']).toBe('u1');
 		expect(capturedHeaders['x-role']).toBe('user');
@@ -309,10 +310,10 @@ describe('API Gateway - Health Check', () => {
 
 	test('Health: /health endpoint returns UP status', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.get('/health');
-		
+
 		expect(res.statusCode).toBe(200);
 		expect(res.body.service).toBe('api-gateway');
 		expect(res.body.status).toBe('UP');
@@ -320,10 +321,10 @@ describe('API Gateway - Health Check', () => {
 
 	test('Health: /health does not require authentication', async () => {
 		const app = await setupApp();
-		
+
 		const res = await request(app)
 			.get('/health');
-		
+
 		expect(res.statusCode).toBe(200);
 	});
 });
@@ -333,16 +334,16 @@ describe('API Gateway - Error Handling', () => {
 	test('Error: Upstream service error is handled', async () => {
 		const app = await setupApp();
 		const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);
-		
+
 		nock(CORE_URL)
 			.get(/\/check/)
 			.reply(500, { error: 'Internal Server Error' });
-		
+
 		const res = await request(app)
 			.get('/sanctions/check')
 			.query({ name: 'test' })
 			.set('Authorization', `Bearer ${token}`);
-		
+
 		expect(res.statusCode).toBe(500);
 	});
 });

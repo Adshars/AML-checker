@@ -1,11 +1,11 @@
-import express from 'express';
-import cors from 'cors';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import express, { type Application, type Request, type Response, type NextFunction } from 'express';
+import cors, { type CorsOptions } from 'cors';
+import { createProxyMiddleware, type Options as ProxyOptions, type RequestHandler as ProxyRequestHandler } from 'http-proxy-middleware';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
 import AuthMiddleware from './authMiddleware.js';
 import logger from './utils/logger.js';
 
@@ -13,6 +13,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default class GatewayServer {
+  app: Application;
+  port: number;
+  authMiddleware: AuthMiddleware;
+  authLimiter!: RateLimitRequestHandler;
+  apiLimiter!: RateLimitRequestHandler;
+  authProxy!: ProxyRequestHandler;
+  sanctionsProxy!: ProxyRequestHandler;
+  usersProxy!: ProxyRequestHandler;
+
   constructor(port = 8080) {
     this.app = express();
     this.port = port;
@@ -28,23 +37,25 @@ export default class GatewayServer {
   /**
    * Global middleware: CORS, logging, Swagger
    */
-  setupGlobalMiddleware() {
+  setupGlobalMiddleware(): void {
     // SECURITY: Whitelist allowed origins (configure via ALLOWED_ORIGINS env variable)
     const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
       : ['http://localhost', 'http://localhost:80', 'http://localhost:3000', 'http://localhost:5173'];
 
-    const corsOptions = {
+    const corsOptions: CorsOptions = {
       origin: (origin, callback) => {
         // Allow requests with no origin (server-to-server, curl, Postman)
         if (!origin) {
-          return callback(null, true);
+          callback(null, true);
+          return;
         }
         if (ALLOWED_ORIGINS.includes(origin)) {
-          return callback(null, true);
+          callback(null, true);
+          return;
         }
         logger.warn('CORS: Blocked request from unauthorized origin', { origin });
-        return callback(new Error(`CORS: Origin ${origin} not allowed`));
+        callback(new Error(`CORS: Origin ${origin} not allowed`));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -59,7 +70,7 @@ export default class GatewayServer {
     this.app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
     // Request logging middleware
-    this.app.use((req, res, next) => {
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
       const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       req.requestId = requestId;
 
@@ -68,14 +79,14 @@ export default class GatewayServer {
         method: req.method,
         url: req.originalUrl,
         path: req.path,
-        ip: req.ip || req.connection.remoteAddress,
+        ip: req.ip || req.socket.remoteAddress,
       });
 
       next();
     });
 
     // Health check endpoint (no auth required)
-    this.app.get('/health', (req, res) => {
+    this.app.get('/health', (req: Request, res: Response) => {
       res.json({ service: 'api-gateway', status: 'UP' });
     });
   }
@@ -83,7 +94,7 @@ export default class GatewayServer {
   /**
    * Setup rate limiters
    */
-  setupRateLimiters() {
+  setupRateLimiters(): void {
     this.authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
       max: 200,
@@ -104,12 +115,12 @@ export default class GatewayServer {
   /**
    * Setup proxy middleware
    */
-  setupProxies() {
+  setupProxies(): void {
     const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
     const CORE_SERVICE_URL = process.env.CORE_SERVICE_URL || 'http://core-service:3000';
 
     // Helper function to inject headers from request to proxy request
-    const injectHeaders = (proxyReq, req) => {
+    const injectHeaders = (proxyReq: { setHeader: (name: string, value: string) => void }, req: Request) => {
       // Inject request tracking ID
       if (req.requestId) {
         proxyReq.setHeader('x-request-id', req.requestId);
@@ -118,72 +129,82 @@ export default class GatewayServer {
       // CRITICAL: Inject auth context headers (set by AuthMiddleware)
       // These are required by upstream services to identify the organization, user, and role
       if (req.headers['x-org-id']) {
-        proxyReq.setHeader('x-org-id', req.headers['x-org-id']);
+        proxyReq.setHeader('x-org-id', req.headers['x-org-id'] as string);
       }
       if (req.headers['x-user-id']) {
-        proxyReq.setHeader('x-user-id', req.headers['x-user-id']);
+        proxyReq.setHeader('x-user-id', req.headers['x-user-id'] as string);
       }
       if (req.headers['x-role']) {
-        proxyReq.setHeader('x-role', req.headers['x-role']);
+        proxyReq.setHeader('x-role', req.headers['x-role'] as string);
       }
       if (req.headers['x-user-name']) {
-        proxyReq.setHeader('x-user-name', req.headers['x-user-name']);
+        proxyReq.setHeader('x-user-name', req.headers['x-user-name'] as string);
       }
       if (req.headers['x-auth-type']) {
-        proxyReq.setHeader('x-auth-type', req.headers['x-auth-type']);
+        proxyReq.setHeader('x-auth-type', req.headers['x-auth-type'] as string);
       }
     };
 
+    // NOTE: onProxyReq/onError below are top-level (http-proxy-middleware v2 API) but this
+    // library is on v3, which only wires handlers nested under `on: { proxyReq, error }`.
+    // These top-level handlers are therefore dead code (never invoked) — a pre-existing bug
+    // carried over unchanged from the JS version, on purpose. See context/KNOWN_ISSUES.md.
     this.authProxy = createProxyMiddleware({
       target: AUTH_SERVICE_URL,
       changeOrigin: true,
       pathRewrite: { '^/auth': '/auth' },
       cookieDomainRewrite: '',
-      onProxyReq: (proxyReq, req) => {
-        injectHeaders(proxyReq, req);
-        logger.debug('Proxying to Auth Service', { requestId: req.requestId, path: req.path });
+      onProxyReq: (proxyReq: unknown, req: unknown) => {
+        injectHeaders(proxyReq as { setHeader: (name: string, value: string) => void }, req as Request);
+        logger.debug('Proxying to Auth Service', { requestId: (req as Request).requestId, path: (req as Request).path });
       },
-      onError: (err, req, res) => {
-        logger.error('Auth Service Proxy Error', { requestId: req.requestId, error: err.message });
-        if (!res.headersSent) {
-          res.status(502).json({ error: 'Authentication service unavailable' });
+      onError: (err: Error, req: unknown, res: unknown) => {
+        const request = req as Request;
+        const response = res as Response;
+        logger.error('Auth Service Proxy Error', { requestId: request.requestId, error: err.message });
+        if (!response.headersSent) {
+          response.status(502).json({ error: 'Authentication service unavailable' });
         }
       },
-    });
+    } as unknown as ProxyOptions);
 
     this.sanctionsProxy = createProxyMiddleware({
       target: CORE_SERVICE_URL,
       changeOrigin: true,
       pathRewrite: { '^/sanctions': '' },
-      onProxyReq: (proxyReq, req) => {
-        injectHeaders(proxyReq, req);
-        logger.debug('Proxying to Sanctions Service', { requestId: req.requestId, path: req.path });
+      onProxyReq: (proxyReq: unknown, req: unknown) => {
+        injectHeaders(proxyReq as { setHeader: (name: string, value: string) => void }, req as Request);
+        logger.debug('Proxying to Sanctions Service', { requestId: (req as Request).requestId, path: (req as Request).path });
       },
-      onError: (err, req, res) => {
-        logger.error('Sanctions Service Proxy Error', { requestId: req.requestId, error: err.message });
-        if (!res.headersSent) {
-          res.status(502).json({ error: 'Sanctions service unavailable' });
+      onError: (err: Error, req: unknown, res: unknown) => {
+        const request = req as Request;
+        const response = res as Response;
+        logger.error('Sanctions Service Proxy Error', { requestId: request.requestId, error: err.message });
+        if (!response.headersSent) {
+          response.status(502).json({ error: 'Sanctions service unavailable' });
         }
       },
-    });
+    } as unknown as ProxyOptions);
 
     // Users Management Proxy
     this.usersProxy = createProxyMiddleware({
       target: AUTH_SERVICE_URL,
       changeOrigin: true,
       // Express strips the "/users" prefix when hitting this proxy; map it back
-      pathRewrite: (path) => path.replace(/^\//, '/users/'),
-      onProxyReq: (proxyReq, req) => {
-        injectHeaders(proxyReq, req);
-        logger.debug('Proxying to Users Management', { requestId: req.requestId, path: req.path });
+      pathRewrite: (path: string) => path.replace(/^\//, '/users/'),
+      onProxyReq: (proxyReq: unknown, req: unknown) => {
+        injectHeaders(proxyReq as { setHeader: (name: string, value: string) => void }, req as Request);
+        logger.debug('Proxying to Users Management', { requestId: (req as Request).requestId, path: (req as Request).path });
       },
-      onError: (err, req, res) => {
-        logger.error('Users Management Proxy Error', { requestId: req.requestId, error: err.message });
-        if (!res.headersSent) {
-          res.status(502).json({ error: 'Users management service unavailable' });
+      onError: (err: Error, req: unknown, res: unknown) => {
+        const request = req as Request;
+        const response = res as Response;
+        logger.error('Users Management Proxy Error', { requestId: request.requestId, error: err.message });
+        if (!response.headersSent) {
+          response.status(502).json({ error: 'Users management service unavailable' });
         }
       },
-    });
+    } as unknown as ProxyOptions);
   }
 
   /**
@@ -192,7 +213,7 @@ export default class GatewayServer {
    * 2. Public Auth Routes
    * 3. Protected Sanctions Routes
    */
-  setupRoutes() {
+  setupRoutes(): void {
     // ==================== PROTECTED AUTH ROUTES ====================
     // Auth REQUIRED - rate limited
 
@@ -283,7 +304,7 @@ export default class GatewayServer {
   /**
    * Start the Express server
    */
-  start() {
+  start(): Application {
     if (process.env.NODE_ENV !== 'test') {
       this.app.listen(this.port, () => {
         logger.info('API Gateway started', {

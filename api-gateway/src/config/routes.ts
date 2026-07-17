@@ -1,4 +1,16 @@
-export const ROUTES = [
+import type { Options as RateLimitOptions } from 'express-rate-limit';
+
+export interface RouteConfig {
+  context: string;
+  target: string;
+  changeOrigin: boolean;
+  pathRewrite: Record<string, string>;
+  authRequired: boolean;
+  limiterType: 'auth' | 'api';
+  protectedPaths?: { path: string; method: string }[];
+}
+
+export const ROUTES: RouteConfig[] = [
   {
     context: '/auth',
     target: process.env.AUTH_SERVICE_URL || 'http://auth-service:3000',
@@ -20,7 +32,7 @@ export const ROUTES = [
   }
 ];
 
-export const AUTH_LIMITER_CONFIG = {
+export const AUTH_LIMITER_CONFIG: Partial<RateLimitOptions> = {
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200,
   message: { error: 'Too many auth requests from this IP, please try again later.' },
@@ -28,7 +40,7 @@ export const AUTH_LIMITER_CONFIG = {
   legacyHeaders: false,
 };
 
-export const API_LIMITER_CONFIG = {
+export const API_LIMITER_CONFIG: Partial<RateLimitOptions> = {
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200,
   message: { error: 'Too many requests from this IP, please try again later.' },

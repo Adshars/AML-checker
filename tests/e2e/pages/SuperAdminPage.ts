@@ -1,21 +1,33 @@
-import { Page } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 
 export class SuperAdminPage {
-  private readonly orgNameInput = this.page.getByLabel('Organization Name');
-  private readonly countryInput = this.page.getByLabel('Country');
-  private readonly cityInput = this.page.getByLabel('City');
-  private readonly addressInput = this.page.getByLabel('Address');
-  private readonly firstNameInput = this.page.getByLabel('First Name');
-  private readonly lastNameInput = this.page.getByLabel('Last Name');
-  private readonly emailInput = this.page.getByLabel('Email');
-  private readonly passwordInput = this.page.getByLabel('Password');
-  private readonly submitBtn = this.page.getByRole('button', { name: 'Register Organization' });
-  readonly successAlert = this.page.getByRole('alert').filter({ hasText: /created successfully/i });
+  private readonly orgNameInput: Locator;
+  private readonly countryInput: Locator;
+  private readonly cityInput: Locator;
+  private readonly addressInput: Locator;
+  private readonly firstNameInput: Locator;
+  private readonly lastNameInput: Locator;
+  private readonly emailInput: Locator;
+  private readonly passwordInput: Locator;
+  private readonly submitBtn: Locator;
+  readonly successAlert: Locator;
   // Bootstrap variant="danger" -> .alert-danger; text-based filter is unreliable because the
   // error message ("Email already registered") does not contain "error" or "failed"
-  readonly errorAlert = this.page.locator('.alert-danger');
+  readonly errorAlert: Locator;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    this.orgNameInput = this.page.getByLabel('Organization Name');
+    this.countryInput = this.page.getByLabel('Country');
+    this.cityInput = this.page.getByLabel('City');
+    this.addressInput = this.page.getByLabel('Address');
+    this.firstNameInput = this.page.getByLabel('First Name');
+    this.lastNameInput = this.page.getByLabel('Last Name');
+    this.emailInput = this.page.getByLabel('Email');
+    this.passwordInput = this.page.getByLabel('Password');
+    this.submitBtn = this.page.getByRole('button', { name: 'Register Organization' });
+    this.successAlert = this.page.getByRole('alert').filter({ hasText: /created successfully/i });
+    this.errorAlert = this.page.locator('.alert-danger');
+  }
 
   async goto(): Promise<void> {
     await this.page.goto('/superadmin');

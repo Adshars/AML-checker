@@ -1,15 +1,22 @@
-import { Page } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 
 export class SettingsPage {
-  private readonly currentPasswordInput = this.page.getByLabel('Current Password');
+  private readonly currentPasswordInput: Locator;
   // exact: true prevents substring match on "Confirm New Password"
-  private readonly newPasswordInput = this.page.getByLabel('New Password', { exact: true });
-  private readonly confirmNewPasswordInput = this.page.getByLabel('Confirm New Password');
-  private readonly submitBtn = this.page.getByRole('button', { name: 'Update Password' });
-  readonly successAlert = this.page.getByTestId('settings-success-alert');
-  readonly errorAlert = this.page.getByTestId('settings-error-alert');
+  private readonly newPasswordInput: Locator;
+  private readonly confirmNewPasswordInput: Locator;
+  private readonly submitBtn: Locator;
+  readonly successAlert: Locator;
+  readonly errorAlert: Locator;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    this.currentPasswordInput = this.page.getByLabel('Current Password');
+    this.newPasswordInput = this.page.getByLabel('New Password', { exact: true });
+    this.confirmNewPasswordInput = this.page.getByLabel('Confirm New Password');
+    this.submitBtn = this.page.getByRole('button', { name: 'Update Password' });
+    this.successAlert = this.page.getByTestId('settings-success-alert');
+    this.errorAlert = this.page.getByTestId('settings-error-alert');
+  }
 
   async goto(): Promise<void> {
     await this.page.goto('/settings');

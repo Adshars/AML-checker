@@ -1,21 +1,35 @@
-import { Page } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 
 export class HistoryPage {
-  private readonly searchInput = this.page.getByLabel('Search (Name/Query)');
-  private readonly statusSelect = this.page.getByLabel('Status');
-  private readonly dateFromInput = this.page.getByLabel('Date From');
-  private readonly dateToInput = this.page.getByLabel('Date To');
-  readonly filterBtn = this.page.getByTestId('filter-btn');
-  readonly clearFilterBtn = this.page.getByTestId('clear-filter-btn');
-  readonly historyTable = this.page.getByTestId('history-table');
-  readonly historyRows = this.page.getByTestId('history-row');
-  readonly detailsBtns = this.page.getByTestId('history-details-btn');
-  readonly detailsModal = this.page.getByTestId('history-details-modal');
-  readonly paginationInfo = this.page.getByTestId('pagination-info');
-  readonly paginationPrev = this.page.getByTestId('pagination-prev');
-  readonly paginationNext = this.page.getByTestId('pagination-next');
+  private readonly searchInput: Locator;
+  private readonly statusSelect: Locator;
+  private readonly dateFromInput: Locator;
+  private readonly dateToInput: Locator;
+  readonly filterBtn: Locator;
+  readonly clearFilterBtn: Locator;
+  readonly historyTable: Locator;
+  readonly historyRows: Locator;
+  readonly detailsBtns: Locator;
+  readonly detailsModal: Locator;
+  readonly paginationInfo: Locator;
+  readonly paginationPrev: Locator;
+  readonly paginationNext: Locator;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    this.searchInput = this.page.getByLabel('Search (Name/Query)');
+    this.statusSelect = this.page.getByLabel('Status');
+    this.dateFromInput = this.page.getByLabel('Date From');
+    this.dateToInput = this.page.getByLabel('Date To');
+    this.filterBtn = this.page.getByTestId('filter-btn');
+    this.clearFilterBtn = this.page.getByTestId('clear-filter-btn');
+    this.historyTable = this.page.getByTestId('history-table');
+    this.historyRows = this.page.getByTestId('history-row');
+    this.detailsBtns = this.page.getByTestId('history-details-btn');
+    this.detailsModal = this.page.getByTestId('history-details-modal');
+    this.paginationInfo = this.page.getByTestId('pagination-info');
+    this.paginationPrev = this.page.getByTestId('pagination-prev');
+    this.paginationNext = this.page.getByTestId('pagination-next');
+  }
 
   async goto(): Promise<void> {
     await this.page.goto('/history');

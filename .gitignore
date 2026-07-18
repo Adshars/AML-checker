@@ -30,6 +30,7 @@ yarn-error.log*
 # AI agent instruction files
 GEMINI.md
 CLAUDE.md
+.claude/
 
 # Playwright
 /test-results/

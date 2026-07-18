@@ -1,0 +1,27 @@
+import { AppError } from './AppError.js';
+
+/**
+ * External service error for downstream service failures
+ * Used when OP Adapter or other external services fail
+ */
+export class ExternalServiceError extends AppError {
+  serviceName: string;
+  originalError: Error | null;
+
+  constructor(serviceName: string, originalError: Error | null = null) {
+    super(`External service '${serviceName}' error`, 502, 'EXTERNAL_SERVICE_ERROR');
+    this.serviceName = serviceName;
+    this.originalError = originalError;
+  }
+
+  toJSON(): ReturnType<AppError['toJSON']> & { serviceName: string; originalMessage?: string } {
+    const json = super.toJSON() as ReturnType<AppError['toJSON']> & { serviceName: string; originalMessage?: string };
+    json.serviceName = this.serviceName;
+    if (this.originalError) {
+      json.originalMessage = this.originalError.message;
+    }
+    return json;
+  }
+}
+
+export default ExternalServiceError;

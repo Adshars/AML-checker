@@ -1,18 +1,29 @@
-import { Page } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 
 export class DeveloperPage {
-  readonly apiKeyDisplay = this.page.getByTestId('api-key-display');
-  readonly copyApiKeyBtn = this.page.getByTestId('copy-api-key-btn');
-  readonly resetSecretBtn = this.page.getByTestId('reset-secret-btn');
-  readonly resetErrorAlert = this.page.getByTestId('reset-error-alert');
-  readonly newSecretDisplay = this.page.getByTestId('new-secret-display');
-  readonly copySecretBtn = this.page.getByTestId('copy-secret-btn');
+  readonly apiKeyDisplay: Locator;
+  readonly copyApiKeyBtn: Locator;
+  readonly resetSecretBtn: Locator;
+  readonly resetErrorAlert: Locator;
+  readonly newSecretDisplay: Locator;
+  readonly copySecretBtn: Locator;
 
-  private readonly resetModal = this.page.getByRole('dialog');
-  private readonly confirmPasswordInput = this.resetModal.getByLabel('Enter your password to confirm');
-  private readonly confirmBtn = this.resetModal.getByRole('button', { name: 'Confirm' });
+  private readonly resetModal: Locator;
+  private readonly confirmPasswordInput: Locator;
+  private readonly confirmBtn: Locator;
 
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    this.apiKeyDisplay = this.page.getByTestId('api-key-display');
+    this.copyApiKeyBtn = this.page.getByTestId('copy-api-key-btn');
+    this.resetSecretBtn = this.page.getByTestId('reset-secret-btn');
+    this.resetErrorAlert = this.page.getByTestId('reset-error-alert');
+    this.newSecretDisplay = this.page.getByTestId('new-secret-display');
+    this.copySecretBtn = this.page.getByTestId('copy-secret-btn');
+
+    this.resetModal = this.page.getByRole('dialog');
+    this.confirmPasswordInput = this.resetModal.getByLabel('Enter your password to confirm');
+    this.confirmBtn = this.resetModal.getByRole('button', { name: 'Confirm' });
+  }
 
   async goto(): Promise<void> {
     await this.page.goto('/developer');

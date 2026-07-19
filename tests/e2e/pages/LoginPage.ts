@@ -15,7 +15,7 @@ export class LoginPage {
 
   constructor(private readonly page: Page) {
     this.emailInput = this.page.getByLabel('Email address');
-    this.passwordInput = this.page.getByLabel('Password').first();
+    this.passwordInput = this.page.getByLabel('Password', { exact: true });
     this.signInButton = this.page.getByRole('button', { name: 'Sign In' });
     this.errorAlert = this.page.getByRole('alert').filter({ hasText: /invalid|error|please fill/i });
 

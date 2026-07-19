@@ -8,8 +8,25 @@ $danger: #B23B2E;
 $warning: #B9822E;
 
 $body-bg: #F5F6F8;
+$body-color: #1B2A4A;
 $border-radius: 8px;
 $border-radius-lg: 10px;
+
+// Cards/panels/modals use the larger radius from the token table (10-12px),
+// while buttons/inputs stay on the base $border-radius (8px).
+$card-border-radius: 12px;
+$modal-content-border-radius: 12px;
+
+$border-color: #E1E4E9; // $border token — card/table borders
+$input-border-color: #D7DCE5; // $border-strong token — form field borders
+$input-placeholder-color: #9CA0AC; // $text-muted token
+$input-focus-border-color: #0F9D82; // $accent token — teal focus ring
+$input-focus-box-shadow: 0 0 0 0.2rem rgba(15, 157, 130, 0.25);
+
+// Bootstrap's ".text-muted" utility is used throughout the app for helper/
+// label text — map it to the $text-secondary token (#5B6472), not the
+// (darker) $text-muted token, which is reserved for placeholders above.
+$text-muted: #5B6472;
 
 $font-family-sans-serif: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 

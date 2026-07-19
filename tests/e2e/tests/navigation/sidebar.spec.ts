@@ -42,6 +42,29 @@ test.describe('Sidebar — collapse/expand (desktop)', () => {
     await page.reload();
     await expect(page.getByTestId('sidebar').getByText('Dashboard', { exact: true })).toBeVisible();
   });
+
+  test('SB-06: user email and logout stay within the viewport on a tall page, without scrolling', async ({
+    page,
+  }) => {
+    // Dashboard (stat cards + chart + activity table) is tall enough that the
+    // sidebar must not stretch with the page — it should stay pinned to the
+    // viewport so the footer (user info + logout) never needs scrolling into view.
+    await page.goto('/dashboard');
+    await expect(page.getByTestId('stat-total-checks')).toBeVisible();
+
+    const viewportSize = page.viewportSize();
+    expect(viewportSize).not.toBeNull();
+
+    const logoutBox = await page.getByTestId('logout-btn').boundingBox();
+    expect(logoutBox).not.toBeNull();
+    expect(logoutBox!.y).toBeGreaterThanOrEqual(0);
+    expect(logoutBox!.y + logoutBox!.height).toBeLessThanOrEqual(viewportSize!.height);
+
+    const userBox = await page.getByTestId('sidebar-user').boundingBox();
+    expect(userBox).not.toBeNull();
+    expect(userBox!.y).toBeGreaterThanOrEqual(0);
+    expect(userBox!.y + userBox!.height).toBeLessThanOrEqual(viewportSize!.height);
+  });
 });
 
 test.describe('Sidebar — narrow viewport (< 992px)', () => {

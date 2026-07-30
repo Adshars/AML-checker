@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, Button, Form, Row, Col, InputGroup, Modal, Alert } from 'react-bootstrap';
-import { Clipboard, Check } from 'react-bootstrap-icons';
+import { IconCopy, IconCheck } from '@tabler/icons-react';
 import { getOrganizationKeys, resetOrganizationSecret } from '../services/api';
 
 const DeveloperPage = () => {
@@ -80,8 +80,9 @@ const DeveloperPage = () => {
                 onClick={() => copyToClipboard(apiKey, setCopiedApi)}
                 disabled={!apiKey}
                 data-testid="copy-api-key-btn"
+                aria-label={copiedApi ? 'Copied' : 'Copy API key'}
               >
-                {copiedApi ? <Check /> : <Clipboard />}
+                {copiedApi ? <IconCheck size={18} stroke={1.75} /> : <IconCopy size={18} stroke={1.75} />}
               </Button>
             </InputGroup>
           </Card.Body>
@@ -142,8 +143,9 @@ const DeveloperPage = () => {
                     type="button"
                     onClick={() => copyToClipboard(newSecret, setCopiedSecret)}
                     data-testid="copy-secret-btn"
+                    aria-label={copiedSecret ? 'Copied' : 'Copy API secret'}
                   >
-                    {copiedSecret ? <Check /> : <Clipboard />}
+                    {copiedSecret ? <IconCheck size={18} stroke={1.75} /> : <IconCopy size={18} stroke={1.75} />}
                   </Button>
                 </InputGroup>
               </Modal.Body>

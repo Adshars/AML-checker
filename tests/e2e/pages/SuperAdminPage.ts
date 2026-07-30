@@ -23,7 +23,7 @@ export class SuperAdminPage {
     this.firstNameInput = this.page.getByLabel('First Name');
     this.lastNameInput = this.page.getByLabel('Last Name');
     this.emailInput = this.page.getByLabel('Email');
-    this.passwordInput = this.page.getByLabel('Password');
+    this.passwordInput = this.page.getByLabel('Password', { exact: true });
     this.submitBtn = this.page.getByRole('button', { name: 'Register Organization' });
     this.successAlert = this.page.getByRole('alert').filter({ hasText: /created successfully/i });
     this.errorAlert = this.page.locator('.alert-danger');

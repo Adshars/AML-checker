@@ -85,7 +85,7 @@ const DashboardPage = () => {
                 <XAxis dataKey="date" />
                 <YAxis />
                 <Tooltip />
-                <Area type="monotone" dataKey="checks" stroke="#0d6efd" fill="#0d6efd" />
+                <Area type="monotone" dataKey="checks" stroke="var(--aml-teal)" fill="var(--aml-teal)" fillOpacity={0.6} />
               </AreaChart>
             </ResponsiveContainer>
           </Card.Body>

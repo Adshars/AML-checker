@@ -102,7 +102,7 @@ const DashboardPage = () => {
         <Card.Body>
           <Card.Title>Recent Activity</Card.Title>
           {recentActivity.length > 0 ? (
-            <Table striped bordered hover responsive data-testid="recent-activity-table">
+            <Table hover responsive data-testid="recent-activity-table">
               <thead>
                 <tr>
                   <th>Name</th>

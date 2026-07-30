@@ -27,7 +27,7 @@ export class UsersPage {
     this.firstNameInput = this.addUserModal.getByLabel('First Name');
     this.lastNameInput = this.addUserModal.getByLabel('Last Name');
     this.emailInput = this.addUserModal.getByLabel('Email');
-    this.passwordInput = this.addUserModal.getByLabel('Password');
+    this.passwordInput = this.addUserModal.getByLabel('Password', { exact: true });
     this.cancelAddBtn = this.page.getByTestId('cancel-add-user-btn');
     this.saveUserBtn = this.page.getByTestId('save-user-btn');
 

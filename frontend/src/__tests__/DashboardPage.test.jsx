@@ -28,6 +28,20 @@ describe('DashboardPage', () => {
     expect(screen.getByText(/loading dashboard/i)).toBeInTheDocument();
   });
 
+  it('shows a note that statistics cover the last 30 days', async () => {
+    getDashboardStats.mockResolvedValue({
+      totalChecks: 22,
+      sanctionHits: 17,
+      pepHits: 3,
+      recentLogs: [],
+    });
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/last 30 days/i)).toBeInTheDocument();
+    });
+  });
+
   it('renders the stat cards once data loads', async () => {
     getDashboardStats.mockResolvedValue({
       totalChecks: 22,

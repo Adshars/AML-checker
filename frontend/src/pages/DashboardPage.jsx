@@ -44,7 +44,8 @@ const DashboardPage = () => {
 
   return (
     <Container>
-      <h2 className="mb-4">Dashboard</h2>
+      <h2 className="mb-1">Dashboard</h2>
+      <p className="text-muted mb-4">Showing statistics from the last 30 days.</p>
 
       {/* Statistics - cards */}
       <Row className="mb-4">

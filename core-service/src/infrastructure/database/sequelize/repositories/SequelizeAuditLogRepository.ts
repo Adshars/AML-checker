@@ -7,12 +7,19 @@ import type { AuditLogModelStatic } from '../models/AuditLogModel.js';
 /**
  * Sequelize implementation of AuditLog Repository
  */
+// Dashboard/stats queries are scoped to a rolling window, not full history.
+const STATS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
 export class SequelizeAuditLogRepository extends IAuditLogRepository {
   model: AuditLogModelStatic;
 
   constructor(auditLogModel: AuditLogModelStatic) {
     super();
     this.model = auditLogModel;
+  }
+
+  private getStatsWindowStart(): Date {
+    return new Date(Date.now() - STATS_WINDOW_MS);
   }
 
   async create(auditLog: AuditLog): Promise<AuditLog> {
@@ -132,14 +139,17 @@ export class SequelizeAuditLogRepository extends IAuditLogRepository {
   }
 
   async countByOrganization(organizationId: string): Promise<number> {
-    return this.model.count({ where: { organizationId } });
+    return this.model.count({
+      where: { organizationId, createdAt: { [Op.gte]: this.getStatsWindowStart() } }
+    });
   }
 
   async countSanctionedByOrganization(organizationId: string): Promise<number> {
     return this.model.count({
       where: {
         organizationId,
-        isSanctioned: true
+        isSanctioned: true,
+        createdAt: { [Op.gte]: this.getStatsWindowStart() }
       }
     });
   }
@@ -148,14 +158,15 @@ export class SequelizeAuditLogRepository extends IAuditLogRepository {
     return this.model.count({
       where: {
         organizationId,
-        isPep: true
+        isPep: true,
+        createdAt: { [Op.gte]: this.getStatsWindowStart() }
       }
     });
   }
 
   async getRecentByOrganization(organizationId: string, limit = 100): Promise<unknown[]> {
     const rows = await this.model.findAll({
-      where: { organizationId },
+      where: { organizationId, createdAt: { [Op.gte]: this.getStatsWindowStart() } },
       order: [['createdAt', 'DESC']],
       limit,
       attributes: ['id', 'searchQuery', 'isSanctioned', 'isPep', 'createdAt']

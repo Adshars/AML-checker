@@ -210,4 +210,53 @@ describe('HistoryPage', () => {
       expect(screen.getByTestId('pagination-info')).toHaveTextContent('Page 1 of 5');
     });
   });
+
+  it('renders a numbered page button for every page when there are few pages', async () => {
+    getHistory.mockResolvedValue({
+      data: [MOCK_LOG_CLEAN],
+      meta: { totalPages: 3, currentPage: 1, totalItems: 25 },
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pagination-page-1')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('pagination-page-1')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByTestId('pagination-page-2')).toBeInTheDocument();
+    expect(screen.getByTestId('pagination-page-3')).toBeInTheDocument();
+  });
+
+  it('fetches the selected page when a numbered page button is clicked', async () => {
+    getHistory.mockResolvedValue({
+      data: [MOCK_LOG_CLEAN],
+      meta: { totalPages: 3, currentPage: 1, totalItems: 25 },
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('pagination-page-2')).toBeInTheDocument());
+    getHistory.mockClear();
+
+    fireEvent.click(screen.getByTestId('pagination-page-2'));
+
+    await waitFor(() => {
+      expect(getHistory).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
+    });
+  });
+
+  it('collapses distant page numbers behind an ellipsis when there are many pages', async () => {
+    getHistory.mockResolvedValue({
+      data: [MOCK_LOG_CLEAN],
+      meta: { totalPages: 10, currentPage: 1, totalItems: 100 },
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pagination-page-1')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('pagination-page-10')).toBeInTheDocument();
+    expect(screen.queryByTestId('pagination-page-5')).not.toBeInTheDocument();
+  });
 });

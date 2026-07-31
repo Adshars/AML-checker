@@ -1,7 +1,7 @@
 import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, Row, Col, Spinner, InputGroup } from 'react-bootstrap';
-import { Eye, EyeSlash } from 'react-bootstrap-icons';
+import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import { registerOrganization } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 
@@ -304,8 +304,9 @@ const SuperAdminPage = () => {
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={loading}
                     type="button"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showPassword ? <EyeSlash /> : <Eye />}
+                    {showPassword ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                   </Button>
                 </InputGroup>
                 <Form.Control.Feedback type="invalid" style={{ display: formErrors.password ? 'block' : 'none' }}>

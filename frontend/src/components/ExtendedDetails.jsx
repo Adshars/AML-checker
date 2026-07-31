@@ -93,7 +93,7 @@ const ExtendedDetails = ({ data }) => {
   return (
     <div className="mt-4">
       <h6 className="mb-3 border-bottom pb-2">Extended Details</h6>
-      <Table striped bordered hover size="sm" responsive>
+      <Table hover size="sm" responsive>
         <tbody>
           {entries.map(([key, value]) => (
             <tr key={key}>

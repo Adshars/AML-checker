@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Form, Button, Alert, Container, Row, Col, InputGroup } from 'react-bootstrap';
-import { Eye, EyeSlash } from 'react-bootstrap-icons';
+import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import { confirmPasswordReset } from '../services/api';
 
 const ResetPasswordPage = () => {
@@ -74,8 +74,9 @@ const ResetPasswordPage = () => {
                       variant="outline-secondary"
                       type="button"
                       onClick={() => setShowNew((prev) => !prev)}
+                      aria-label={showNew ? 'Hide password' : 'Show password'}
                     >
-                      {showNew ? <EyeSlash /> : <Eye />}
+                      {showNew ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                     </Button>
                   </InputGroup>
                 </Form.Group>
@@ -93,8 +94,9 @@ const ResetPasswordPage = () => {
                       variant="outline-secondary"
                       type="button"
                       onClick={() => setShowConfirm((prev) => !prev)}
+                      aria-label={showConfirm ? 'Hide password' : 'Show password'}
                     >
-                      {showConfirm ? <EyeSlash /> : <Eye />}
+                      {showConfirm ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                     </Button>
                   </InputGroup>
                 </Form.Group>

@@ -1,0 +1,54 @@
+// Faza 2 — tokeny kolorów i typografii (źródło: context/PLAN_FAZA2_FRONTEND.md)
+// Musi być zaimportowane PRZED źródłami Bootstrapa.
+
+$primary: #1B2A4A; // navy
+$secondary: #0F9D82; // teal (accent)
+$success: #0F9D82;
+$danger: #B23B2E;
+$warning: #B9822E;
+
+$body-bg: #F5F6F8;
+$body-color: #1B2A4A;
+$border-radius: 8px;
+$border-radius-lg: 10px;
+
+// Cards/panels/modals use the larger radius from the token table (10-12px),
+// while buttons/inputs stay on the base $border-radius (8px).
+$card-border-radius: 12px;
+$modal-content-border-radius: 12px;
+
+$border-color: #E1E4E9; // $border token — card/table borders
+$input-border-color: #D7DCE5; // $border-strong token — form field borders
+$input-placeholder-color: #9CA0AC; // $text-muted token
+$input-focus-border-color: #0F9D82; // $accent token — teal focus ring
+$input-focus-box-shadow: 0 0 0 0.2rem rgba(15, 157, 130, 0.25);
+
+// Bootstrap's ".text-muted" utility is used throughout the app for helper/
+// label text — map it to the $text-secondary token (#5B6472), not the
+// (darker) $text-muted token, which is reserved for placeholders above.
+$text-muted: #5B6472;
+
+$font-family-sans-serif: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+// Tokeny spoza zmiennych Bootstrapa — wystawione jako custom properties CSS,
+// żeby były dostępne we wszystkich modułach SCSS/CSS bez importu zmiennych Sass.
+:root {
+  --aml-navy: #1B2A4A;
+  --aml-teal: #0F9D82;
+  --aml-danger: #B23B2E;
+  --aml-warning: #B9822E;
+  --aml-body-bg: #F5F6F8;
+  --aml-surface: #FFFFFF;
+  --aml-border: #E1E4E9;
+  --aml-border-strong: #D7DCE5;
+  --aml-text-primary: #1B2A4A;
+  --aml-text-secondary: #5B6472;
+  --aml-text-muted: #9CA0AC;
+  --aml-sidebar-text-inactive: #AEB8CC;
+  --aml-bg-accent-tint: #DFF3EE;
+  --aml-bg-primary-tint: #E6EEF7;
+  --aml-bg-neutral-tint: #F0EEE7;
+  --aml-bg-danger-tint: #FBEAE7;
+  --aml-radius: 8px;
+  --aml-radius-lg: 12px;
+}

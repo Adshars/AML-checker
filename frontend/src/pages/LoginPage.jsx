@@ -1,7 +1,7 @@
 import { useState, useContext, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, InputGroup, Modal } from 'react-bootstrap';
-import { Eye, EyeSlash } from 'react-bootstrap-icons';
+import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import { AuthContext } from '../context/AuthContext';
 import { requestPasswordReset } from '../services/api';
 
@@ -111,8 +111,9 @@ const LoginPage = () => {
                     onClick={() => setShowPassword(!showPassword)}
                     type="button"
                     disabled={loading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showPassword ? <EyeSlash /> : <Eye />}
+                    {showPassword ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                   </Button>
                 </InputGroup>
               </Form.Group>

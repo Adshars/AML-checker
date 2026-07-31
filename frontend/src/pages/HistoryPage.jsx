@@ -132,6 +132,29 @@ const HistoryPage = () => {
     return '—';
   };
 
+  // Builds a windowed page list around the current page, e.g. [1, '…', 4, 5, 6, '…', 12],
+  // so the pager stays usable (and jumpable) even with a large number of pages.
+  const getPageNumbers = (current, total) => {
+    const delta = 1;
+    const pages = [];
+    for (let i = 1; i <= total; i += 1) {
+      if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
+        pages.push(i);
+      }
+    }
+
+    const withEllipses = [];
+    let previous;
+    pages.forEach((i) => {
+      if (previous !== undefined && i - previous > 1) {
+        withEllipses.push('ellipsis');
+      }
+      withEllipses.push(i);
+      previous = i;
+    });
+    return withEllipses;
+  };
+
   return (
     <Container className="mt-4">
       <h2 className="mb-3">History</h2>
@@ -218,7 +241,7 @@ const HistoryPage = () => {
             </div>
           ) : (
             <>
-              <Table striped bordered hover responsive className="mb-3" data-testid="history-table">
+              <Table hover responsive className="mb-3" data-testid="history-table">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -257,6 +280,21 @@ const HistoryPage = () => {
                 <div className="text-muted" data-testid="pagination-info">Page {meta.currentPage} of {meta.totalPages}</div>
                 <Pagination className="mb-0">
                   <Pagination.Prev disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} data-testid="pagination-prev" />
+                  {getPageNumbers(page, meta.totalPages || 1).map((item, idx) =>
+                    item === 'ellipsis' ? (
+                      <Pagination.Ellipsis key={`ellipsis-${idx}`} disabled />
+                    ) : (
+                      <Pagination.Item
+                        key={item}
+                        active={item === page}
+                        aria-current={item === page ? 'page' : undefined}
+                        onClick={() => setPage(item)}
+                        data-testid={`pagination-page-${item}`}
+                      >
+                        {item}
+                      </Pagination.Item>
+                    )
+                  )}
                   <Pagination.Next disabled={page >= (meta.totalPages || 1)} onClick={() => setPage((p) => p + 1)} data-testid="pagination-next" />
                 </Pagination>
               </div>

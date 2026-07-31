@@ -44,7 +44,8 @@ const DashboardPage = () => {
 
   return (
     <Container>
-      <h2 className="mb-4">Dashboard</h2>
+      <h2 className="mb-1">Dashboard</h2>
+      <p className="text-muted mb-4">Showing statistics from the last 30 days.</p>
 
       {/* Statistics - cards */}
       <Row className="mb-4">
@@ -85,7 +86,7 @@ const DashboardPage = () => {
                 <XAxis dataKey="date" />
                 <YAxis />
                 <Tooltip />
-                <Area type="monotone" dataKey="checks" stroke="#0d6efd" fill="#0d6efd" />
+                <Area type="monotone" dataKey="checks" stroke="var(--aml-teal)" fill="var(--aml-teal)" fillOpacity={0.6} />
               </AreaChart>
             </ResponsiveContainer>
           </Card.Body>
@@ -101,7 +102,7 @@ const DashboardPage = () => {
         <Card.Body>
           <Card.Title>Recent Activity</Card.Title>
           {recentActivity.length > 0 ? (
-            <Table striped bordered hover responsive data-testid="recent-activity-table">
+            <Table hover responsive data-testid="recent-activity-table">
               <thead>
                 <tr>
                   <th>Name</th>

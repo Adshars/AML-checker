@@ -11,7 +11,7 @@ import {
   Badge,
   InputGroup,
 } from 'react-bootstrap';
-import { Eye, EyeSlash } from 'react-bootstrap-icons';
+import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import useUsers from '../hooks/useUsers';
 
 const UsersPage = () => {
@@ -153,7 +153,7 @@ const UsersPage = () => {
               No users found in your organization. Click "Add User" to invite team members.
             </Alert>
           ) : (
-            <Table striped bordered hover responsive data-testid="users-table">
+            <Table hover responsive data-testid="users-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -254,8 +254,13 @@ const UsersPage = () => {
                   disabled={submitting}
                   required
                 />
-                <Button variant="outline-secondary" onClick={() => setShowPassword(!showPassword)} type="button">
-                  {showPassword ? <EyeSlash /> : <Eye />}
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => setShowPassword(!showPassword)}
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                 </Button>
               </InputGroup>
               <Form.Control.Feedback type="invalid" style={{ display: formErrors.password ? 'block' : 'none' }}>

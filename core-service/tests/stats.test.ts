@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { Op } from 'sequelize';
 
 // AuditLog model mock (for repository)
 const mockAuditLogModel = {
@@ -99,18 +100,56 @@ describe('GET /stats Integration Test', () => {
             recentLogs: mockRecentLogs
         });
 
-        // Verify correct queries were made
+        // Verify correct queries were made, each scoped to the organization
+        // and windowed to the last 30 days (see dedicated 30-day test below
+        // for the exact cutoff value).
         expect(mockAuditLogModel.count).toHaveBeenCalledTimes(3);
-        expect(mockAuditLogModel.count).toHaveBeenNthCalledWith(1, { where: { organizationId: 'org-123' } });
-        expect(mockAuditLogModel.count).toHaveBeenNthCalledWith(2, { where: { organizationId: 'org-123', isSanctioned: true } });
-        expect(mockAuditLogModel.count).toHaveBeenNthCalledWith(3, { where: { organizationId: 'org-123', isPep: true } });
+        const [totalArgs, sanctionArgs, pepArgs] = mockAuditLogModel.count.mock.calls.map(
+            (call) => (call[0] as { where: Record<string, unknown> }).where
+        );
+        expect(totalArgs).toMatchObject({ organizationId: 'org-123' });
+        expect(totalArgs.createdAt).toBeDefined();
+        expect(sanctionArgs).toMatchObject({ organizationId: 'org-123', isSanctioned: true });
+        expect(sanctionArgs.createdAt).toBeDefined();
+        expect(pepArgs).toMatchObject({ organizationId: 'org-123', isPep: true });
+        expect(pepArgs.createdAt).toBeDefined();
 
-        expect(mockAuditLogModel.findAll).toHaveBeenCalledWith({
-            where: { organizationId: 'org-123' },
-            order: [['createdAt', 'DESC']],
-            limit: 100,
-            attributes: ['id', 'searchQuery', 'isSanctioned', 'isPep', 'createdAt']
-        });
+        const findAllArgs = mockAuditLogModel.findAll.mock.calls[0][0] as {
+            where: Record<string, unknown>;
+            order: unknown;
+            limit: number;
+            attributes: string[];
+        };
+        expect(findAllArgs.where).toMatchObject({ organizationId: 'org-123' });
+        expect(findAllArgs.where.createdAt).toBeDefined();
+        expect(findAllArgs.order).toEqual([['createdAt', 'DESC']]);
+        expect(findAllArgs.limit).toBe(100);
+        expect(findAllArgs.attributes).toEqual(['id', 'searchQuery', 'isSanctioned', 'isPep', 'createdAt']);
+    });
+
+    it('should scope all stats queries to the last 30 days', async () => {
+        const fixedNow = new Date('2026-02-15T12:00:00.000Z');
+        jest.useFakeTimers().setSystemTime(fixedNow);
+
+        mockAuditLogModel.count.mockResolvedValue(0);
+        mockAuditLogModel.findAll.mockResolvedValue([]);
+
+        await request(app).get('/stats').set('x-org-id', 'org-123');
+
+        const expectedCutoff = new Date(fixedNow.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        for (const call of mockAuditLogModel.count.mock.calls) {
+            const where = (call[0] as { where: { createdAt: { [key: symbol]: Date } } }).where;
+            const gte = where.createdAt[Op.gte];
+            expect(gte).toEqual(expectedCutoff);
+        }
+
+        const findAllWhere = (mockAuditLogModel.findAll.mock.calls[0][0] as {
+            where: { createdAt: { [key: symbol]: Date } };
+        }).where;
+        expect(findAllWhere.createdAt[Op.gte]).toEqual(expectedCutoff);
+
+        jest.useRealTimers();
     });
 
     it('should return 400 if x-org-id is missing', async () => {

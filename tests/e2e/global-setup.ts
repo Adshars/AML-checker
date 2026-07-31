@@ -21,7 +21,7 @@ async function loginAndSaveState(
 
   await page.goto(`${BASE_URL}/login`);
   await page.getByLabel('Email address').fill(email);
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign In' }).click();
 
   // Wait for redirect after login

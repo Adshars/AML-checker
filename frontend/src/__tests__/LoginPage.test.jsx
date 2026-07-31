@@ -39,7 +39,7 @@ describe('LoginPage', () => {
   it('renders email, password inputs and Sign In button', () => {
     renderPage();
     expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/password/i, { selector: 'input' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
@@ -48,7 +48,7 @@ describe('LoginPage', () => {
     renderPage();
 
     await userEvent.type(screen.getByLabelText(/email address/i), 'admin@test.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'password123');
+    await userEvent.type(screen.getByLabelText(/password/i, { selector: 'input' }), 'password123');
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
@@ -62,7 +62,7 @@ describe('LoginPage', () => {
     renderPage();
 
     await userEvent.type(screen.getByLabelText(/email address/i), 'super@admin.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'superpass');
+    await userEvent.type(screen.getByLabelText(/password/i, { selector: 'input' }), 'superpass');
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
@@ -77,7 +77,7 @@ describe('LoginPage', () => {
     renderPage();
 
     await userEvent.type(screen.getByLabelText(/email address/i), 'bad@test.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'wrongpass');
+    await userEvent.type(screen.getByLabelText(/password/i, { selector: 'input' }), 'wrongpass');
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
@@ -92,7 +92,7 @@ describe('LoginPage', () => {
     renderPage();
 
     await userEvent.type(screen.getByLabelText(/email address/i), 'user@test.com');
-    await userEvent.type(screen.getByLabelText(/password/i), 'somepassword');
+    await userEvent.type(screen.getByLabelText(/password/i, { selector: 'input' }), 'somepassword');
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
@@ -102,13 +102,14 @@ describe('LoginPage', () => {
 
   it('toggles password visibility when eye button is clicked', async () => {
     renderPage();
-    const passwordInput = screen.getByLabelText(/password/i);
+    const passwordInput = screen.getByLabelText(/password/i, { selector: 'input' });
     expect(passwordInput).toHaveAttribute('type', 'password');
 
-    const toggleBtn = screen.getByRole('button', { name: '' }); // eye icon button
+    const toggleBtn = screen.getByRole('button', { name: /show password/i });
     fireEvent.click(toggleBtn);
 
     expect(passwordInput).toHaveAttribute('type', 'text');
+    expect(screen.getByRole('button', { name: /hide password/i })).toBeInTheDocument();
   });
 
   it('opens Forgot Password modal when link is clicked', async () => {

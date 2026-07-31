@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Container, Card, Form, Button, Alert, Row, Col, InputGroup } from 'react-bootstrap';
-import { Eye, EyeSlash } from 'react-bootstrap-icons';
+import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import { changePassword as changePasswordRequest } from '../services/api';
 
 const SettingsPage = () => {
@@ -67,8 +67,9 @@ const SettingsPage = () => {
                       variant="outline-secondary"
                       onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                       type="button"
+                      aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showCurrentPassword ? <EyeSlash /> : <Eye />}
+                      {showCurrentPassword ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                     </Button>
                   </InputGroup>
                 </Form.Group>
@@ -86,8 +87,9 @@ const SettingsPage = () => {
                       variant="outline-secondary"
                       onClick={() => setShowNewPassword(!showNewPassword)}
                       type="button"
+                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showNewPassword ? <EyeSlash /> : <Eye />}
+                      {showNewPassword ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                     </Button>
                   </InputGroup>
                 </Form.Group>
@@ -105,8 +107,9 @@ const SettingsPage = () => {
                       variant="outline-secondary"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       type="button"
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showConfirmPassword ? <EyeSlash /> : <Eye />}
+                      {showConfirmPassword ? <IconEyeOff size={18} stroke={1.75} /> : <IconEye size={18} stroke={1.75} />}
                     </Button>
                   </InputGroup>
                 </Form.Group>

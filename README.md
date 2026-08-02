@@ -44,7 +44,8 @@ cp .env.example .env
 catalogs:
   - url: "https://data.opensanctions.org/datasets/latest/index.json"
     resource_name: "entities.ftm.json"
-    scope: "us_ofac_sdn"   # US OFAC SDN only (default, fast ~200 MB)
+    scope: "sanctions"     # broader multi-source sanctions lists (current repo default)
+    # scope: "us_ofac_sdn" # US OFAC SDN only (fast, ~200 MB)
     # scope: "default"     # Full global dataset (slow, ~4 GB, requires more RAM)
 ```
 
@@ -218,6 +219,7 @@ All requests go through the API Gateway (`http://localhost:8080`).
 - `DELETE /users/:id`
 - `GET /sanctions/check`
 - `GET /sanctions/history`
+- `GET /sanctions/history/export` (CSV export of the full filtered result set)
 - `GET /sanctions/stats`
 - `GET /sanctions/health`
 - `GET /health`

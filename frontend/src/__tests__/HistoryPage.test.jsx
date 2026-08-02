@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import HistoryPage from '../pages/HistoryPage';
+import { AuthContext } from '../context/AuthContext';
 
 // Mock ExtendedDetails to isolate HistoryPage behaviour
 vi.mock('../components/ExtendedDetails', () => ({
@@ -14,7 +15,12 @@ vi.mock('../services/api', () => ({
   default: {},
 }));
 
+vi.mock('../utils/pdfConfirmation', () => ({
+  generateConfirmationPdf: vi.fn(),
+}));
+
 import { getHistory, exportHistory } from '../services/api';
+import { generateConfirmationPdf } from '../utils/pdfConfirmation';
 
 const MOCK_LOG_CLEAN = {
   id: '1',
@@ -49,11 +55,13 @@ const MOCK_LOG_PEP = {
   createdAt: '2024-03-17T08:00:00.000Z',
 };
 
-const renderPage = () =>
+const renderPage = (user = { organizationName: 'PrzykładowaFirma Sp. z o.o.' }) =>
   render(
-    <MemoryRouter>
-      <HistoryPage />
-    </MemoryRouter>
+    <AuthContext.Provider value={{ user }}>
+      <MemoryRouter>
+        <HistoryPage />
+      </MemoryRouter>
+    </AuthContext.Provider>
   );
 
 describe('HistoryPage', () => {
@@ -336,6 +344,49 @@ describe('HistoryPage', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('export-spinner')).toHaveStyle({ visibility: 'visible' });
+      });
+    });
+  });
+
+  describe('PDF confirmation download', () => {
+    beforeEach(() => {
+      getHistory.mockResolvedValue({
+        data: [MOCK_LOG_CLEAN],
+        meta: { totalPages: 1, currentPage: 1, totalItems: 1 },
+      });
+    });
+
+    const openModal = async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-details-btn')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('history-details-btn'));
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+      return screen.getByRole('dialog');
+    };
+
+    it('renders a Download PDF button in the modal footer, next to Close', async () => {
+      const dialog = await openModal();
+      const footer = within(dialog.querySelector('.modal-footer'));
+      expect(footer.getByTestId('download-pdf-btn')).toBeInTheDocument();
+      expect(footer.getByRole('button', { name: /close/i })).toBeInTheDocument();
+    });
+
+    it('generates the PDF for the selected log using the organization name from the auth session', async () => {
+      const dialog = await openModal();
+      fireEvent.click(within(dialog).getByTestId('download-pdf-btn'));
+
+      expect(generateConfirmationPdf).toHaveBeenCalledWith(MOCK_LOG_CLEAN, 'PrzykładowaFirma Sp. z o.o.');
+    });
+
+    it('shows an error alert in the modal if PDF generation fails', async () => {
+      generateConfirmationPdf.mockImplementation(() => {
+        throw new Error('pdf generation failed');
+      });
+      const dialog = await openModal();
+      fireEvent.click(within(dialog).getByTestId('download-pdf-btn'));
+
+      await waitFor(() => {
+        expect(within(dialog).getByText(/pdf generation failed/i)).toBeInTheDocument();
       });
     });
   });

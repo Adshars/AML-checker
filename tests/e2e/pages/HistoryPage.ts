@@ -15,6 +15,7 @@ export class HistoryPage {
   readonly paginationPrev: Locator;
   readonly paginationNext: Locator;
   readonly exportCsvBtn: Locator;
+  readonly downloadPdfBtn: Locator;
 
   constructor(private readonly page: Page) {
     this.searchInput = this.page.getByLabel('Search (Name/Query)');
@@ -31,6 +32,7 @@ export class HistoryPage {
     this.paginationPrev = this.page.getByTestId('pagination-prev');
     this.paginationNext = this.page.getByTestId('pagination-next');
     this.exportCsvBtn = this.page.getByTestId('export-csv-btn');
+    this.downloadPdfBtn = this.page.getByTestId('download-pdf-btn');
   }
 
   async goto(): Promise<void> {

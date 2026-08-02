@@ -6,6 +6,7 @@ export interface LoginUserSummary {
   firstName: string;
   lastName: string;
   organizationId?: string;
+  organizationName?: string;
   role: string;
 }
 
@@ -33,7 +34,7 @@ export class LoginResponseDto {
     this.refreshToken = refreshToken;
   }
 
-  static create(user: User, accessToken: string, refreshToken: string): LoginResponseDto {
+  static create(user: User, accessToken: string, refreshToken: string, organizationName?: string): LoginResponseDto {
     return new LoginResponseDto({
       user: {
         id: user.id,
@@ -41,6 +42,7 @@ export class LoginResponseDto {
         firstName: user.firstName,
         lastName: user.lastName,
         organizationId: user.organizationId,
+        organizationName,
         role: user.role
       },
       accessToken,

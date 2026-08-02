@@ -22,26 +22,17 @@ export class SequelizeAuditLogRepository extends IAuditLogRepository {
     return new Date(Date.now() - STATS_WINDOW_MS);
   }
 
-  async create(auditLog: AuditLog): Promise<AuditLog> {
-    const persistenceData = AuditLogMapper.toPersistence(auditLog);
-    const created = await this.model.create(persistenceData);
-    return AuditLogMapper.toDomain(created) as AuditLog;
-  }
+  private buildWhere(
+    options: { search?: string; hasHit?: boolean | string; userId?: string; startDate?: string; endDate?: string },
+    organizationId?: string
+  ): Record<string, unknown> {
+    const { search, hasHit, userId, startDate, endDate } = options;
+    const where: Record<string, unknown> = {};
 
-  async findByOrganization(organizationId: string, options: AuditLogQueryOptions = {}): Promise<AuditLogListResult> {
-    const {
-      page = 1,
-      limit = 20,
-      search,
-      hasHit,
-      userId,
-      startDate,
-      endDate
-    } = options;
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
 
-    const where: Record<string, unknown> = { organizationId };
-
-    // Apply filters
     if (search) {
       where.searchQuery = { [Op.iLike]: `%${search}%` };
     }
@@ -65,6 +56,18 @@ export class SequelizeAuditLogRepository extends IAuditLogRepository {
       where.createdAt = createdAt;
     }
 
+    return where;
+  }
+
+  async create(auditLog: AuditLog): Promise<AuditLog> {
+    const persistenceData = AuditLogMapper.toPersistence(auditLog);
+    const created = await this.model.create(persistenceData);
+    return AuditLogMapper.toDomain(created) as AuditLog;
+  }
+
+  async findByOrganization(organizationId: string, options: AuditLogQueryOptions = {}): Promise<AuditLogListResult> {
+    const { page = 1, limit = 20 } = options;
+    const where = this.buildWhere(options, organizationId);
     const offset = (page - 1) * limit;
 
     const { rows, count } = await this.model.findAndCountAll({
@@ -81,48 +84,8 @@ export class SequelizeAuditLogRepository extends IAuditLogRepository {
   }
 
   async findAll(options: AuditLogListQueryOptions = {}): Promise<AuditLogListResult> {
-    const {
-      page = 1,
-      limit = 20,
-      search,
-      hasHit,
-      userId,
-      startDate,
-      endDate,
-      orgId
-    } = options;
-
-    const where: Record<string, unknown> = {};
-
-    // Filter by organization if provided
-    if (orgId) {
-      where.organizationId = orgId;
-    }
-
-    // Apply filters
-    if (search) {
-      where.searchQuery = { [Op.iLike]: `%${search}%` };
-    }
-
-    if (hasHit !== undefined) {
-      where.hasHit = hasHit === 'true' || hasHit === true;
-    }
-
-    if (userId) {
-      where.userId = userId;
-    }
-
-    if (startDate || endDate) {
-      const createdAt: Record<symbol, Date> = {};
-      if (startDate) {
-        createdAt[Op.gte] = new Date(startDate);
-      }
-      if (endDate) {
-        createdAt[Op.lte] = new Date(endDate);
-      }
-      where.createdAt = createdAt;
-    }
-
+    const { page = 1, limit = 20, orgId } = options;
+    const where = this.buildWhere(options, orgId);
     const offset = (page - 1) * limit;
 
     const { rows, count } = await this.model.findAndCountAll({
@@ -136,6 +99,18 @@ export class SequelizeAuditLogRepository extends IAuditLogRepository {
       data: rows.map(row => AuditLogMapper.toDomain(row) as AuditLog),
       total: count
     };
+  }
+
+  async findByOrganizationForExport(organizationId: string, options: AuditLogQueryOptions = {}): Promise<AuditLog[]> {
+    const where = this.buildWhere(options, organizationId);
+    const rows = await this.model.findAll({ where, order: [['createdAt', 'DESC']] });
+    return rows.map(row => AuditLogMapper.toDomain(row) as AuditLog);
+  }
+
+  async findAllForExport(options: AuditLogListQueryOptions = {}): Promise<AuditLog[]> {
+    const where = this.buildWhere(options, options.orgId);
+    const rows = await this.model.findAll({ where, order: [['createdAt', 'DESC']] });
+    return rows.map(row => AuditLogMapper.toDomain(row) as AuditLog);
   }
 
   async countByOrganization(organizationId: string): Promise<number> {

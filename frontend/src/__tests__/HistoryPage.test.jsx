@@ -10,10 +10,11 @@ vi.mock('../components/ExtendedDetails', () => ({
 
 vi.mock('../services/api', () => ({
   getHistory: vi.fn(),
+  exportHistory: vi.fn(),
   default: {},
 }));
 
-import { getHistory } from '../services/api';
+import { getHistory, exportHistory } from '../services/api';
 
 const MOCK_LOG_CLEAN = {
   id: '1',
@@ -258,5 +259,84 @@ describe('HistoryPage', () => {
     });
     expect(screen.getByTestId('pagination-page-10')).toBeInTheDocument();
     expect(screen.queryByTestId('pagination-page-5')).not.toBeInTheDocument();
+  });
+
+  describe('CSV export', () => {
+    const csvBlob = new Blob(['a;b'], { type: 'text/csv' });
+    let clickSpy;
+
+    beforeEach(() => {
+      getHistory.mockResolvedValue({
+        data: [MOCK_LOG_CLEAN],
+        meta: { totalPages: 1, currentPage: 1, totalItems: 1 },
+      });
+      exportHistory.mockResolvedValue({ blob: csvBlob, filename: 'aml-history-2026-07-31.csv' });
+      window.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+      window.URL.revokeObjectURL = vi.fn();
+      clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    });
+
+    it('renders an Export CSV button in the page header', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-table')).toBeInTheDocument());
+      expect(screen.getByTestId('export-csv-btn')).toBeInTheDocument();
+    });
+
+    it('exports with the current filters and no pagination params when clicked', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-table')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'Putin' } });
+      fireEvent.click(screen.getByTestId('export-csv-btn'));
+
+      await waitFor(() => expect(exportHistory).toHaveBeenCalled());
+      const args = exportHistory.mock.calls[0][0];
+      expect(args.search).toBe('Putin');
+      expect(args.page).toBeUndefined();
+      expect(args.limit).toBeUndefined();
+    });
+
+    it('triggers a file download with the returned blob and filename', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-table')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId('export-csv-btn'));
+
+      await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+      expect(window.URL.createObjectURL).toHaveBeenCalledWith(csvBlob);
+    });
+
+    it('shows an error alert when export fails', async () => {
+      exportHistory.mockRejectedValue({ message: 'Export failed' });
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-table')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId('export-csv-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Export failed')).toBeInTheDocument();
+      });
+    });
+
+    it('reserves space for the spinner up front so the button does not resize when exporting starts', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-table')).toBeInTheDocument());
+
+      // The spinner must already be in the DOM (just hidden) before any click —
+      // otherwise inserting it on click changes the button's width.
+      expect(screen.getByTestId('export-spinner')).toHaveStyle({ visibility: 'hidden' });
+    });
+
+    it('makes the spinner visible (without changing button width) while exporting', async () => {
+      exportHistory.mockImplementation(() => new Promise(() => {}));
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('history-table')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId('export-csv-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('export-spinner')).toHaveStyle({ visibility: 'visible' });
+      });
+    });
   });
 });

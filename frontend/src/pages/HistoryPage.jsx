@@ -13,7 +13,7 @@ import {
   Spinner,
   Alert,
 } from 'react-bootstrap';
-import { getHistory } from '../services/api';
+import { getHistory, exportHistory } from '../services/api';
 import ExtendedDetails from '../components/ExtendedDetails';
 
 const HistoryPage = () => {
@@ -26,6 +26,8 @@ const HistoryPage = () => {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   // Helper: Extract Latin name from hitDetails or fallback to entityName
   const getLatinName = (entityName, hitDetails) => {
@@ -48,21 +50,25 @@ const HistoryPage = () => {
     return undefined;
   }, [filters.status]);
 
-  const fetchHistory = async () => {
-    setLoading(true);
-    setError(null);
-
+  // Builds the filter portion of query params shared between the paginated
+  // fetch and the (unpaginated) CSV export.
+  const buildFilterParams = () => {
     // FIX: Append end-of-day time to endDate for inclusive filtering
     const endDateValue = filters.endDate ? `${filters.endDate}T23:59:59` : undefined;
 
-    const params = {
-      page,
-      limit,
+    return {
       search: filters.search || undefined,
       startDate: filters.startDate || undefined,
       endDate: endDateValue,
       hasHit: statusParam,
     };
+  };
+
+  const fetchHistory = async () => {
+    setLoading(true);
+    setError(null);
+
+    const params = { page, limit, ...buildFilterParams() };
 
     try {
       const data = await getHistory(params);
@@ -94,6 +100,27 @@ const HistoryPage = () => {
     setFilters({ search: '', status: '', startDate: '', endDate: '' });
     setPage(1);
     fetchHistory();
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      const { blob, filename } = await exportHistory(buildFilterParams());
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err?.response?.data?.error || err.message || 'Failed to export history');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const openDetails = (log) => {
@@ -157,7 +184,33 @@ const HistoryPage = () => {
 
   return (
     <Container className="mt-4">
-      <h2 className="mb-3">History</h2>
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h2 className="mb-0">History</h2>
+        <Button
+          variant="outline-primary"
+          onClick={handleExport}
+          disabled={exporting}
+          data-testid="export-csv-btn"
+        >
+          {/* Always rendered (just hidden) so its space is reserved up front —
+              otherwise inserting it on click resizes the button. */}
+          <Spinner
+            as="span"
+            animation="border"
+            size="sm"
+            className="me-2"
+            style={{ visibility: exporting ? 'visible' : 'hidden' }}
+            data-testid="export-spinner"
+          />
+          Export CSV
+        </Button>
+      </div>
+
+      {exportError && (
+        <Alert variant="warning" className="mb-3" dismissible onClose={() => setExportError(null)}>
+          {exportError}
+        </Alert>
+      )}
 
       <Card className="mb-4">
         <Card.Header>Filters</Card.Header>

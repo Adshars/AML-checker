@@ -60,6 +60,7 @@ export default class GatewayServer {
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-api-secret', 'x-org-id', 'x-user-id', 'x-role'],
+      exposedHeaders: ['Content-Disposition'],
       optionsSuccessStatus: 204,
     };
 

@@ -2,6 +2,7 @@ import { HistoryResponseDto } from '../dtos/responses/HistoryResponseDto.js';
 import logger from '../../shared/logger/index.js';
 import type { IAuditLogRepository } from '../../domain/repositories/IAuditLogRepository.js';
 import type { HistoryQueryDto } from '../dtos/requests/HistoryQueryDto.js';
+import type { AuditLog } from '../../domain/entities/AuditLog.js';
 
 /**
  * Audit Service
@@ -65,6 +66,32 @@ export class AuditService {
     });
 
     return HistoryResponseDto.fromQueryResult(result, page, limit);
+  }
+
+  /**
+   * Get all audit logs matching filters, without pagination (for CSV export)
+   */
+  async exportHistory(queryDto: HistoryQueryDto): Promise<AuditLog[]> {
+    const { search, hasHit, startDate, endDate, userId, orgId, organizationId, role } = queryDto;
+
+    if (role === 'superadmin') {
+      return this.auditLogRepository.findAllForExport({
+        search,
+        hasHit,
+        startDate,
+        endDate,
+        userId,
+        orgId
+      });
+    }
+
+    return this.auditLogRepository.findByOrganizationForExport(organizationId as string, {
+      search,
+      hasHit,
+      startDate,
+      endDate,
+      userId
+    });
   }
 }
 

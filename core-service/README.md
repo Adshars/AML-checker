@@ -28,7 +28,8 @@ Sanctions checking and audit logging service for the AML Checker platform. Recei
 
 **Core Framework:**
 - **Node.js 18+** (Alpine) – Lightweight production runtime
-- **Express 4.18.2** – Fast, minimalist web framework with ES Modules support
+- **TypeScript 5.9** – Compiled to `dist/` via `tsc` (multi-stage Dockerfile); source lives in `src/**/*.ts`
+- **Express 5.2.1** – Fast, minimalist web framework with ES Modules support (upgraded from 4.18.2 during the TypeScript migration, aligning with the other services)
 
 **Database & ORM:**
 - **PostgreSQL 15** – Relational database for audit logs
@@ -44,10 +45,10 @@ Sanctions checking and audit logging service for the AML Checker platform. Recei
 - **winston-daily-rotate-file 5.0.0** – Automatic log rotation (daily app/error logs)
 
 **Development & Testing:**
-- **nodemon 3.0.1** – Auto-reload during development
-- **jest 30.2.0** – Test runner with ES Modules support
+- **jest 29.7.0** – Test runner with ES Modules support
 - **supertest 7.2.2** – HTTP assertions for integration testing
 - **cross-env 10.1.0** – Cross-platform environment variables
+- **ts-jest 29.4.11** – TypeScript support for Jest
 
 ## Environment and Configuration
 
@@ -64,7 +65,7 @@ Sanctions checking and audit logging service for the AML Checker platform. Recei
 **Database Configuration:**
 - Auto-syncs schema on startup using Sequelize `sync({ alter: true })`
 - Creates AuditLog table if not exists
-- See [src/app.js](src/app.js) for initialization logic
+- See [src/app.ts](src/app.ts) for initialization logic
 
 ## Local Setup
 
@@ -87,10 +88,10 @@ Sanctions checking and audit logging service for the AML Checker platform. Recei
    export OP_ADAPTER_URL=http://localhost:3000
    ```
 
-4. Start the service:
+4. Build and start the service (no dev/watch script — TypeScript is compiled ahead of time):
    ```bash
-   npm start         # Production mode
-   npm run dev       # Development mode with nodemon
+   npm run build
+   npm start
    ```
 
 5. Run tests:
@@ -112,7 +113,7 @@ docker compose up --build core-service
 ## Architecture
 
 **Composition Root:**
-- `Application` class in [src/app.js](src/app.js) wires dependencies and initializes the DB
+- `Application` class in [src/app.ts](src/app.ts) wires dependencies and initializes the DB
 - Dependencies: `OpAdapterClient` → `SanctionsCheckService` → `SanctionsController`
 
 **Layered Architecture:**
@@ -123,7 +124,7 @@ docker compose up --build core-service
 
 **Key Components:**
 - Controllers: [src/api/controllers/](src/api/controllers/)
-- Services: [src/application/services/](src/application/services/)
+- Services: [src/application/services/](src/application/services/) (includes [HistoryCsvExporter.ts](src/application/services/HistoryCsvExporter.ts) — pure CSV-building function for the history export endpoint)
 - Clients: [src/infrastructure/clients/](src/infrastructure/clients/)
 - Models: [src/infrastructure/database/sequelize/models/](src/infrastructure/database/sequelize/models/)
 - Repositories: [src/infrastructure/database/sequelize/repositories/](src/infrastructure/database/sequelize/repositories/)
@@ -145,6 +146,7 @@ All sanctions endpoints require **organization context** via `x-org-id` header (
 |--------|----------|---------------|-------------|------------------|------------------|
 | GET | `/check` | ✅ Yes (org context) | Check entity against sanctions/PEP lists; creates audit log | `x-org-id` (required)<br>`x-user-id` (optional)<br>`x-user-name` (optional)<br>`x-user-email` (optional)<br>`x-request-id` (optional) | `name` (required)<br>`limit` (optional)<br>`fuzzy` (optional)<br>`schema` (optional)<br>`country` (optional) |
 | GET | `/history` | ✅ Yes (org context or superadmin) | Retrieve paginated audit logs with filtering | `x-org-id` (required for non-superadmin)<br>`x-role` (optional, for superadmin) | `page` (default: 1)<br>`limit` (default: 20)<br>`search` (text filter)<br>`hasHit` (true/false)<br>`startDate` (ISO date)<br>`endDate` (ISO date)<br>`userId` (filter by user)<br>`orgId` (superadmin only) |
+| GET | `/history/export` | ✅ Yes (org context or superadmin) | Export **all** matching audit logs as CSV (same filters as `/history`, no pagination) | Same as `/history` | Same as `/history`, minus `page`/`limit` |
 | GET | `/stats` | ✅ Yes (org context) | Get aggregated statistics for organization | `x-org-id` (required) | None |
 
 ### Endpoint Details
@@ -178,6 +180,19 @@ All sanctions endpoints require **organization context** via `x-org-id` header (
 **Data Isolation:**
 - Regular users: see only their organization's logs (`x-org-id` header required)
 - Superadmins: bypass the `x-org-id` requirement when `x-role: superadmin` is present; can view all logs or narrow results with the `orgId` query parameter
+
+**Error Responses:**
+- 403 - Missing `x-org-id` for non-superadmin requests (`Unauthorized`)
+- 500 - Database error
+
+#### `/history/export` - Audit Log CSV Export
+**Purpose:** Export the full set of audit logs matching the same filters as `/history`, without pagination — used by the frontend's "Export CSV" button on the History view.
+
+**Behavior:**
+- Reuses the same filters and organization-scoping rules as `/history` (see Data Isolation above), but ignores `page`/`limit` and returns every matching row.
+- Response body is `text/csv; charset=utf-8` with a UTF-8 BOM prefix and `;`-separated columns (Date, User, Search Query, Result, Entity Name, Countries, Datasets) — chosen for Polish-locale Excel compatibility.
+- `Content-Disposition: attachment; filename="aml-history-<date-range-or-today>.csv"` — the API Gateway must expose this header via CORS (`exposedHeaders: ['Content-Disposition']`) for the browser to read the filename.
+- Builds the CSV in memory (no streaming, no hard record limit) — acceptable at this project's scale; revisit if history tables grow very large.
 
 **Error Responses:**
 - 403 - Missing `x-org-id` for non-superadmin requests (`Unauthorized`)
@@ -247,6 +262,17 @@ curl -X GET http://localhost:3000/history \
 curl -X GET "http://localhost:3000/history?startDate=2026-01-01T00:00:00Z&endDate=2026-01-31T23:59:59Z" \
   -H "x-org-id: <ORG_ID>"
 ```
+
+### Export Audit History as CSV
+
+**Request (same filters as `/history`, no pagination):**
+```bash
+curl -X GET "http://localhost:3000/history/export?startDate=2026-01-01&endDate=2026-01-31" \
+  -H "x-org-id: <ORG_ID>" \
+  -o history-export.csv
+```
+
+Response: `text/csv; charset=utf-8` body (UTF-8 BOM + `;`-separated columns), `Content-Disposition: attachment; filename="aml-history-2026-01-01_2026-01-31.csv"`.
 
 ### Get Organization Statistics
 
@@ -359,7 +385,7 @@ curl -X GET http://localhost:3000/stats \
 
 ## Data Models
 
-**AuditLog** ([src/infrastructure/database/sequelize/models/AuditLogModel.js](src/infrastructure/database/sequelize/models/AuditLogModel.js))
+**AuditLog** ([src/infrastructure/database/sequelize/models/AuditLogModel.ts](src/infrastructure/database/sequelize/models/AuditLogModel.ts))
 ```javascript
 {
   id: UUID (primary key, auto-generated),
@@ -421,15 +447,17 @@ curl -X GET http://localhost:3000/stats \
 Integration tests verify endpoint behavior, validation, data isolation, error handling, and OP Adapter/database interactions.
 
 **Test Framework:**
-- **jest 30.2.0** – Test runner with ES Modules support
+- **jest 29.7.0** – Test runner with ES Modules support (via ts-jest)
 - **supertest 7.2.2** – HTTP assertions
 - **Mocking**: OpAdapterClient, AuditLogModel, logger, SequelizeConnection
 
 **Test Files:**
-- [tests/check.test.js](tests/check.test.js)
-- [tests/history.test.js](tests/history.test.js)
-- [tests/stats.test.js](tests/stats.test.js)
-- [tests/health.test.js](tests/health.test.js)
+- [tests/check.test.ts](tests/check.test.ts)
+- [tests/history.test.ts](tests/history.test.ts)
+- [tests/historyExport.test.ts](tests/historyExport.test.ts) – `/history/export` endpoint (filters, no pagination, CSV headers)
+- [tests/csvExporter.test.ts](tests/csvExporter.test.ts) – `HistoryCsvExporter` pure function (separator, BOM, escaping)
+- [tests/stats.test.ts](tests/stats.test.ts)
+- [tests/health.test.ts](tests/health.test.ts)
 
 **Running Tests:**
 ```bash

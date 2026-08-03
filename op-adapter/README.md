@@ -26,10 +26,11 @@ Lightweight HTTP adapter over the local OpenSanctions (Yente) API. Exposes a sin
 ## Stack
 
 - **Node.js 18+** with ES Modules
+- **TypeScript 5.9** – Compiled to `dist/` via `tsc` (multi-stage Dockerfile); source lives in `src/**/*.ts`
 - **Express 5.2.1**
 - **axios 1.13.2** + **axios-retry 4.0.0** (3 retries with exponential backoff)
 - **winston 3.19.0** + **winston-daily-rotate-file 5.0.0**
-- **jest 30.2.0** + **supertest 7.2.2** for tests
+- **jest 29.7.0** + **supertest 7.2.2** for tests (via ts-jest)
 
 ## Environment
 
@@ -39,7 +40,7 @@ Lightweight HTTP adapter over the local OpenSanctions (Yente) API. Exposes a sin
 | `NODE_ENV` | Environment mode | `development` |
 
 Notes:
-- Service listens on port `3000` (hardcoded in [src/index.js](src/index.js)).
+- Service listens on port `3000` (hardcoded in [src/index.ts](src/index.ts)).
 - Timeout per Yente request: `5000ms`.
 - Default limit is `15`, clamped to `1..100`.
 - Request ID is taken from `x-request-id` or auto-generated as `req-{timestamp}-{random}`.
@@ -48,7 +49,7 @@ Notes:
 
 ```bash
 npm install
-npm start
+npm run build && node dist/index.js   # no dev/watch script — TypeScript is compiled ahead of time
 ```
 
 Run tests:
@@ -58,31 +59,31 @@ npm test
 
 ## Docker Setup
 
-Dockerfile uses `node:18-alpine` and runs `node src/index.js`. Map port `3000` as needed in your compose file.
+Multi-stage Dockerfile: builds with `node:18-alpine` (`npm run build` via `tsc`), then runs `node dist/index.js` in a fresh `node:18-alpine` stage with only production dependencies. Map port `3000` as needed in your compose file.
 
 ## Project Structure
 
 ```
 op-adapter/
 ├── src/
-│   ├── index.js                     # Server start (port 3000)
-│   ├── app.js                       # Express app + DI
+│   ├── index.ts                     # Server start (port 3000)
+│   ├── app.ts                       # Express app + DI
 │   ├── application/
 │   │   └── dtos/
 │   │       ├── requests/            # Request DTOs (validation)
 │   │       └── responses/           # Response DTOs
 │   ├── clients/
-│   │   └── YenteClient.js           # axios + retry
+│   │   └── YenteClient.ts           # axios + retry
 │   ├── controllers/
-│   │   └── SanctionsController.js   # /health, /check
+│   │   └── SanctionsController.ts   # /health, /check
 │   ├── models/
-│   │   └── SanctionEntity.dto.js    # Mapping Yente -> API output
+│   │   └── SanctionEntity.dto.ts    # Mapping Yente -> API output
 │   ├── services/
-│   │   └── SanctionsService.js      # Business logic
+│   │   └── SanctionsService.ts      # Business logic
 │   └── utils/
-│       └── logger.js                # Winston logger
+│       └── logger.ts                # Winston logger
 ├── tests/
-│   └── adapter.test.js              # Integration tests
+│   └── adapter.test.ts              # Integration tests
 ├── Dockerfile
 ├── package.json
 └── README.md
@@ -166,7 +167,7 @@ Notes:
 - `isSanctioned` is `true` when `properties.topics` contains `"sanction"`.
 - `isPep` is `true` when `properties.topics` contains `"pep"`.
 - `properties` preserves raw Yente properties for downstream consumers.
-- Top-level fields are limited to the DTO in [src/models/SanctionEntity.dto.js](src/models/SanctionEntity.dto.js).
+- Top-level fields are limited to the DTO in [src/models/SanctionEntity.dto.ts](src/models/SanctionEntity.dto.ts).
 
 ## Error Handling
 
@@ -197,7 +198,7 @@ In `NODE_ENV=development`, the 502 response includes a `details` field with the 
 
 ## Testing
 
-Integration tests in [tests/adapter.test.js](tests/adapter.test.js) cover DTO mapping, parameter normalization, error handling, and response structure.
+Integration tests in [tests/adapter.test.ts](tests/adapter.test.ts) cover DTO mapping, parameter normalization, error handling, and response structure.
 
 Run:
 ```bash

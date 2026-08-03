@@ -281,6 +281,32 @@ describe('Auth Service Integration Tests', () => {
             expect(refreshCookie).toContain('Path=/auth');
         });
 
+        it('should include the organization name in the user object (Success)', async () => {
+            const hashedPassword = await hashPassword('correctpass');
+
+            mockUserFindOne.mockResolvedValue({
+                _id: 'u1',
+                email: 'ok@test.pl',
+                passwordHash: hashedPassword,
+                role: 'admin',
+                firstName: 'Test',
+                lastName: 'User',
+                organizationId: 'o1'
+            });
+            mockOrgFindById.mockResolvedValue({
+                _id: 'o1',
+                name: 'PrzykładowaFirma Sp. z o.o.'
+            });
+
+            const res = await request(app).post('/auth/login').send({
+                email: 'ok@test.pl',
+                password: 'correctpass'
+            });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.user.organizationName).toBe('PrzykładowaFirma Sp. z o.o.');
+        });
+
         it('should fail login (Wrong Password) -> 401', async () => {
             const hashedPassword = await hashPassword('correctpass');
 

@@ -283,6 +283,22 @@ describe('API Gateway - CORS & Headers', () => {
 		expect(res.headers['access-control-allow-credentials']).toBe('true');
 	});
 
+	test('CORS: Content-Disposition is exposed so the browser can read the export filename', async () => {
+		const app = await setupApp();
+		const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);
+
+		nock(CORE_URL)
+			.get('/history/export')
+			.reply(200, 'a;b', { 'Content-Disposition': 'attachment; filename="aml-history-2026-07-31.csv"' });
+
+		const res = await request(app)
+			.get('/sanctions/history/export')
+			.set('Origin', 'http://localhost:3000')
+			.set('Authorization', `Bearer ${token}`);
+
+		expect(res.headers['access-control-expose-headers']).toContain('Content-Disposition');
+	});
+
 	test('Headers: Auth context headers injected to proxy request', async () => {
 		const app = await setupApp();
 		const token = jwt.sign({ userId: 'u1', organizationId: 'org1', role: 'user' }, JWT_SECRET);

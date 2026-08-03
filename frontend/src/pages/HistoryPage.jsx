@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import {
   Container,
   Row,
@@ -13,10 +13,14 @@ import {
   Spinner,
   Alert,
 } from 'react-bootstrap';
-import { getHistory } from '../services/api';
+import { getHistory, exportHistory } from '../services/api';
+import { getLatinName, formatDatasets, getUserLabel } from '../utils/historyLogFormatters';
+import { generateConfirmationPdf } from '../utils/pdfConfirmation';
+import { AuthContext } from '../context/AuthContext';
 import ExtendedDetails from '../components/ExtendedDetails';
 
 const HistoryPage = () => {
+  const { user } = useContext(AuthContext);
   const [filters, setFilters] = useState({ search: '', status: '', startDate: '', endDate: '' });
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
@@ -26,21 +30,9 @@ const HistoryPage = () => {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
-
-  // Helper: Extract Latin name from hitDetails or fallback to entityName
-  const getLatinName = (entityName, hitDetails) => {
-    // If we have hitDetails with name array, search for Latin version
-    if (hitDetails && Array.isArray(hitDetails.name)) {
-      const latin = hitDetails.name.find(n => /[a-zA-Z]/.test(n));
-      if (latin) return latin;
-      // Fallback to first name in array
-      return hitDetails.name[0];
-    }
-    // If entityName is array (edge case)
-    if (Array.isArray(entityName)) return entityName[0];
-    // Fallback to direct entityName
-    return entityName || 'Unknown Entity';
-  };
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  const [pdfError, setPdfError] = useState(null);
 
   const statusParam = useMemo(() => {
     if (filters.status === 'hit') return true;
@@ -48,21 +40,25 @@ const HistoryPage = () => {
     return undefined;
   }, [filters.status]);
 
-  const fetchHistory = async () => {
-    setLoading(true);
-    setError(null);
-
+  // Builds the filter portion of query params shared between the paginated
+  // fetch and the (unpaginated) CSV export.
+  const buildFilterParams = () => {
     // FIX: Append end-of-day time to endDate for inclusive filtering
     const endDateValue = filters.endDate ? `${filters.endDate}T23:59:59` : undefined;
 
-    const params = {
-      page,
-      limit,
+    return {
       search: filters.search || undefined,
       startDate: filters.startDate || undefined,
       endDate: endDateValue,
       hasHit: statusParam,
     };
+  };
+
+  const fetchHistory = async () => {
+    setLoading(true);
+    setError(null);
+
+    const params = { page, limit, ...buildFilterParams() };
 
     try {
       const data = await getHistory(params);
@@ -96,14 +92,45 @@ const HistoryPage = () => {
     fetchHistory();
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      const { blob, filename } = await exportHistory(buildFilterParams());
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err?.response?.data?.error || err.message || 'Failed to export history');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const openDetails = (log) => {
     setSelectedLog(log);
+    setPdfError(null);
     setShowModal(true);
   };
 
   const closeDetails = () => {
     setShowModal(false);
     setSelectedLog(null);
+  };
+
+  const handleDownloadPdf = () => {
+    setPdfError(null);
+    try {
+      generateConfirmationPdf(selectedLog, user?.organizationName);
+    } catch (err) {
+      setPdfError(err.message || 'Failed to generate PDF');
+    }
   };
 
   const renderResultBadge = (log) => {
@@ -120,16 +147,11 @@ const HistoryPage = () => {
   };
 
   const renderUserCell = (userId, userEmail, userName) => {
+    const label = getUserLabel(userId, userEmail, userName);
     if (userId === 'API') {
-      return <Badge bg="secondary">API Key</Badge>;
+      return <Badge bg="secondary">{label}</Badge>;
     }
-    return userName || userEmail || userId || '—';
-  };
-
-  const formatDatasets = (datasets) => {
-    if (Array.isArray(datasets)) return datasets.join(', ');
-    if (typeof datasets === 'string') return datasets;
-    return '—';
+    return label;
   };
 
   // Builds a windowed page list around the current page, e.g. [1, '…', 4, 5, 6, '…', 12],
@@ -157,7 +179,33 @@ const HistoryPage = () => {
 
   return (
     <Container className="mt-4">
-      <h2 className="mb-3">History</h2>
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h2 className="mb-0">History</h2>
+        <Button
+          variant="outline-primary"
+          onClick={handleExport}
+          disabled={exporting}
+          data-testid="export-csv-btn"
+        >
+          {/* Always rendered (just hidden) so its space is reserved up front —
+              otherwise inserting it on click resizes the button. */}
+          <Spinner
+            as="span"
+            animation="border"
+            size="sm"
+            className="me-2"
+            style={{ visibility: exporting ? 'visible' : 'hidden' }}
+            data-testid="export-spinner"
+          />
+          Export CSV
+        </Button>
+      </div>
+
+      {exportError && (
+        <Alert variant="warning" className="mb-3" dismissible onClose={() => setExportError(null)}>
+          {exportError}
+        </Alert>
+      )}
 
       <Card className="mb-4">
         <Card.Header>Filters</Card.Header>
@@ -308,6 +356,11 @@ const HistoryPage = () => {
           <Modal.Title>Log Details</Modal.Title>
         </Modal.Header>
         <Modal.Body>
+          {pdfError && (
+            <Alert variant="warning" className="mb-3" dismissible onClose={() => setPdfError(null)}>
+              {pdfError}
+            </Alert>
+          )}
           {selectedLog && (
             <>
               {/* SECTION 1: System Metadata (Pretty Table at Top) */}
@@ -388,6 +441,9 @@ const HistoryPage = () => {
           )}
         </Modal.Body>
         <Modal.Footer>
+          <Button variant="outline-primary" onClick={handleDownloadPdf} data-testid="download-pdf-btn">
+            Download PDF
+          </Button>
           <Button variant="secondary" onClick={closeDetails}>
             Close
           </Button>

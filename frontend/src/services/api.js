@@ -112,17 +112,11 @@ api.interceptors.response.use(
   }
 );
 
-/**
- * Fetch audit history with query params
- * @param {Object} params - e.g. { page, limit, search, startDate, endDate, hasHit }
- * @returns {Promise<Object>} response data
- */
-export const getHistory = (params = {}) => {
+const buildHistoryFilterParams = (params = {}, { includePagination }) => {
   const searchParams = new URLSearchParams();
 
   const entries = {
-    page: params.page,
-    limit: params.limit,
+    ...(includePagination ? { page: params.page, limit: params.limit } : {}),
     search: params.search,
     startDate: params.startDate,
     endDate: params.endDate,
@@ -138,10 +132,40 @@ export const getHistory = (params = {}) => {
     searchParams.append('hasHit', String(params.hasHit));
   }
 
-  const query = searchParams.toString();
+  return searchParams.toString();
+};
+
+/**
+ * Fetch audit history with query params
+ * @param {Object} params - e.g. { page, limit, search, startDate, endDate, hasHit }
+ * @returns {Promise<Object>} response data
+ */
+export const getHistory = (params = {}) => {
+  const query = buildHistoryFilterParams(params, { includePagination: true });
   const url = query ? `/sanctions/history?${query}` : '/sanctions/history';
 
   return api.get(url).then((response) => response.data);
+};
+
+const DEFAULT_EXPORT_FILENAME = 'aml-history-export.csv';
+
+/**
+ * Export audit history matching the given filters as a CSV file (no pagination).
+ * @param {Object} params - e.g. { search, startDate, endDate, hasHit }
+ * @returns {Promise<{blob: Blob, filename: string}>}
+ */
+export const exportHistory = (params = {}) => {
+  const query = buildHistoryFilterParams(params, { includePagination: false });
+  const url = query ? `/sanctions/history/export?${query}` : '/sanctions/history/export';
+
+  return api.get(url, { responseType: 'blob' }).then((response) => {
+    const disposition = response.headers?.['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    return {
+      blob: response.data,
+      filename: match ? match[1] : DEFAULT_EXPORT_FILENAME,
+    };
+  });
 };
 
 /**

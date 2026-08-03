@@ -28,6 +28,7 @@ Authentication and user management service for the AML Checker platform. Handles
 
 **Core Framework:**
 - **Node.js 18+** (Alpine) – Lightweight production runtime
+- **TypeScript 5.9** – Compiled to `dist/` via `tsc` (multi-stage Dockerfile); source lives in `src/**/*.ts`
 - **Express 5.2.1** – Fast, minimalist web framework with ES Modules support
 - **Mongoose 9.0.1** – MongoDB ODM for data modeling and validation
 
@@ -48,7 +49,7 @@ Authentication and user management service for the AML Checker platform. Handles
 - **winston-daily-rotate-file** 5.0.0 – Automatic log rotation (daily app/error logs)
 
 **Development & Testing:**
-- **jest** 30.2.0 – Test runner with ES Modules support
+- **jest** 29.7.0 – Test runner with ES Modules support
 - **supertest** 7.2.2 – HTTP assertions for integration testing
 - **cross-env** 10.1.0 – Cross-platform environment variables
 
@@ -86,9 +87,9 @@ Authentication and user management service for the AML Checker platform. Handles
    export REFRESH_TOKEN_SECRET="your-refresh-secret"
    ```
 
-3. Start the service:
+3. Build and start the service (no dev/watch script — TypeScript is compiled ahead of time):
    ```bash
-   node src/index.js
+   npm run build && node dist/index.js
    ```
 
 4. Run tests:
@@ -263,12 +264,13 @@ curl -X POST http://localhost:3000/auth/login \
     "role": "admin",
     "firstName": "John",
     "lastName": "Smith",
-    "organizationId": "64a8b9c7d2f3e4a1b2c3d4e5"
+    "organizationId": "64a8b9c7d2f3e4a1b2c3d4e5",
+    "organizationName": "ACME Corp"
   }
 }
 ```
 
-Note: Access token (body) expires per `JWT_EXPIRES_IN`. Refresh token (HttpOnly Cookie) expires per `REFRESH_TOKEN_EXPIRES_IN`.
+Note: Access token (body) expires per `JWT_EXPIRES_IN`. Refresh token (HttpOnly Cookie) expires per `REFRESH_TOKEN_EXPIRES_IN`. `organizationName` is looked up from the `Organization` collection at login time (one extra query) — it is not embedded in the JWT itself, so gateway-injected headers on subsequent requests are unaffected. Added for the frontend's PDF confirmation export (Faza 4), which needs a human-readable organization name.
 
 ### 3. Register User (Admin/Superadmin Only)
 
@@ -565,7 +567,8 @@ Warning: Self-deletion prevented. User must belong to admin's organization.
     "role": "admin",
     "firstName": "John",
     "lastName": "Smith",
-    "organizationId": "64a8b9c7d2f3e4a1b2c3d4e5"
+    "organizationId": "64a8b9c7d2f3e4a1b2c3d4e5",
+    "organizationName": "ACME Corp"
   }
 }
 ```
@@ -616,34 +619,34 @@ Warning: Self-deletion prevented. User must belong to admin's organization.
 
 **Key Components:**
 - **Controllers** ([src/api/controllers/](src/api/controllers/))
-  - [AuthController.js](src/api/controllers/AuthController.js) – Login, refresh, logout, API key validation
-  - [OrganizationController.js](src/api/controllers/OrganizationController.js) – Organization registration, API key management
-  - [PasswordController.js](src/api/controllers/PasswordController.js) – Forgot/reset/change password flows
-  - [UserController.js](src/api/controllers/UserController.js) – User CRUD operations (admin only)
+  - [AuthController.ts](src/api/controllers/AuthController.ts) – Login, refresh, logout, API key validation
+  - [OrganizationController.ts](src/api/controllers/OrganizationController.ts) – Organization registration, API key management
+  - [PasswordController.ts](src/api/controllers/PasswordController.ts) – Forgot/reset/change password flows
+  - [UserController.ts](src/api/controllers/UserController.ts) – User CRUD operations (admin only)
 
 - **Services** ([src/application/services/](src/application/services/))
-  - [AuthenticationService.js](src/application/services/AuthenticationService.js) – Login, token refresh/logout, API key validation
-  - [OrganizationService.js](src/application/services/OrganizationService.js) – Organization registration, secret reset, keys
-  - [UserService.js](src/application/services/UserService.js) – User registration and management
-  - [PasswordService.js](src/application/services/PasswordService.js) – Password reset and change
-  - [TokenService.js](src/application/services/TokenService.js) – Access/refresh token generation and storage
+  - [AuthenticationService.ts](src/application/services/AuthenticationService.ts) – Login, token refresh/logout, API key validation
+  - [OrganizationService.ts](src/application/services/OrganizationService.ts) – Organization registration, secret reset, keys
+  - [UserService.ts](src/application/services/UserService.ts) – User registration and management
+  - [PasswordService.ts](src/application/services/PasswordService.ts) – Password reset and change
+  - [TokenService.ts](src/application/services/TokenService.ts) – Access/refresh token generation and storage
 
 - **Domain Entities** ([src/domain/entities/](src/domain/entities/))
-  - [Organization.js](src/domain/entities/Organization.js) – Organization data with API credentials
-  - [User.js](src/domain/entities/User.js) – User accounts with roles and organization association
+  - [Organization.ts](src/domain/entities/Organization.ts) – Organization data with API credentials
+  - [User.ts](src/domain/entities/User.ts) – User accounts with roles and organization association
 
 - **Repositories** ([src/infrastructure/database/mongoose/repositories/](src/infrastructure/database/mongoose/repositories/))
   - MongoDB repositories for users, organizations, refresh tokens, password reset tokens
 
 - **Routes** ([src/api/routes/](src/api/routes/))
-  - [authRoutes.js](src/api/routes/authRoutes.js) – Login, refresh, logout, API key validation
-  - [organizationRoutes.js](src/api/routes/organizationRoutes.js) – Register organization, reset secret, get keys
-  - [passwordRoutes.js](src/api/routes/passwordRoutes.js) – Forgot/reset/change password
-  - [userRoutes.js](src/api/routes/userRoutes.js) – User management and /auth/register-user
+  - [authRoutes.ts](src/api/routes/authRoutes.ts) – Login, refresh, logout, API key validation
+  - [organizationRoutes.ts](src/api/routes/organizationRoutes.ts) – Register organization, reset secret, get keys
+  - [passwordRoutes.ts](src/api/routes/passwordRoutes.ts) – Forgot/reset/change password
+  - [userRoutes.ts](src/api/routes/userRoutes.ts) – User management and /auth/register-user
 
 - **Shared** ([src/shared/](src/shared/))
-  - [config/index.js](src/shared/config/index.js) – Environment configuration
-  - [logger/index.js](src/shared/logger/index.js) – Winston logger with daily rotation
+  - [config/index.ts](src/shared/config/index.ts) – Environment configuration
+  - [logger/index.ts](src/shared/logger/index.ts) – Winston logger with daily rotation
   - [errors/](src/shared/errors/) – Error types and codes
 
 **Logging Infrastructure:**
@@ -770,7 +773,7 @@ The Auth Service includes integration tests that verify endpoint behavior, valid
 - **supertest** 7.2.2 – HTTP assertions
 - **Mocking**: Jest mocks for Mongoose schemas, nodemailer, and logger
 
-**Test File:** [tests/auth.test.js](tests/auth.test.js)
+**Test File:** [tests/auth.test.ts](tests/auth.test.ts)
 
 **Running Tests:**
 ```bash

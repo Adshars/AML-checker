@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import api, { getHistory } from '../services/api';
+import api, { getHistory, exportHistory } from '../services/api';
 
 describe('getHistory — URL construction', () => {
   let getSpy;
@@ -77,5 +77,54 @@ describe('getHistory — URL construction', () => {
     const result = await getHistory({ page: 1 });
     expect(result.data).toHaveLength(1);
     expect(result.meta.totalItems).toBe(1);
+  });
+});
+
+describe('exportHistory', () => {
+  let getSpy;
+  const csvBlob = new Blob(['a;b'], { type: 'text/csv' });
+
+  beforeEach(() => {
+    getSpy = vi.spyOn(api, 'get').mockResolvedValue({
+      data: csvBlob,
+      headers: { 'content-disposition': 'attachment; filename="aml-history-2026-07-31.csv"' },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('builds base URL with no params', async () => {
+    await exportHistory();
+    expect(getSpy.mock.calls[0][0]).toBe('/sanctions/history/export');
+  });
+
+  it('requests a blob response', async () => {
+    await exportHistory();
+    expect(getSpy.mock.calls[0][1]).toEqual({ responseType: 'blob' });
+  });
+
+  it('appends filters but never page/limit', async () => {
+    await exportHistory({ page: 3, limit: 10, search: 'Putin', hasHit: true, startDate: '2026-07-01', endDate: '2026-07-31' });
+    const url = getSpy.mock.calls[0][0];
+    expect(url).toContain('search=Putin');
+    expect(url).toContain('hasHit=true');
+    expect(url).toContain('startDate=2026-07-01');
+    expect(url).toContain('endDate=2026-07-31');
+    expect(url).not.toContain('page=');
+    expect(url).not.toContain('limit=');
+  });
+
+  it('resolves with the blob and filename parsed from Content-Disposition', async () => {
+    const result = await exportHistory();
+    expect(result.blob).toBe(csvBlob);
+    expect(result.filename).toBe('aml-history-2026-07-31.csv');
+  });
+
+  it('falls back to a default filename when Content-Disposition is missing', async () => {
+    getSpy.mockResolvedValue({ data: csvBlob, headers: {} });
+    const result = await exportHistory();
+    expect(result.filename).toBe('aml-history-export.csv');
   });
 });

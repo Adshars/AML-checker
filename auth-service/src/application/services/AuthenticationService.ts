@@ -75,7 +75,9 @@ export class AuthenticationService {
 
     logger.info('User logged in', { userId: user.id, role: user.role });
 
-    return LoginResponseDto.create(user, accessToken, refreshToken);
+    const organization = await this.organizationRepository.findById(user.organizationId as string);
+
+    return LoginResponseDto.create(user, accessToken, refreshToken, organization?.name);
   }
 
   /**

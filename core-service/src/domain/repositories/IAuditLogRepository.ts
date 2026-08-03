@@ -46,6 +46,20 @@ export class IAuditLogRepository {
   }
 
   /**
+   * Find all audit logs matching filters for an organization, without pagination (for export)
+   */
+  async findByOrganizationForExport(organizationId: string, options: AuditLogQueryOptions = {}): Promise<AuditLog[]> {
+    throw new Error('Method not implemented');
+  }
+
+  /**
+   * Find all audit logs matching filters, without pagination (for superadmin export)
+   */
+  async findAllForExport(options: AuditLogListQueryOptions = {}): Promise<AuditLog[]> {
+    throw new Error('Method not implemented');
+  }
+
+  /**
    * Count total audit logs for organization
    */
   async countByOrganization(organizationId: string): Promise<number> {

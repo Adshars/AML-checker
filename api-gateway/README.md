@@ -59,6 +59,7 @@ Central reverse proxy and authentication gateway for the AML Checker platform. R
 
 **Core Framework:**
 - **Node.js 18+** (Alpine) – Lightweight production runtime
+- **TypeScript 5.9** – Compiled to `dist/` via `tsc` (multi-stage Dockerfile); source lives in `src/**/*.ts`
 - **Express 5.2.1** – Fast, minimalist web framework with ES Modules support
 
 **Proxy & Routing:**
@@ -80,7 +81,7 @@ Central reverse proxy and authentication gateway for the AML Checker platform. R
 - **winston-daily-rotate-file** v5.0.0 – Automatic log rotation (daily app/error logs)
 
 **Development & Testing:**
-- **jest** v30.2.0 – Test runner with ES Modules support
+- **jest** v29.7.0 – Test runner with ES Modules support
 - **supertest** v7.2.2 – HTTP assertions for E2E testing
 - **nock** v14.0.10 – HTTP request mocking for isolated tests
 - **cross-env** v10.1.0 – Cross-platform environment variables
@@ -92,6 +93,8 @@ Environment and Configuration
 - `PORT` – application port (default 8080).
 - `NODE_ENV` – environment (set to `test` during tests to prevent server startup).
 - `ALLOWED_ORIGINS` – comma-separated list of allowed CORS origins. Defaults to `http://localhost`, `http://localhost:80`, `http://localhost:3000`, `http://localhost:5173`.
+
+CORS also exposes the `Content-Disposition` response header (`exposedHeaders: ['Content-Disposition']`) so the browser can read the filename for file downloads proxied through the gateway (CSV export from `/sanctions/history/export`). Without this, cross-origin responses hide `Content-Disposition` from JavaScript by default and the frontend falls back to a generic filename.
 
 ## Rate Limiting
 
@@ -113,8 +116,8 @@ Environment and Configuration
 Local Setup
 1) `npm install`
 2) Set `JWT_SECRET` (required); optionally set service URLs and `ALLOWED_ORIGINS`
-3) `node src/index.js`
-4) `npm test` (for running E2E tests)
+3) `npm run build && node dist/index.js` (no dev/watch script — TypeScript is compiled ahead of time)
+4) `npm test` (for running the test suite)
 
 Docker Compose Setup
 - From project root directory: `docker compose up --build api-gateway`
@@ -124,14 +127,14 @@ Docker Compose Setup
 ## Architecture
 
 **Design Pattern:**
-- **Class-Based OOP**: `GatewayServer` class ([src/GatewayServer.js](src/GatewayServer.js)) encapsulates all gateway logic
+- **Class-Based OOP**: `GatewayServer` class ([src/GatewayServer.ts](src/GatewayServer.ts)) encapsulates all gateway logic
   - Global middleware configuration (CORS, logging, Swagger)
   - Rate limiter setup (auth/API tiers)
   - Proxy configuration (auth-service, core-service, users)
   - Route registration with authentication guards
 
 **Authentication Layer:**
-- **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) – Standalone class handling dual authentication
+- **AuthMiddleware** ([src/authMiddleware.ts](src/authMiddleware.ts)) – Standalone class handling dual authentication
   - JWT verification: Local signature check using `JWT_SECRET` (no external calls)
   - API Key validation: Cached validation with 60-second TTL (reduces Auth Service calls by ~60x)
   - Context injection: Attaches `x-org-id`, `x-user-id`, `x-role`, `x-auth-type`, `x-user-email`, `x-user-name` to request headers
@@ -139,7 +142,7 @@ Docker Compose Setup
 **Routing Strategy:**
 - **Route Priority**: Protected routes registered **before** public routes to prevent proxy conflicts
   - Example: `/auth/register-user` before `/auth/login`
-- **Route Configuration**: Defined in [src/config/routes.js](src/config/routes.js) (reference), implemented in `GatewayServer.setupRoutes()`
+- **Route Configuration**: Defined in [src/config/routes.ts](src/config/routes.ts) (reference), implemented in `GatewayServer.setupRoutes()`
 
 **Proxy Architecture:**
 - **http-proxy-middleware**: Forwards requests to upstream services with header injection
@@ -160,7 +163,7 @@ Docker Compose Setup
 - **Request Tracking**: UUID-based `x-request-id` for distributed tracing
 
 **Logging Infrastructure:**
-- **Winston Logger** ([src/utils/logger.js](src/utils/logger.js))
+- **Winston Logger** ([src/utils/logger.ts](src/utils/logger.ts))
   - Console transport: Colorized, timestamped logs
   - File transports: Daily rotation (logs/%DATE%-app.log, logs/%DATE%-error.log)
   - Log levels: info, debug, warn, error
@@ -208,6 +211,7 @@ All sanctions routes require **JWT or API Key authentication** and are rate limi
 |--------|----------|---------------|------------|-------------|-----------------|
 | GET | `/sanctions/check` | ✅ JWT or API Key | Core Service | Check entity against sanctions/PEP lists | `name` (required), `limit`, `fuzzy`, `schema`, `country` |
 | GET | `/sanctions/history` | ✅ JWT or API Key | Core Service | Retrieve audit logs with pagination and filtering | `page`, `limit`, `search`, `hasHit`, `startDate`, `endDate`, `userId`, `orgId` |
+| GET | `/sanctions/history/export` | ✅ JWT or API Key | Core Service | Export the full filtered audit log result set as CSV (no pagination) | `search`, `hasHit`, `startDate`, `endDate`, `userId`, `orgId` |
 | GET | `/sanctions/stats` | ✅ JWT or API Key | Core Service | Get aggregated statistics for organization | - |
 | GET | `/sanctions/health` | ✅ JWT or API Key | Core Service | Health check for Core Service | - |
 
@@ -237,7 +241,7 @@ After successful authentication, the gateway automatically injects these headers
 
 ## Authentication Middleware
 
-The **AuthMiddleware** ([src/authMiddleware.js](src/authMiddleware.js)) validates two authentication methods with automatic caching:
+The **AuthMiddleware** ([src/authMiddleware.ts](src/authMiddleware.ts)) validates two authentication methods with automatic caching:
 
 ### 1. API Key Authentication (B2B Integration)
 
@@ -481,7 +485,7 @@ How It Works (High Level)
 
 End-to-End (E2E) tests verify gateway routing, rate limiting, authentication, and header forwarding using Jest with Supertest and nock for mocking upstream services.
 
-**Test File:** [tests/gateway.test.js](tests/gateway.test.js)
+**Test File:** [tests/gateway.test.ts](tests/gateway.test.ts)
 
 ### Test Suites
 
@@ -505,6 +509,7 @@ End-to-End (E2E) tests verify gateway routing, rate limiting, authentication, an
 
 **4. CORS & Headers**
 - ✅ OPTIONS preflight requests allowed without authentication (204)
+- ✅ `Content-Disposition` is exposed via CORS so the browser can read download filenames (e.g. CSV export)
 - ✅ Auth context headers injected to proxy requests (`x-org-id`, `x-user-id`, `x-auth-type`, `x-role`)
 
 **5. Health Check**
@@ -527,16 +532,16 @@ npm test
 - JWT_SECRET and service URLs configured for test isolation
 
 **Test Tools:**
-- **jest** v30.2.0 – Test runner with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules`)
+- **jest** v29.7.0 – Test runner with ES Modules support (`cross-env NODE_OPTIONS=--experimental-vm-modules`)
 - **supertest** v7.2.2 – HTTP assertion library for Express routes
 - **nock** v14.0.10 – HTTP request interceptor and mocker
 
 ### Example Output
 
 ```
-PASS  tests/gateway.test.js
+PASS  tests/gateway.test.ts
   API Gateway E2E
-    ✓ Rate limiting: 101st request to /sanctions returns 429 (45ms)
+    ✓ Rate limiting: 201st request to /sanctions returns 429 (45ms)
     ✓ Routing: /auth/login is proxied to Auth Service (12ms)
     ✓ Routing: /auth/reset-password is proxied to Auth Service (8ms)
     ✓ Routing: /auth/refresh is proxied to Auth Service (10ms)
@@ -556,6 +561,7 @@ PASS  tests/gateway.test.js
     ✓ Protected: /users/* requires authentication (8ms)
   API Gateway - CORS & Headers
     ✓ CORS: OPTIONS preflight allowed without auth (5ms)
+    ✓ CORS: Content-Disposition is exposed so the browser can read the export filename (6ms)
     ✓ Headers: Auth context headers injected (12ms)
   API Gateway - Health Check
     ✓ Health: /health endpoint returns UP status (4ms)
@@ -564,7 +570,7 @@ PASS  tests/gateway.test.js
     ✓ Error: Upstream service error handled (10ms)
 
 Test Suites: 1 passed, 1 total
-Tests:       21 passed, 21 total
+Tests:       22 passed, 22 total
 Snapshots:   0 total
 Time:        2.145 s
 ```

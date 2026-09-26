@@ -24,15 +24,36 @@ services:
     container_name: ${FRONTEND_CONTAINER_NAME}
     ports:
       - "80:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     environment:
-      - VITE_API_URL=http://localhost:8080 
+      - VITE_API_URL=http://localhost:8080
     depends_on:
       - api-gateway
     networks:
       - default
+    # Compose Watch (run with: docker compose up --build --watch)
+    # Replaces the old bind mount + anonymous node_modules volume,
+    # which kept stale dependencies after package.json changes.
+    develop:
+      watch:
+        # Source code — copied into the running container, Vite HMR picks it up
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: sync
+          path: ./frontend/public
+          target: /app/public
+        - action: sync
+          path: ./frontend/index.html
+          target: /app/index.html
+        # Vite config — copy and restart the dev server
+        - action: sync+restart
+          path: ./frontend/vite.config.js
+          target: /app/vite.config.js
+        # Dependencies — rebuild the image (fresh npm ci) and recreate the container
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
   op-adapter:
     build: ./op-adapter
     # For testing purposes, delete comments below to expose port

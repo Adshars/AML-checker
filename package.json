@@ -8,6 +8,7 @@
     "test:adapter": "cd op-adapter && npm test",
     "test:gateway": "cd api-gateway && npm test",
     "test:frontend": "cd frontend && npm test",
+    "test:docker": "node scripts/docker-smoke.mjs",
     "test:e2e": "npx playwright test --config=tests/e2e/playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=tests/e2e/playwright.config.ts --ui",
     "test:e2e:headed": "npx playwright test --config=tests/e2e/playwright.config.ts --headed",

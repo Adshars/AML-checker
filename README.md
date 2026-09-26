@@ -21,7 +21,8 @@ Microservice-based platform for sanctions and PEP screening using OpenSanctions 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/) v2
-- [Node.js 18+](https://nodejs.org/) — required only for running tests locally (not needed to run the stack)
+  - Docker Compose must support `docker compose up --watch` (use a current Docker Desktop release)
+- [Node.js 22+](https://nodejs.org/) — required only for running tests locally (not needed to run the stack)
 - [Git](https://git-scm.com/)
 
 ---
@@ -54,13 +55,22 @@ catalogs:
 > ```bash
 > docker compose down
 > docker volume rm $(docker volume ls -q | grep -E 'yente_data|es_data')
-> docker compose up --build
+> docker compose up --build --watch
 > ```
 
 3) Start the stack:
 ```bash
-docker compose up --build
+docker compose up --build --watch
 ```
+
+> **Compose Watch:** `--watch` syncs changes in `frontend/src`, `frontend/public` and
+> `frontend/index.html` into the running container (Vite hot reload), restarts Vite after a
+> `vite.config.js` change, and rebuilds the frontend image after a `package.json` /
+> `package-lock.json` change. Without `--watch` the stack still runs, but frontend code
+> changes do not reach the container.
+>
+> **⚠️ Do not use `docker compose down -v`** — it deletes the volumes holding
+> Yente/Elasticsearch/MongoDB/PostgreSQL data.
 
 > **⚠️ First startup:** Yente downloads the dataset on first run — several minutes for
 > `us_ofac_sdn`, much longer for `default`. `/sanctions/check` returns errors until done.
@@ -242,6 +252,15 @@ npm run test:gateway
 npm run test:frontend
 ```
 
+### Docker Smoke Test
+
+```bash
+npm run test:docker               # builds the images, then runs the checks
+npm run test:docker -- --no-build # skip the build step
+```
+
+Checks the Docker setup: `.dockerignore` in every service, no obsolete compose `version`, frontend on Compose Watch without a bind mount, Node 22 in all images, and a clean frontend image (Linux-only native binaries, no files excluded by `.dockerignore`). Requires a running Docker daemon and a `.env` file in the project root. Not part of `npm test`.
+
 ### E2E Tests (Playwright)
 
 E2E tests live in [`tests/e2e/`](tests/e2e/) and require the full Docker Compose stack to be running.
@@ -257,7 +276,7 @@ E2E tests live in [`tests/e2e/`](tests/e2e/) and require the full Docker Compose
 
 3. Start the stack:
    ```bash
-   docker compose up --build
+   docker compose up --build --watch
    ```
 
 4. Install Playwright dependencies from the project root:

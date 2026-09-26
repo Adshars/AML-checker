@@ -25,7 +25,7 @@ Lightweight HTTP adapter over the local OpenSanctions (Yente) API. Exposes a sin
 
 ## Stack
 
-- **Node.js 18+** with ES Modules
+- **Node.js 22+** with ES Modules
 - **TypeScript 5.9** – Compiled to `dist/` via `tsc` (multi-stage Dockerfile); source lives in `src/**/*.ts`
 - **Express 5.2.1**
 - **axios 1.13.2** + **axios-retry 4.0.0** (3 retries with exponential backoff)
@@ -59,7 +59,7 @@ npm test
 
 ## Docker Setup
 
-Multi-stage Dockerfile: builds with `node:18-alpine` (`npm run build` via `tsc`), then runs `node dist/index.js` in a fresh `node:18-alpine` stage with only production dependencies. Map port `3000` as needed in your compose file.
+Multi-stage Dockerfile: builds with `node:22-alpine` (`npm run build` via `tsc`), then runs `node dist/index.js` in a fresh `node:22-alpine` stage with only production dependencies. Map port `3000` as needed in your compose file.
 
 ## Project Structure
 

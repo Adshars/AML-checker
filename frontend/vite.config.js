@@ -10,8 +10,5 @@ export default defineConfig({
       'localhost.aml-checker',
       'localhost'
     ],
-    watch: {
-      usePolling: true,
-    },
   },
 })

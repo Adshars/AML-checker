@@ -4,7 +4,7 @@ Manual testing guide for the AML Checker platform using Postman. The guide targe
 
 ## Prerequisites
 - Postman installed
-- Stack running: `docker compose up --build`
+- Stack running: `docker compose up --build --watch`
 - Services accessible:
   - API Gateway: http://localhost:8080
   - Frontend: http://localhost (Vite dev server on 5173)

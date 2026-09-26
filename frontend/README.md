@@ -66,10 +66,12 @@ npm run test:coverage
 ## Docker Setup
 
 ```bash
-docker compose up --build frontend
+docker compose up --build --watch frontend
 ```
 
 The Dockerfile runs the Vite dev server on port `5173` (not a production build). See [Dockerfile](Dockerfile).
+
+Code changes reach the container through Compose Watch (`develop.watch` in `docker-compose.yml`) instead of a bind mount: `src/`, `public/` and `index.html` are synced for hot reload, and a `package.json` / `package-lock.json` change rebuilds the image automatically — a new dependency no longer needs `--renew-anon-volumes`.
 
 ## Project Structure
 

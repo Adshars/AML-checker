@@ -58,7 +58,7 @@ Central reverse proxy and authentication gateway for the AML Checker platform. R
 ## Stack and Dependencies
 
 **Core Framework:**
-- **Node.js 18+** (Alpine) – Lightweight production runtime
+- **Node.js 22+** (Alpine) – Lightweight production runtime
 - **TypeScript 5.9** – Compiled to `dist/` via `tsc` (multi-stage Dockerfile); source lives in `src/**/*.ts`
 - **Express 5.2.1** – Fast, minimalist web framework with ES Modules support
 

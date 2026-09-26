@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Define the services
 # Op-adapter connects to Yente (OpenSanctions) API
 # Yente uses Elasticsearch as its data store

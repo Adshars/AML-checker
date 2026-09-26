@@ -1,0 +1,23 @@
+# Dependencies — installed inside the image via npm ci
+# (host node_modules are Windows builds and must never reach the Linux image)
+node_modules
+
+# Build / test output
+dist
+dist-ssr
+coverage
+
+# Logs
+logs
+*.log
+
+# Local env / secrets
+.env
+.env.*
+
+# Docker / docs / editor files
+Dockerfile
+.dockerignore
+README.md
+.vscode
+.idea

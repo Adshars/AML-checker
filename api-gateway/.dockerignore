@@ -1,0 +1,27 @@
+# Dependencies — installed inside the image via npm ci
+node_modules
+
+# Build output — produced inside the image
+dist
+
+# Logs (mounted as volumes at runtime)
+logs
+*.log
+*-audit.json
+
+# Tests and test config — not needed in the image
+tests
+coverage
+jest.config.js
+tsconfig.jest.json
+
+# Local env / secrets
+.env
+.env.*
+
+# Docker / docs / editor files
+Dockerfile
+.dockerignore
+README.md
+.vscode
+.idea

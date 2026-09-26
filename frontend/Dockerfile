@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy configuration files
 COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies exactly from package-lock.json (npm cache kept between builds)
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # Copy the rest of the code
 COPY . .

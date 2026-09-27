@@ -4,6 +4,8 @@ import { Container, Card, Form, Button, Alert, InputGroup, Modal } from 'react-b
 import { IconEye, IconEyeOff } from '@tabler/icons-react';
 import { AuthContext } from '../context/AuthContext';
 import { requestPasswordReset } from '../services/api';
+import { getHomeRoute } from '../utils/homeRoute';
+import { getServicesFromToken } from '../utils/jwt';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -47,13 +49,9 @@ const LoginPage = () => {
       
       // Get role from response or from stored user data
       const userRole = response?.user?.role || response?.role;
-      
-      // Route based on role
-      if (userRole === 'superadmin') {
-        navigate('/superadmin');
-      } else {
-        navigate('/dashboard');
-      }
+
+      // Route based on role and organization services
+      navigate(getHomeRoute({ role: userRole }, getServicesFromToken(response?.accessToken)));
     } catch (err) {
       // Error - display error message
       setError(err.response?.data?.error || err.response?.data?.message || 'Invalid email or password');

@@ -16,6 +16,7 @@ import {
 import { getHistory, exportHistory } from '../services/api';
 import { getLatinName, formatDatasets, getUserLabel } from '../utils/historyLogFormatters';
 import { generateConfirmationPdf } from '../utils/pdfConfirmation';
+import { getPageNumbers } from '../utils/pagination';
 import { AuthContext } from '../context/AuthContext';
 import ExtendedDetails from '../components/ExtendedDetails';
 
@@ -152,29 +153,6 @@ const HistoryPage = () => {
       return <Badge bg="secondary">{label}</Badge>;
     }
     return label;
-  };
-
-  // Builds a windowed page list around the current page, e.g. [1, '…', 4, 5, 6, '…', 12],
-  // so the pager stays usable (and jumpable) even with a large number of pages.
-  const getPageNumbers = (current, total) => {
-    const delta = 1;
-    const pages = [];
-    for (let i = 1; i <= total; i += 1) {
-      if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
-        pages.push(i);
-      }
-    }
-
-    const withEllipses = [];
-    let previous;
-    pages.forEach((i) => {
-      if (previous !== undefined && i - previous > 1) {
-        withEllipses.push('ellipsis');
-      }
-      withEllipses.push(i);
-      previous = i;
-    });
-    return withEllipses;
   };
 
   return (

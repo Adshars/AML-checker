@@ -12,23 +12,31 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconBuildingSkyscraper,
+  IconBuildingPlus,
 } from '@tabler/icons-react';
 import { AuthContext } from '../context/AuthContext';
+import { DEFAULT_SERVICES, isServiceEnabled } from '../constants/services';
 import './MainLayout.scss';
 
 const SIDEBAR_COLLAPSED_KEY = 'aml_sidebar_collapsed';
 
+// `requires` - organization service needed to see the item
 const NAV_ITEMS = [
-  { to: '/dashboard', testId: 'nav-dashboard', label: 'Dashboard', icon: IconDashboard },
-  { to: '/check', testId: 'nav-check', label: 'Check', icon: IconSearch },
-  { to: '/history', testId: 'nav-history', label: 'History', icon: IconHistory },
+  { to: '/dashboard', testId: 'nav-dashboard', label: 'Dashboard', icon: IconDashboard, requires: 'sanctions' },
+  { to: '/check', testId: 'nav-check', label: 'Check', icon: IconSearch, requires: 'sanctions' },
+  { to: '/history', testId: 'nav-history', label: 'History', icon: IconHistory, requires: 'sanctions' },
   { to: '/users', testId: 'nav-users', label: 'Users', icon: IconUsers, adminOnly: true },
   { to: '/developer', testId: 'nav-developer', label: 'Developer', icon: IconKey, adminOnly: true },
   { to: '/settings', testId: 'nav-settings', label: 'Settings', icon: IconSettings },
 ];
 
+const SUPERADMIN_NAV_ITEMS = [
+  { to: '/superadmin', testId: 'nav-organizations', label: 'Organizations', icon: IconBuildingSkyscraper },
+  { to: '/superadmin/organizations/new', testId: 'nav-new-org', label: 'New Organization', icon: IconBuildingPlus },
+];
+
 const MainLayout = () => {
-  const { user, logout } = useContext(AuthContext);
+  const { user, services = DEFAULT_SERVICES, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const isAdmin = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'SUPERADMIN';
@@ -53,8 +61,10 @@ const MainLayout = () => {
   const closeMobileMenu = () => setMobileOpen(false);
 
   const items = isSuperAdmin
-    ? [{ to: '/superadmin', testId: 'nav-new-org', label: 'New Organization', icon: IconBuildingSkyscraper }]
-    : NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+    ? SUPERADMIN_NAV_ITEMS
+    : NAV_ITEMS.filter((item) =>
+      (!item.adminOnly || isAdmin) && (!item.requires || isServiceEnabled(services, item.requires))
+    );
 
   return (
     <div className={`app-shell${collapsed ? ' app-shell--collapsed' : ''}`} data-testid="app-shell">
@@ -89,6 +99,8 @@ const MainLayout = () => {
             <NavLink
               key={to}
               to={to}
+              // Exact match: /superadmin must not stay active on /superadmin/organizations/new
+              end
               data-testid={testId}
               className={({ isActive }) => `sidebar__link${isActive ? ' sidebar__link--active' : ''}`}
               onClick={closeMobileMenu}

@@ -116,6 +116,47 @@ describe('authService', () => {
     });
   });
 
+  describe('auth:token-updated event', () => {
+    const listenForTokenUpdates = () => {
+      const listener = vi.fn();
+      window.addEventListener('auth:token-updated', listener);
+      return {
+        listener,
+        stop: () => window.removeEventListener('auth:token-updated', listener),
+      };
+    };
+
+    it('is dispatched after login stores a token', async () => {
+      api.post.mockResolvedValue({ data: { accessToken: 'token', user: { id: 'u1' } } });
+      const { listener, stop } = listenForTokenUpdates();
+
+      await authService.login('a@test.pl', 'pass');
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    it('is dispatched after a silent refresh stores a token', async () => {
+      api.post.mockResolvedValue({ data: { accessToken: 'new-token' } });
+      const { listener, stop } = listenForTokenUpdates();
+
+      await authService.silentRefresh();
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      stop();
+    });
+
+    it('is not dispatched when no token was stored', async () => {
+      api.post.mockRejectedValue(new Error('Unauthorized'));
+      const { listener, stop } = listenForTokenUpdates();
+
+      await authService.silentRefresh();
+
+      expect(listener).not.toHaveBeenCalled();
+      stop();
+    });
+  });
+
   describe('getCurrentUser', () => {
     it('should return parsed user from localStorage', () => {
       const mockUser = {

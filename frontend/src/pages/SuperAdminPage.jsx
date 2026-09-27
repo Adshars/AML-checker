@@ -1,9 +1,10 @@
-import { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, Row, Col, Spinner, InputGroup } from 'react-bootstrap';
-import { IconEye, IconEyeOff } from '@tabler/icons-react';
+import { IconEye, IconEyeOff, IconArrowLeft } from '@tabler/icons-react';
 import { registerOrganization } from '../services/api';
-import { AuthContext } from '../context/AuthContext';
+import ServicesSelector from '../components/ServicesSelector';
+import { DEFAULT_SERVICES, hasAnyService } from '../constants/services';
 
 const SuperAdminPage = () => {
   const [formData, setFormData] = useState({
@@ -22,18 +23,9 @@ const SuperAdminPage = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [services, setServices] = useState({ ...DEFAULT_SERVICES });
 
-  // Auth context for logout
-  const { logout } = useContext(AuthContext);
-  const navigate = useNavigate();
-
-  /**
-   * Handle logout
-   */
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const servicesValid = hasAnyService(services);
 
   /**
    * Validate form data
@@ -92,10 +84,14 @@ const SuperAdminPage = () => {
       return;
     }
 
+    if (!servicesValid) {
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await registerOrganization(formData);
+      const response = await registerOrganization({ ...formData, services });
 
       setSuccessMessage(
         `Organization "${response.organization.name}" created successfully! API credentials sent to ${response.user.email}.`
@@ -114,6 +110,7 @@ const SuperAdminPage = () => {
       });
       setFormErrors({});
       setShowPassword(false);
+      setServices({ ...DEFAULT_SERVICES });
 
       // ✅ SUCCESS MESSAGE REMAINS VISIBLE - User must manually dismiss it
       // Removed: setTimeout(() => setSuccessMessage(''), 5000);
@@ -126,21 +123,24 @@ const SuperAdminPage = () => {
   };
 
   return (
-    <Container className="d-flex align-items-center justify-content-center" style={{ minHeight: '100vh' }}>
+    <Container className="mt-4">
       <div style={{ maxWidth: '600px', width: '100%' }}>
+        <Link to="/superadmin" className="d-inline-flex align-items-center mb-3" data-testid="back-to-organizations">
+          <IconArrowLeft size={16} stroke={1.75} className="me-1" />
+          Back to organizations
+        </Link>
         <Card>
           <Card.Body>
-            {/* Header with Logout button */}
-            <div className="d-flex justify-content-between align-items-center mb-4">
-              <h2 className="mb-0">SuperAdmin - Register Organization</h2>
-              <Button variant="outline-danger" size="sm" onClick={handleLogout}>
-                Logout
-              </Button>
-            </div>
+            <h2 className="mb-4">New Organization</h2>
 
             {successMessage && (
               <Alert variant="success" dismissible onClose={() => setSuccessMessage('')}>
                 {successMessage}
+                <div className="mt-2">
+                  <Link to="/superadmin" className="alert-link" data-testid="success-back-to-organizations">
+                    Back to organizations
+                  </Link>
+                </div>
               </Alert>
             )}
 
@@ -317,7 +317,13 @@ const SuperAdminPage = () => {
                 </Form.Text>
               </Form.Group>
 
-              <Button variant="primary" type="submit" className="w-100" disabled={loading}>
+              {/* Service package */}
+              <h5 className="mt-4 mb-3">Services</h5>
+              <div className="mb-4">
+                <ServicesSelector value={services} onChange={setServices} disabled={loading} idPrefix="register-services" />
+              </div>
+
+              <Button variant="primary" type="submit" className="w-100" disabled={loading || !servicesValid}>
                 {loading ? (
                   <>
                     <Spinner animation="border" size="sm" className="me-2" />

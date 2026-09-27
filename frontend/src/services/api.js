@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { notifyTokenUpdated } from '../utils/jwt';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -84,6 +85,7 @@ api.interceptors.response.use(
 
           // Save new access token
           localStorage.setItem('token', accessToken);
+          notifyTokenUpdated();
 
           // Update API instance headers and original request
           api.defaults.headers.common['Authorization'] = 'Bearer ' + accessToken;

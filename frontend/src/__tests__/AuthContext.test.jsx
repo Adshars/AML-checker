@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import { makeToken } from './testUtils/token';
 import { AuthProvider, AuthContext } from '../context/AuthContext';
 import authService from '../services/authService';
 import { useContext } from 'react';
@@ -177,6 +178,75 @@ describe('AuthContext', () => {
     // After mount, loading should complete and children should render
     await waitFor(() => {
       expect(container.textContent).toBe('Content');
+    });
+  });
+
+  describe('organization services', () => {
+    afterEach(() => {
+      localStorage.getItem.mockReset();
+    });
+
+    const ServicesProbe = () => {
+      const { services, login } = useContext(AuthContext);
+      return (
+        <div>
+          <div data-testid="services">{JSON.stringify(services)}</div>
+          <button onClick={() => login('test@example.com', 'password')}>Login</button>
+        </div>
+      );
+    };
+
+    const renderProbe = async () => {
+      render(
+        <AuthProvider>
+          <ServicesProbe />
+        </AuthProvider>
+      );
+      await waitFor(() => expect(screen.getByTestId('services')).toBeInTheDocument());
+    };
+
+    it('reads services from the refreshed access token on startup', async () => {
+      authService.getCurrentUser.mockReturnValue({ email: 'a@test.pl', role: 'admin' });
+      authService.silentRefresh.mockResolvedValue({
+        accessToken: makeToken({ services: { sanctions: false, identityMode: 'IDENTITY' } }),
+      });
+
+      await renderProbe();
+
+      expect(JSON.parse(screen.getByTestId('services').textContent)).toEqual({ sanctions: false, identityMode: 'IDENTITY' });
+    });
+
+    it('sets services from the login response token', async () => {
+      authService.getCurrentUser.mockReturnValue(null);
+      authService.login.mockResolvedValue({
+        user: { email: 'test@example.com', role: 'admin' },
+        accessToken: makeToken({ services: { sanctions: true, identityMode: 'FULL_AML' } }),
+      });
+
+      await renderProbe();
+      act(() => {
+        screen.getByText('Login').click();
+      });
+
+      await waitFor(() => {
+        expect(JSON.parse(screen.getByTestId('services').textContent)).toEqual({ sanctions: true, identityMode: 'FULL_AML' });
+      });
+    });
+
+    it('updates services on the auth:token-updated event', async () => {
+      authService.getCurrentUser.mockReturnValue(null);
+      localStorage.getItem.mockReturnValue(null);
+
+      await renderProbe();
+      expect(JSON.parse(screen.getByTestId('services').textContent)).toEqual({ sanctions: true, identityMode: 'NONE' });
+
+      const refreshedToken = makeToken({ services: { sanctions: false, identityMode: 'FULL_AML' } });
+      localStorage.getItem.mockImplementation((key) => (key === 'token' ? refreshedToken : null));
+      act(() => {
+        window.dispatchEvent(new Event('auth:token-updated'));
+      });
+
+      expect(JSON.parse(screen.getByTestId('services').textContent)).toEqual({ sanctions: false, identityMode: 'FULL_AML' });
     });
   });
 });

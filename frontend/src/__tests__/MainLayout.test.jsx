@@ -12,9 +12,9 @@ vi.mock('react-router-dom', async () => {
 
 const mockLogout = vi.fn();
 
-const renderLayout = (user) =>
+const renderLayout = (user, services) =>
   render(
-    <AuthContext.Provider value={{ user, logout: mockLogout }}>
+    <AuthContext.Provider value={{ user, services, logout: mockLogout }}>
       <MemoryRouter initialEntries={['/dashboard']}>
         <Routes>
           <Route element={<MainLayout />}>
@@ -56,12 +56,43 @@ describe('MainLayout', () => {
     expect(screen.queryByTestId('nav-developer')).not.toBeInTheDocument();
   });
 
-  it('renders only the New Organization link for a superadmin user', () => {
+  it('renders only the Organizations and New Organization links for a superadmin user', () => {
     renderLayout({ email: 'super@test.com', role: 'superadmin' });
 
-    expect(screen.getByTestId('nav-new-org')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-organizations')).toHaveAttribute('href', '/superadmin');
+    expect(screen.getByTestId('nav-new-org')).toHaveAttribute('href', '/superadmin/organizations/new');
     expect(screen.queryByTestId('nav-dashboard')).not.toBeInTheDocument();
     expect(screen.queryByTestId('nav-check')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nav-settings')).not.toBeInTheDocument();
+  });
+
+  it('hides Dashboard, Check and History when sanctions screening is disabled', () => {
+    renderLayout({ email: 'admin@test.com', role: 'admin' }, { sanctions: false, identityMode: 'IDENTITY' });
+
+    expect(screen.queryByTestId('nav-dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nav-check')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nav-history')).not.toBeInTheDocument();
+    expect(screen.getByTestId('nav-users')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-developer')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
+  });
+
+  it('shows sanctions links when sanctions screening is enabled explicitly', () => {
+    renderLayout({ email: 'user@test.com', role: 'user' }, { sanctions: true, identityMode: 'FULL_AML' });
+
+    expect(screen.getByTestId('nav-dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-check')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-history')).toBeInTheDocument();
+  });
+
+  it('shows superadmin links in the mobile menu', () => {
+    renderLayout({ email: 'super@test.com', role: 'superadmin' });
+
+    fireEvent.click(screen.getByTestId('sidebar-hamburger-btn'));
+
+    expect(screen.getByTestId('sidebar')).toHaveClass('sidebar--mobile-open');
+    expect(screen.getByTestId('nav-organizations')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-new-org')).toBeInTheDocument();
   });
 
   it('calls logout and navigates to /login when logout is clicked', () => {

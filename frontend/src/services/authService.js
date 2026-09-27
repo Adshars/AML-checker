@@ -1,4 +1,5 @@
 import api from './api';
+import { notifyTokenUpdated } from '../utils/jwt';
 
 const authService = {
   /**
@@ -15,6 +16,7 @@ const authService = {
     if (response.data.accessToken) {
       localStorage.setItem('token', response.data.accessToken);
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      notifyTokenUpdated();
     }
 
     return response.data;
@@ -63,6 +65,7 @@ const authService = {
 
       if (response.data.accessToken) {
         localStorage.setItem('token', response.data.accessToken);
+        notifyTokenUpdated();
         return response.data;
       }
       return null;

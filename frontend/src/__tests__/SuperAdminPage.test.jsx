@@ -84,10 +84,46 @@ describe('SuperAdminPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register Organization' }));
 
     await waitFor(() => {
-      expect(registerOrganization).toHaveBeenCalledWith(validData);
+      expect(registerOrganization).toHaveBeenCalledWith({
+        ...validData,
+        services: { sanctions: true, identityMode: 'NONE' },
+      });
       expect(screen.getByRole('alert')).toHaveTextContent('ACME Corporation');
       expect(screen.getByRole('alert')).toHaveTextContent('admin@acme.com');
     });
+    expect(screen.getByTestId('success-back-to-organizations')).toHaveAttribute('href', '/superadmin');
+  });
+
+  it('sends the selected services in the registration payload', async () => {
+    registerOrganization.mockResolvedValue({
+      organization: { name: 'ACME Corporation' },
+      user: { email: 'admin@acme.com' },
+    });
+    renderPage();
+    await fillForm();
+    fireEvent.click(screen.getByLabelText('Full AML (identity + automatic sanctions screening)'));
+    fireEvent.click(screen.getByRole('button', { name: 'Register Organization' }));
+
+    await waitFor(() => {
+      expect(registerOrganization).toHaveBeenCalledWith({
+        ...validData,
+        services: { sanctions: true, identityMode: 'FULL_AML' },
+      });
+    });
+  });
+
+  it('blocks submit and shows a message when no service is selected', async () => {
+    renderPage();
+    await fillForm();
+
+    fireEvent.click(screen.getByLabelText('Sanctions screening'));
+
+    expect(screen.getByTestId('services-none-warning')).toHaveTextContent('At least one service must be enabled');
+    const submit = screen.getByRole('button', { name: 'Register Organization' });
+    expect(submit).toBeDisabled();
+
+    fireEvent.submit(submit.closest('form'));
+    expect(registerOrganization).not.toHaveBeenCalled();
   });
 
   it('shows the server-side error message on failure', async () => {
@@ -101,12 +137,11 @@ describe('SuperAdminPage', () => {
     });
   });
 
-  it('calls logout and navigates to /login when Logout is clicked', () => {
+  it('links back to the organizations list (logout lives in the sidebar)', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
 
-    expect(mockLogout).toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith('/login');
+    expect(screen.getByTestId('back-to-organizations')).toHaveAttribute('href', '/superadmin');
+    expect(screen.queryByRole('button', { name: 'Logout' })).not.toBeInTheDocument();
   });
 
   it('toggles password visibility when the eye button is clicked', async () => {

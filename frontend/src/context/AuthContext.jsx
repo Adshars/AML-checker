@@ -1,11 +1,22 @@
 import React, { createContext, useState, useEffect } from 'react';
 import authService from '../services/authService';
+import { getServicesFromToken, TOKEN_UPDATED_EVENT } from '../utils/jwt';
 
 export const AuthContext = createContext();
 
+const readServices = () => getServicesFromToken(localStorage.getItem('token'));
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [services, setServices] = useState(readServices);
   const [loading, setLoading] = useState(true);
+
+  // Organization services live in the access token; refresh them whenever it is replaced
+  useEffect(() => {
+    const handleTokenUpdated = () => setServices(readServices());
+    window.addEventListener(TOKEN_UPDATED_EVENT, handleTokenUpdated);
+    return () => window.removeEventListener(TOKEN_UPDATED_EVENT, handleTokenUpdated);
+  }, []);
 
   // On app startup: try silent refresh to validate session via HttpOnly cookie
   useEffect(() => {
@@ -24,6 +35,7 @@ export const AuthProvider = ({ children }) => {
       if (result) {
         // Session valid — keep user
         setUser(cachedUser);
+        setServices(getServicesFromToken(result.accessToken));
       } else {
         // Session expired — clear stale data
         localStorage.removeItem('token');
@@ -45,6 +57,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const response = await authService.login(email, password);
     setUser(response.user);
+    setServices(getServicesFromToken(response.accessToken));
     return response;
   };
 
@@ -64,6 +77,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    services,
     login,
     logout,
     loading,

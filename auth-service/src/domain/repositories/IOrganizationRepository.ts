@@ -1,4 +1,16 @@
 import type { Organization, OrganizationProps } from '../entities/Organization.js';
+import type { OrganizationServices } from '../entities/OrganizationServices.js';
+
+export interface FindAllOrganizationsParams {
+  search?: string;
+  page: number;
+  limit: number;
+}
+
+export interface FindAllOrganizationsResult {
+  items: Organization[];
+  total: number;
+}
 
 /**
  * Organization Repository Interface
@@ -51,6 +63,20 @@ export class IOrganizationRepository {
    * Check if organization name exists
    */
   async existsByName(name: string): Promise<boolean> {
+    throw new Error('Method not implemented');
+  }
+
+  /**
+   * List organizations (newest first), optionally filtered by name
+   */
+  async findAll(params: FindAllOrganizationsParams): Promise<FindAllOrganizationsResult> {
+    throw new Error('Method not implemented');
+  }
+
+  /**
+   * Replace organization service package
+   */
+  async updateServices(id: string, services: OrganizationServices): Promise<Organization | null> {
     throw new Error('Method not implemented');
   }
 }

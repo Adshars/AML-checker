@@ -1,5 +1,5 @@
 import express, { type Router } from 'express';
-import { validate, registerOrgSchema } from '../validators/index.js';
+import { validate, registerOrgSchema, updateOrganizationServicesSchema } from '../validators/index.js';
 import type { OrganizationController } from '../controllers/OrganizationController.js';
 
 /**
@@ -16,6 +16,15 @@ export const createOrganizationRoutes = (organizationController: OrganizationCon
 
   // Organization public API key
   router.get('/organization/keys', organizationController.getOrganizationKeys);
+
+  // SuperAdmin organization management
+  router.get('/organizations', organizationController.listOrganizations);
+  router.get('/organizations/:id', organizationController.getOrganization);
+  router.put(
+    '/organizations/:id/services',
+    validate(updateOrganizationServicesSchema),
+    organizationController.updateOrganizationServices
+  );
 
   return router;
 };

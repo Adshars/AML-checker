@@ -1,4 +1,5 @@
 import mongoose, { Schema, type Document, type Model } from 'mongoose';
+import { IDENTITY_MODES, type OrganizationServices } from '../../../../domain/entities/OrganizationServices.js';
 
 export interface OrganizationDocument extends Document {
   name: string;
@@ -7,6 +8,7 @@ export interface OrganizationDocument extends Document {
   address: string;
   apiKey?: string;
   apiSecretHash?: string;
+  services?: Partial<OrganizationServices>;
   createdAt: Date;
 }
 
@@ -39,6 +41,10 @@ const organizationSchema = new Schema<OrganizationDocument>({
   },
   apiSecretHash: {
     type: String
+  },
+  services: {
+    sanctions: { type: Boolean, default: true },
+    identityMode: { type: String, enum: IDENTITY_MODES, default: 'NONE' }
   },
   createdAt: {
     type: Date,

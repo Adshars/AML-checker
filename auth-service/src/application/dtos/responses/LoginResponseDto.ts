@@ -1,4 +1,5 @@
 import type { User } from '../../../domain/entities/User.js';
+import { normalizeOrganizationServices, type OrganizationServices } from '../../../domain/entities/OrganizationServices.js';
 
 export interface LoginUserSummary {
   id?: string;
@@ -8,6 +9,7 @@ export interface LoginUserSummary {
   organizationId?: string;
   organizationName?: string;
   role: string;
+  services: OrganizationServices;
 }
 
 export interface LoginResponseDtoParams {
@@ -34,7 +36,13 @@ export class LoginResponseDto {
     this.refreshToken = refreshToken;
   }
 
-  static create(user: User, accessToken: string, refreshToken: string, organizationName?: string): LoginResponseDto {
+  static create(
+    user: User,
+    accessToken: string,
+    refreshToken: string,
+    organizationName?: string,
+    services?: OrganizationServices
+  ): LoginResponseDto {
     return new LoginResponseDto({
       user: {
         id: user.id,
@@ -43,7 +51,8 @@ export class LoginResponseDto {
         lastName: user.lastName,
         organizationId: user.organizationId,
         organizationName,
-        role: user.role
+        role: user.role,
+        services: normalizeOrganizationServices(services)
       },
       accessToken,
       refreshToken

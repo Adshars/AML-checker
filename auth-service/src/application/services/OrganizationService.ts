@@ -1,6 +1,8 @@
-import { ConflictError, NotFoundError, UnauthorizedError } from '../../shared/errors/index.js';
+import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../shared/errors/index.js';
 import { Organization } from '../../domain/entities/Organization.js';
+import { hasAnyService, type OrganizationServices } from '../../domain/entities/OrganizationServices.js';
 import { User } from '../../domain/entities/User.js';
+import { OrganizationSummaryDto } from '../dtos/responses/OrganizationSummaryDto.js';
 import logger from '../../shared/logger/index.js';
 import type { IOrganizationRepository } from '../../domain/repositories/IOrganizationRepository.js';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
@@ -20,6 +22,30 @@ export interface ResetSecretResult {
   organization: Organization;
   apiSecret: string;
 }
+
+export interface ListOrganizationsParams {
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface ListOrganizationsResult {
+  data: OrganizationSummaryDto[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export const DEFAULT_ORGANIZATIONS_LIMIT = 20;
+export const MAX_ORGANIZATIONS_LIMIT = 100;
+
+const NO_SERVICE_MESSAGE = 'At least one service must be enabled';
+
+const toPositiveInt = (value: number | undefined, fallback: number): number =>
+  Number.isInteger(value) && (value as number) > 0 ? (value as number) : fallback;
 
 /**
  * Organization Service
@@ -58,8 +84,13 @@ export class OrganizationService {
       email,
       password,
       firstName,
-      lastName
+      lastName,
+      services
     } = registerDto;
+
+    if (!hasAnyService(services)) {
+      throw new ValidationError(NO_SERVICE_MESSAGE);
+    }
 
     // Check for duplicate organization name
     const existingOrg = await this.organizationRepository.findByName(orgName as string);
@@ -85,7 +116,8 @@ export class OrganizationService {
       city: city as string,
       address: address as string,
       apiKey,
-      apiSecretHash
+      apiSecretHash,
+      services
     });
 
     const savedOrg = await this.organizationRepository.create(organization);
@@ -171,6 +203,65 @@ export class OrganizationService {
     return {
       apiKey: organization.apiKey
     };
+  }
+
+  /**
+   * List organizations with user counts (SuperAdmin)
+   */
+  async listOrganizations({ search, page, limit }: ListOrganizationsParams = {}): Promise<ListOrganizationsResult> {
+    const safePage = toPositiveInt(page, 1);
+    const safeLimit = Math.min(toPositiveInt(limit, DEFAULT_ORGANIZATIONS_LIMIT), MAX_ORGANIZATIONS_LIMIT);
+    const trimmedSearch = search?.trim() || undefined;
+
+    const { items, total } = await this.organizationRepository.findAll({
+      search: trimmedSearch,
+      page: safePage,
+      limit: safeLimit
+    });
+
+    const counts = await this.userRepository.countByOrganizationIds(
+      items.map(org => org.id).filter((id): id is string => !!id)
+    );
+
+    return {
+      data: items.map(org => OrganizationSummaryDto.fromEntity(org, counts[org.id as string] ?? 0)),
+      meta: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages: Math.ceil(total / safeLimit)
+      }
+    };
+  }
+
+  /**
+   * Get organization details (SuperAdmin)
+   */
+  async getOrganization(id: string): Promise<OrganizationSummaryDto> {
+    const organization = await this.organizationRepository.findById(id);
+    if (!organization) {
+      throw new NotFoundError('Organization not found');
+    }
+
+    const counts = await this.userRepository.countByOrganizationIds([id]);
+    return OrganizationSummaryDto.fromEntity(organization, counts[id] ?? 0);
+  }
+
+  /**
+   * Replace organization service package (SuperAdmin)
+   */
+  async updateServices(id: string, services: OrganizationServices): Promise<OrganizationSummaryDto> {
+    if (!hasAnyService(services)) {
+      throw new ValidationError(NO_SERVICE_MESSAGE);
+    }
+
+    const updated = await this.organizationRepository.updateServices(id, services);
+    if (!updated) {
+      throw new NotFoundError('Organization not found');
+    }
+
+    const counts = await this.userRepository.countByOrganizationIds([id]);
+    return OrganizationSummaryDto.fromEntity(updated, counts[id] ?? 0);
   }
 
   /**

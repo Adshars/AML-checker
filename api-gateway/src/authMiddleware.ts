@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import NodeCache from 'node-cache';
 import type { Request, Response, NextFunction } from 'express';
 import logger from './utils/logger.js';
+import { normalizeOrganizationServices, type OrganizationServices } from './types/organizationServices.js';
 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
 
@@ -20,6 +21,8 @@ export interface AuthResult {
   email?: string | null;
   role?: string | null;
   userName?: string;
+  orgName?: string;
+  services: OrganizationServices;
 }
 
 interface DecodedJwtPayload {
@@ -29,6 +32,8 @@ interface DecodedJwtPayload {
   firstName?: string;
   lastName?: string;
   email?: string;
+  organizationName?: string;
+  services?: Partial<OrganizationServices>;
 }
 
 export default class AuthMiddleware {
@@ -77,7 +82,9 @@ export default class AuthMiddleware {
           authType: 'api-key',
           userId: null,
           email: null,
-          role: null
+          role: null,
+          orgName: response.data.organizationName || undefined,
+          services: normalizeOrganizationServices(response.data.services)
         };
 
         // Cache the result
@@ -113,13 +120,25 @@ export default class AuthMiddleware {
         userId: decoded.userId,
         email: decoded.email,
         role: decoded.role,
-        userName: decoded.firstName && decoded.lastName ? `${decoded.firstName} ${decoded.lastName}` : (decoded.email || 'User')
+        userName: decoded.firstName && decoded.lastName ? `${decoded.firstName} ${decoded.lastName}` : (decoded.email || 'User'),
+        orgName: decoded.organizationName,
+        services: normalizeOrganizationServices(decoded.services)
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn('JWT Verification Failed', { requestId: req.requestId, error: message });
       throw new Error('Invalid or expired JWT token');
     }
+  }
+
+  /**
+   * Organization service package headers for downstream services
+   */
+  setOrganizationHeaders(req: Request, authResult: AuthResult): void {
+    req.headers['x-org-sanctions'] = String(authResult.services.sanctions);
+    req.headers['x-org-identity-mode'] = authResult.services.identityMode;
+    // Non-ASCII characters (e.g. Polish names) are not valid in HTTP headers
+    if (authResult.orgName) req.headers['x-org-name'] = encodeURIComponent(authResult.orgName);
   }
 
   /**
@@ -146,6 +165,7 @@ export default class AuthMiddleware {
         req.headers['x-user-email'] = 'api@system';
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
+        this.setOrganizationHeaders(req, authResult);
 
         logger.info('Auth Success', { requestId: req.requestId, authType: 'api-key', orgId: authResult.orgId });
         next();
@@ -163,6 +183,7 @@ export default class AuthMiddleware {
         if (authResult.userId) req.headers['x-user-id'] = authResult.userId;
         if (authResult.role) req.headers['x-role'] = authResult.role;
         if (authResult.userName) req.headers['x-user-name'] = authResult.userName;
+        this.setOrganizationHeaders(req, authResult);
 
         logger.info('Auth Success', { requestId: req.requestId, authType: 'jwt', userId: authResult.userId });
         next();

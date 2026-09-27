@@ -24,6 +24,50 @@ components:
       in: header
       name: x-api-secret
       description: API secret for B2B integration
+  schemas:
+    OrganizationServices:
+      type: object
+      description: Service package of an organization. At least one service must be enabled.
+      required: [sanctions, identityMode]
+      properties:
+        sanctions:
+          type: boolean
+          description: Manual sanctions screening (Dashboard, Check, History, /sanctions/*)
+          example: true
+        identityMode:
+          type: string
+          enum: [NONE, IDENTITY, FULL_AML]
+          description: Identity verification mode (FULL_AML adds automatic sanctions screening)
+          example: NONE
+    OrganizationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        country:
+          type: string
+        city:
+          type: string
+        address:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        services:
+          $ref: '#/components/schemas/OrganizationServices'
+        userCount:
+          type: integer
+    ServiceNotEnabled:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Service not enabled for organization
+        service:
+          type: string
+          example: sanctions
 
 security:
   - bearerAuth: []
@@ -200,6 +244,8 @@ paths:
                 lastName:
                   type: string
                   example: Doe
+                services:
+                  $ref: '#/components/schemas/OrganizationServices'
       responses:
         201:
           description: Organization registered successfully
@@ -223,8 +269,12 @@ paths:
                         type: string
                       apiSecret:
                         type: string
+                      services:
+                        $ref: '#/components/schemas/OrganizationServices'
                   user:
                     type: object
+        400:
+          description: Validation error (e.g. "At least one service must be enabled")
         403:
           description: Forbidden - SuperAdmin only
 
@@ -406,6 +456,121 @@ paths:
 
   # ==================== USER MANAGEMENT ====================
   
+  /auth/organizations:
+    get:
+      summary: List organizations (SuperAdmin only)
+      description: Paginated list of organizations with service packages and user counts, newest first.
+      tags: [SuperAdmin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Case-insensitive organization name filter
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        200:
+          description: Organizations list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrganizationSummary'
+                  meta:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+        401:
+          description: Unauthorized
+        403:
+          description: Forbidden - SuperAdmin only
+
+  /auth/organizations/{id}:
+    get:
+      summary: Get organization details (SuperAdmin only)
+      tags: [SuperAdmin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationSummary'
+        401:
+          description: Unauthorized
+        403:
+          description: Forbidden - SuperAdmin only
+        404:
+          description: Organization not found
+
+  /auth/organizations/{id}/services:
+    put:
+      summary: Replace organization service package (SuperAdmin only)
+      description: >
+        Changes reach signed-in users on their next token refresh (up to 15 minutes)
+        and API key clients after the gateway cache expires (up to 60 seconds).
+      tags: [SuperAdmin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationServices'
+      responses:
+        200:
+          description: Services updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationSummary'
+        400:
+          description: Validation error (missing field, unknown identityMode, no service enabled)
+        401:
+          description: Unauthorized
+        403:
+          description: Forbidden - SuperAdmin only
+        404:
+          description: Organization not found
+
   /users:
     get:
       summary: Get all users
@@ -545,6 +710,12 @@ paths:
           description: Missing or invalid parameters
         401:
           description: Unauthorized
+        403:
+          description: Sanctions screening is not enabled for the organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceNotEnabled'
 
   /sanctions/history:
     get:

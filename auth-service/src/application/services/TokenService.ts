@@ -3,6 +3,7 @@ import { UnauthorizedError } from '../../shared/errors/index.js';
 import logger from '../../shared/logger/index.js';
 import type { IRefreshTokenRepository } from '../../domain/repositories/IRefreshTokenRepository.js';
 import type { RefreshToken } from '../../domain/entities/RefreshToken.js';
+import type { OrganizationServices } from '../../domain/entities/OrganizationServices.js';
 
 export interface TokenServiceConfig {
   jwtSecret: string;
@@ -18,6 +19,8 @@ export interface TokenPayload {
   firstName?: string;
   lastName?: string;
   email?: string;
+  organizationName?: string;
+  services?: OrganizationServices;
   [key: string]: unknown;
 }
 

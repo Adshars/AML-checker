@@ -1,3 +1,5 @@
+import { normalizeOrganizationServices, type OrganizationServices } from './OrganizationServices.js';
+
 export interface OrganizationProps {
   id?: string;
   name: string;
@@ -6,6 +8,7 @@ export interface OrganizationProps {
   address: string;
   apiKey?: string | null;
   apiSecretHash?: string | null;
+  services?: Partial<OrganizationServices> | null;
   createdAt?: Date;
 }
 
@@ -21,6 +24,7 @@ export class Organization {
   address: string;
   apiKey: string | null;
   apiSecretHash: string | null;
+  services: OrganizationServices;
   createdAt: Date;
 
   constructor({
@@ -31,6 +35,7 @@ export class Organization {
     address,
     apiKey = null,
     apiSecretHash = null,
+    services,
     createdAt = new Date()
   }: OrganizationProps) {
     this.id = id;
@@ -40,6 +45,7 @@ export class Organization {
     this.address = address;
     this.apiKey = apiKey;
     this.apiSecretHash = apiSecretHash;
+    this.services = normalizeOrganizationServices(services);
     this.createdAt = createdAt;
   }
 

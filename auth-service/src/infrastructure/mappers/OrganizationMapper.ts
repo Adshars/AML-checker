@@ -1,4 +1,5 @@
 import { Organization } from '../../domain/entities/Organization.js';
+import { normalizeOrganizationServices, type OrganizationServices } from '../../domain/entities/OrganizationServices.js';
 import type { OrganizationDocument } from '../database/mongoose/schemas/OrganizationSchema.js';
 
 export interface OrganizationPersistence {
@@ -8,6 +9,7 @@ export interface OrganizationPersistence {
   address: string;
   apiKey?: string;
   apiSecretHash?: string;
+  services: OrganizationServices;
   createdAt?: Date;
 }
 
@@ -29,6 +31,8 @@ export class OrganizationMapper {
       address: doc.address,
       apiKey: doc.apiKey,
       apiSecretHash: doc.apiSecretHash,
+      // Legacy documents may lack the field entirely
+      services: normalizeOrganizationServices(doc.services),
       createdAt: doc.createdAt
     });
   }
@@ -41,7 +45,8 @@ export class OrganizationMapper {
       name: entity.name,
       country: entity.country,
       city: entity.city,
-      address: entity.address
+      address: entity.address,
+      services: normalizeOrganizationServices(entity.services)
     };
 
     if (entity.apiKey) {
@@ -72,6 +77,7 @@ export class OrganizationMapper {
       city: entity.city,
       address: entity.address,
       apiKey: entity.apiKey,
+      services: entity.services,
       createdAt: entity.createdAt
     };
   }

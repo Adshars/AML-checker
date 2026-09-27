@@ -1,3 +1,5 @@
+import { normalizeOrganizationServices, type OrganizationServices } from '../../../domain/entities/OrganizationServices.js';
+
 export interface RegisterOrgRequestDtoParams {
   orgName?: string;
   country?: string;
@@ -7,6 +9,7 @@ export interface RegisterOrgRequestDtoParams {
   password?: string;
   firstName?: string;
   lastName?: string;
+  services?: Partial<OrganizationServices> | null;
 }
 
 /**
@@ -21,6 +24,7 @@ export class RegisterOrgRequestDto {
   password?: string;
   firstName?: string;
   lastName?: string;
+  services: OrganizationServices;
 
   constructor({
     orgName,
@@ -30,7 +34,8 @@ export class RegisterOrgRequestDto {
     email,
     password,
     firstName,
-    lastName
+    lastName,
+    services
   }: RegisterOrgRequestDtoParams) {
     this.orgName = orgName?.trim();
     this.country = country?.trim();
@@ -40,6 +45,7 @@ export class RegisterOrgRequestDto {
     this.password = password;
     this.firstName = firstName?.trim();
     this.lastName = lastName?.trim();
+    this.services = normalizeOrganizationServices(services);
   }
 
   static fromRequest(body: RegisterOrgRequestDtoParams): RegisterOrgRequestDto {
@@ -51,7 +57,8 @@ export class RegisterOrgRequestDto {
       email: body.email,
       password: body.password,
       firstName: body.firstName,
-      lastName: body.lastName
+      lastName: body.lastName,
+      services: body.services
     });
   }
 }

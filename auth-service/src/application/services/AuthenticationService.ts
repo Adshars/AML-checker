@@ -1,6 +1,9 @@
 import { UnauthorizedError, NotFoundError } from '../../shared/errors/index.js';
 import { LoginResponseDto } from '../dtos/responses/LoginResponseDto.js';
 import logger from '../../shared/logger/index.js';
+import { normalizeOrganizationServices, type OrganizationServices } from '../../domain/entities/OrganizationServices.js';
+import type { User } from '../../domain/entities/User.js';
+import type { Organization } from '../../domain/entities/Organization.js';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
 import type { IOrganizationRepository } from '../../domain/repositories/IOrganizationRepository.js';
 import type { TokenService, TokenPayload } from './TokenService.js';
@@ -15,6 +18,7 @@ export interface RefreshedTokens {
 export interface ApiKeyValidationResult {
   organizationId?: string;
   name: string;
+  services: OrganizationServices;
 }
 
 /**
@@ -57,15 +61,11 @@ export class AuthenticationService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
+    // Organization is needed in the token (name + services), so fetch it first
+    const organization = await this.findUserOrganization(user);
+
     // Generate tokens
-    const tokenPayload: TokenPayload = {
-      userId: user.id,
-      organizationId: user.organizationId,
-      role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email
-    };
+    const tokenPayload = this.buildAccessTokenPayload(user, organization);
 
     const accessToken = this.tokenService.generateAccessToken(tokenPayload);
     const refreshToken = this.tokenService.generateRefreshToken({ userId: user.id });
@@ -75,9 +75,7 @@ export class AuthenticationService {
 
     logger.info('User logged in', { userId: user.id, role: user.role });
 
-    const organization = await this.organizationRepository.findById(user.organizationId as string);
-
-    return LoginResponseDto.create(user, accessToken, refreshToken, organization?.name);
+    return LoginResponseDto.create(user, accessToken, refreshToken, organization?.name, tokenPayload.services);
   }
 
   /**
@@ -102,14 +100,9 @@ export class AuthenticationService {
     // Token rotation: revoke old, issue new
     await this.tokenService.revokeRefreshToken(refreshToken);
 
-    const tokenPayload: TokenPayload = {
-      userId: user.id,
-      organizationId: user.organizationId,
-      role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email
-    };
+    // Fresh organization data propagates service changes to signed-in users
+    const organization = await this.findUserOrganization(user);
+    const tokenPayload = this.buildAccessTokenPayload(user, organization);
 
     const newAccessToken = this.tokenService.generateAccessToken(tokenPayload);
     const newRefreshToken = this.tokenService.generateRefreshToken({ userId: user.id });
@@ -118,6 +111,35 @@ export class AuthenticationService {
     logger.info('Tokens refreshed (rotation)', { userId: user.id });
 
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  }
+
+  /**
+   * Fetch the organization the user belongs to (SuperAdmin may have none)
+   */
+  private async findUserOrganization(user: User): Promise<Organization | null> {
+    if (!user.organizationId) return null;
+    return this.organizationRepository.findById(user.organizationId);
+  }
+
+  /**
+   * Build access token claims; services default when organization is missing
+   */
+  private buildAccessTokenPayload(user: User, organization: Organization | null): TokenPayload {
+    const payload: TokenPayload = {
+      userId: user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      services: normalizeOrganizationServices(organization?.services)
+    };
+
+    if (organization?.name) {
+      payload.organizationName = organization.name;
+    }
+
+    return payload;
   }
 
   /**
@@ -149,7 +171,8 @@ export class AuthenticationService {
 
     return {
       organizationId: organization.id,
-      name: organization.name
+      name: organization.name,
+      services: organization.services
     };
   }
 }

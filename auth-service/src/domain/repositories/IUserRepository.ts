@@ -58,6 +58,13 @@ export class IUserRepository {
   async existsByEmail(email: string): Promise<boolean> {
     throw new Error('Method not implemented');
   }
+
+  /**
+   * Count users per organization (organizations without users are omitted)
+   */
+  async countByOrganizationIds(organizationIds: string[]): Promise<Record<string, number>> {
+    throw new Error('Method not implemented');
+  }
 }
 
 export default IUserRepository;

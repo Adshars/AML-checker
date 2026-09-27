@@ -1,7 +1,13 @@
-import { ConflictError, NotFoundError, UnauthorizedError } from '../../shared/errors/index.js';
+import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../shared/errors/index.js';
 import { Organization } from '../../domain/entities/Organization.js';
+import { hasAnyService } from '../../domain/entities/OrganizationServices.js';
 import { User } from '../../domain/entities/User.js';
+import { OrganizationSummaryDto } from '../dtos/responses/OrganizationSummaryDto.js';
 import logger from '../../shared/logger/index.js';
+export const DEFAULT_ORGANIZATIONS_LIMIT = 20;
+export const MAX_ORGANIZATIONS_LIMIT = 100;
+const NO_SERVICE_MESSAGE = 'At least one service must be enabled';
+const toPositiveInt = (value, fallback) => Number.isInteger(value) && value > 0 ? value : fallback;
 /**
  * Organization Service
  * Handles organization registration, API key management
@@ -23,7 +29,10 @@ export class OrganizationService {
      * Register a new organization with admin user
      */
     async registerOrganization(registerDto) {
-        const { orgName, country, city, address, email, password, firstName, lastName } = registerDto;
+        const { orgName, country, city, address, email, password, firstName, lastName, services } = registerDto;
+        if (!hasAnyService(services)) {
+            throw new ValidationError(NO_SERVICE_MESSAGE);
+        }
         // Check for duplicate organization name
         const existingOrg = await this.organizationRepository.findByName(orgName);
         if (existingOrg) {
@@ -45,7 +54,8 @@ export class OrganizationService {
             city: city,
             address: address,
             apiKey,
-            apiSecretHash
+            apiSecretHash,
+            services
         });
         const savedOrg = await this.organizationRepository.create(organization);
         // Hash admin password
@@ -116,6 +126,54 @@ export class OrganizationService {
         return {
             apiKey: organization.apiKey
         };
+    }
+    /**
+     * List organizations with user counts (SuperAdmin)
+     */
+    async listOrganizations({ search, page, limit } = {}) {
+        const safePage = toPositiveInt(page, 1);
+        const safeLimit = Math.min(toPositiveInt(limit, DEFAULT_ORGANIZATIONS_LIMIT), MAX_ORGANIZATIONS_LIMIT);
+        const trimmedSearch = search?.trim() || undefined;
+        const { items, total } = await this.organizationRepository.findAll({
+            search: trimmedSearch,
+            page: safePage,
+            limit: safeLimit
+        });
+        const counts = await this.userRepository.countByOrganizationIds(items.map(org => org.id).filter((id) => !!id));
+        return {
+            data: items.map(org => OrganizationSummaryDto.fromEntity(org, counts[org.id] ?? 0)),
+            meta: {
+                page: safePage,
+                limit: safeLimit,
+                total,
+                totalPages: Math.ceil(total / safeLimit)
+            }
+        };
+    }
+    /**
+     * Get organization details (SuperAdmin)
+     */
+    async getOrganization(id) {
+        const organization = await this.organizationRepository.findById(id);
+        if (!organization) {
+            throw new NotFoundError('Organization not found');
+        }
+        const counts = await this.userRepository.countByOrganizationIds([id]);
+        return OrganizationSummaryDto.fromEntity(organization, counts[id] ?? 0);
+    }
+    /**
+     * Replace organization service package (SuperAdmin)
+     */
+    async updateServices(id, services) {
+        if (!hasAnyService(services)) {
+            throw new ValidationError(NO_SERVICE_MESSAGE);
+        }
+        const updated = await this.organizationRepository.updateServices(id, services);
+        if (!updated) {
+            throw new NotFoundError('Organization not found');
+        }
+        const counts = await this.userRepository.countByOrganizationIds([id]);
+        return OrganizationSummaryDto.fromEntity(updated, counts[id] ?? 0);
     }
     /**
      * Send welcome email (non-blocking)

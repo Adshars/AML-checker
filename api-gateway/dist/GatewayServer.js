@@ -7,6 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import AuthMiddleware from './authMiddleware.js';
+import { requireService } from './serviceGuard.js';
+import { INTERNAL_HEADERS, stripInternalHeaders } from './config/internalHeaders.js';
 import logger from './utils/logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,9 +32,11 @@ export default class GatewayServer {
         this.setupRoutes();
     }
     /**
-     * Global middleware: CORS, logging, Swagger
+     * Global middleware: header stripping, CORS, logging, Swagger
      */
     setupGlobalMiddleware() {
+        // SECURITY: Must run first - downstream services trust internal x-* headers
+        this.app.use(stripInternalHeaders);
         // SECURITY: Whitelist allowed origins (configure via ALLOWED_ORIGINS env variable)
         const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
             ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
@@ -53,7 +57,8 @@ export default class GatewayServer {
             },
             credentials: true,
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-            allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-api-secret', 'x-org-id', 'x-user-id', 'x-role'],
+            allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-api-secret'],
+            exposedHeaders: ['Content-Disposition'],
             optionsSuccessStatus: 204,
         };
         this.app.use(cors(corsOptions));
@@ -103,87 +108,54 @@ export default class GatewayServer {
     setupProxies() {
         const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
         const CORE_SERVICE_URL = process.env.CORE_SERVICE_URL || 'http://core-service:3000';
-        // Helper function to inject headers from request to proxy request
+        // Forward auth context headers (set by AuthMiddleware) and the request tracking ID.
+        // Client-supplied copies were already removed by stripInternalHeaders.
         const injectHeaders = (proxyReq, req) => {
-            // Inject request tracking ID
             if (req.requestId) {
                 proxyReq.setHeader('x-request-id', req.requestId);
             }
-            // CRITICAL: Inject auth context headers (set by AuthMiddleware)
-            // These are required by upstream services to identify the organization, user, and role
-            if (req.headers['x-org-id']) {
-                proxyReq.setHeader('x-org-id', req.headers['x-org-id']);
-            }
-            if (req.headers['x-user-id']) {
-                proxyReq.setHeader('x-user-id', req.headers['x-user-id']);
-            }
-            if (req.headers['x-role']) {
-                proxyReq.setHeader('x-role', req.headers['x-role']);
-            }
-            if (req.headers['x-user-name']) {
-                proxyReq.setHeader('x-user-name', req.headers['x-user-name']);
-            }
-            if (req.headers['x-auth-type']) {
-                proxyReq.setHeader('x-auth-type', req.headers['x-auth-type']);
+            for (const header of INTERNAL_HEADERS) {
+                const value = req.headers[header];
+                if (header !== 'x-request-id' && value) {
+                    proxyReq.setHeader(header, value);
+                }
             }
         };
-        // NOTE: onProxyReq/onError below are top-level (http-proxy-middleware v2 API) but this
-        // library is on v3, which only wires handlers nested under `on: { proxyReq, error }`.
-        // These top-level handlers are therefore dead code (never invoked) — a pre-existing bug
-        // carried over unchanged from the JS version, on purpose. See context/KNOWN_ISSUES.md.
-        this.authProxy = createProxyMiddleware({
-            target: AUTH_SERVICE_URL,
+        const createServiceProxy = (serviceName, unavailableMessage, options) => createProxyMiddleware({
+            ...options,
             changeOrigin: true,
+            on: {
+                proxyReq: (proxyReq, req) => {
+                    injectHeaders(proxyReq, req);
+                    logger.debug(`Proxying to ${serviceName}`, { requestId: req.requestId, path: req.path });
+                },
+                error: (err, req, res) => {
+                    logger.error(`${serviceName} Proxy Error`, { requestId: req.requestId, error: err.message });
+                    // WebSocket upgrades hand over a raw socket instead of a response
+                    if (!('status' in res)) {
+                        res.destroy();
+                        return;
+                    }
+                    if (!res.headersSent) {
+                        res.status(502).json({ error: unavailableMessage });
+                    }
+                },
+            },
+        });
+        this.authProxy = createServiceProxy('Auth Service', 'Authentication service unavailable', {
+            target: AUTH_SERVICE_URL,
             pathRewrite: { '^/auth': '/auth' },
             cookieDomainRewrite: '',
-            onProxyReq: (proxyReq, req) => {
-                injectHeaders(proxyReq, req);
-                logger.debug('Proxying to Auth Service', { requestId: req.requestId, path: req.path });
-            },
-            onError: (err, req, res) => {
-                const request = req;
-                const response = res;
-                logger.error('Auth Service Proxy Error', { requestId: request.requestId, error: err.message });
-                if (!response.headersSent) {
-                    response.status(502).json({ error: 'Authentication service unavailable' });
-                }
-            },
         });
-        this.sanctionsProxy = createProxyMiddleware({
+        this.sanctionsProxy = createServiceProxy('Sanctions Service', 'Sanctions service unavailable', {
             target: CORE_SERVICE_URL,
-            changeOrigin: true,
             pathRewrite: { '^/sanctions': '' },
-            onProxyReq: (proxyReq, req) => {
-                injectHeaders(proxyReq, req);
-                logger.debug('Proxying to Sanctions Service', { requestId: req.requestId, path: req.path });
-            },
-            onError: (err, req, res) => {
-                const request = req;
-                const response = res;
-                logger.error('Sanctions Service Proxy Error', { requestId: request.requestId, error: err.message });
-                if (!response.headersSent) {
-                    response.status(502).json({ error: 'Sanctions service unavailable' });
-                }
-            },
         });
         // Users Management Proxy
-        this.usersProxy = createProxyMiddleware({
+        this.usersProxy = createServiceProxy('Users Management', 'Users management service unavailable', {
             target: AUTH_SERVICE_URL,
-            changeOrigin: true,
             // Express strips the "/users" prefix when hitting this proxy; map it back
             pathRewrite: (path) => path.replace(/^\//, '/users/'),
-            onProxyReq: (proxyReq, req) => {
-                injectHeaders(proxyReq, req);
-                logger.debug('Proxying to Users Management', { requestId: req.requestId, path: req.path });
-            },
-            onError: (err, req, res) => {
-                const request = req;
-                const response = res;
-                logger.error('Users Management Proxy Error', { requestId: request.requestId, error: err.message });
-                if (!response.headersSent) {
-                    response.status(502).json({ error: 'Users management service unavailable' });
-                }
-            },
         });
     }
     /**
@@ -202,6 +174,10 @@ export default class GatewayServer {
         this.app.post('/auth/reset-secret', this.authLimiter, this.authMiddleware.middleware, this.authProxy);
         this.app.post('/auth/change-password', this.authLimiter, this.authMiddleware.middleware, this.authProxy);
         this.app.get('/auth/organization/keys', this.apiLimiter, this.authMiddleware.middleware, this.authProxy);
+        // SuperAdmin organization management (role enforced by auth-service)
+        this.app.get('/auth/organizations', this.apiLimiter, this.authMiddleware.middleware, this.authProxy);
+        this.app.get('/auth/organizations/:id', this.apiLimiter, this.authMiddleware.middleware, this.authProxy);
+        this.app.put('/auth/organizations/:id/services', this.authLimiter, this.authMiddleware.middleware, this.authProxy);
         // ==================== PUBLIC AUTH ROUTES ====================
         // No auth required, rate limited
         this.app.post('/auth/login', this.authLimiter, this.authProxy);
@@ -211,12 +187,15 @@ export default class GatewayServer {
         this.app.post('/auth/logout', this.authLimiter, this.authProxy);
         // ==================== PROTECTED SANCTIONS ROUTES ====================
         // Auth required, stricter rate limit
-        this.app.use('/sanctions', this.authMiddleware.middleware, this.apiLimiter, this.sanctionsProxy);
+        this.app.use('/sanctions', this.authMiddleware.middleware, requireService('sanctions'), this.apiLimiter, this.sanctionsProxy);
         // ==================== PROTECTED USERS MANAGEMENT ROUTES ====================
         // Auth required (admin only), rate limited
         this.app.use('/users', this.authMiddleware.middleware, this.apiLimiter, this.usersProxy);
         logger.info('All routes configured', {
-            protectedAuthRoutes: ['/register-organization', '/register-user', '/reset-secret', '/change-password', '/organization/keys'],
+            protectedAuthRoutes: [
+                '/register-organization', '/register-user', '/reset-secret', '/change-password', '/organization/keys',
+                '/organizations', '/organizations/:id', '/organizations/:id/services'
+            ],
             publicAuthRoutes: ['/login', '/forgot-password', '/reset-password', '/refresh', '/logout'],
             protectedSanctionsRoutes: ['/sanctions (wildcard)'],
             protectedUsersRoutes: ['/users (wildcard)'],

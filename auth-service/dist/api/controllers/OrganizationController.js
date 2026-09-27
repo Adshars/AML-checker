@@ -42,7 +42,8 @@ export class OrganizationController {
                     name: result.organization.name,
                     location: `${result.organization.city}, ${result.organization.country}`,
                     apiKey: result.apiKey,
-                    apiSecret: result.apiSecret
+                    apiSecret: result.apiSecret,
+                    services: result.organization.services
                 },
                 user: {
                     id: result.user.id,
@@ -55,6 +56,10 @@ export class OrganizationController {
         catch (error) {
             const err = error;
             const message = err.message || '';
+            if (err.code === 'VALIDATION_ERROR') {
+                res.status(400).json({ error: message });
+                return;
+            }
             if (err.code === 'CONFLICT' || message.includes('exists') || message.includes('registered')) {
                 logger.warn('Registration failed: Duplicate entity', { requestId, error: message });
                 res.status(400).json({ error: message });
@@ -137,6 +142,100 @@ export class OrganizationController {
                 return;
             }
             logger.error('Get Organization Keys Error', { error: err.message });
+            res.status(500).json({ error: 'Server error' });
+        }
+    };
+    /**
+     * Security: organization management is restricted to SuperAdmin
+     */
+    ensureSuperAdmin = (req, res, action) => {
+        const role = req.headers['x-role'];
+        if (role !== 'superadmin') {
+            logger.warn('Forbidden organization management attempt', {
+                action,
+                role,
+                userId: req.headers['x-user-id']
+            });
+            res.status(403).json({ error: 'Only SuperAdmin can manage organizations' });
+            return false;
+        }
+        return true;
+    };
+    /**
+     * List organizations
+     * GET /auth/organizations?search=&page=&limit=
+     */
+    listOrganizations = async (req, res) => {
+        if (!this.ensureSuperAdmin(req, res, 'list'))
+            return;
+        try {
+            const { search, page, limit } = req.query;
+            const result = await this.organizationService.listOrganizations({
+                search: typeof search === 'string' ? search : undefined,
+                page: page !== undefined ? Number(page) : undefined,
+                limit: limit !== undefined ? Number(limit) : undefined
+            });
+            res.json(result);
+        }
+        catch (error) {
+            const err = error;
+            logger.error('List Organizations Error', { error: err.message });
+            res.status(500).json({ error: 'Server error' });
+        }
+    };
+    /**
+     * Get organization details
+     * GET /auth/organizations/:id
+     */
+    getOrganization = async (req, res) => {
+        if (!this.ensureSuperAdmin(req, res, 'get'))
+            return;
+        try {
+            const organization = await this.organizationService.getOrganization(req.params.id);
+            res.json(organization);
+        }
+        catch (error) {
+            const err = error;
+            if (err.code === 'NOT_FOUND') {
+                res.status(404).json({ error: 'Organization not found' });
+                return;
+            }
+            logger.error('Get Organization Error', { organizationId: req.params.id, error: err.message });
+            res.status(500).json({ error: 'Server error' });
+        }
+    };
+    /**
+     * Replace organization service package
+     * PUT /auth/organizations/:id/services
+     */
+    updateOrganizationServices = async (req, res) => {
+        if (!this.ensureSuperAdmin(req, res, 'update-services'))
+            return;
+        const organizationId = req.params.id;
+        try {
+            const { sanctions, identityMode } = req.body;
+            const organization = await this.organizationService.updateServices(organizationId, {
+                sanctions,
+                identityMode
+            });
+            logger.info('Organization services updated', {
+                organizationId,
+                services: organization.services,
+                updatedBy: req.headers['x-user-id']
+            });
+            res.json(organization);
+        }
+        catch (error) {
+            const err = error;
+            if (err.code === 'NOT_FOUND') {
+                res.status(404).json({ error: 'Organization not found' });
+                return;
+            }
+            if (err.code === 'VALIDATION_ERROR') {
+                res.status(400).json({ error: err.message });
+                return;
+            }
+            logger.error('Update Organization Services Error', { organizationId, error: err.message });
             res.status(500).json({ error: 'Server error' });
         }
     };

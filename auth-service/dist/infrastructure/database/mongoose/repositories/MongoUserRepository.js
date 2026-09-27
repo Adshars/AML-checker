@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { IUserRepository } from '../../../../domain/repositories/IUserRepository.js';
 import { UserMapper } from '../../../mappers/UserMapper.js';
 import { UserModel } from '../schemas/UserSchema.js';
@@ -40,6 +41,19 @@ export class MongoUserRepository extends IUserRepository {
     async existsByEmail(email) {
         const count = await UserModel.countDocuments({ email: email.toLowerCase() });
         return count > 0;
+    }
+    async countByOrganizationIds(organizationIds) {
+        // Aggregation pipelines skip schema casting, so ids must be ObjectIds
+        const objectIds = organizationIds
+            .filter(id => mongoose.isValidObjectId(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+        if (objectIds.length === 0)
+            return {};
+        const rows = await UserModel.aggregate([
+            { $match: { organizationId: { $in: objectIds } } },
+            { $group: { _id: '$organizationId', count: { $sum: 1 } } }
+        ]);
+        return rows.reduce((acc, row) => ({ ...acc, [row._id.toString()]: row.count }), {});
     }
 }
 export default MongoUserRepository;

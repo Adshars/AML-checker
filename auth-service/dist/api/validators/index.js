@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { IDENTITY_MODES, hasAnyService, normalizeOrganizationServices } from '../../domain/entities/OrganizationServices.js';
 // Rules
 const emailRule = Joi.string().email().required().messages({
     'string.email': 'Invalid email (must contain @ and a domain with a dot)',
@@ -14,6 +15,23 @@ const textRule = Joi.string().required().messages({
     'string.empty': 'This field cannot be empty',
     'any.required': 'This field is required'
 });
+// Organization services rules
+const sanctionsRule = Joi.boolean().messages({
+    'boolean.base': 'sanctions must be a boolean',
+    'any.required': 'sanctions is required'
+});
+const identityModeMessage = `identityMode must be one of: ${IDENTITY_MODES.join(', ')}`;
+const identityModeRule = Joi.string().valid(...IDENTITY_MODES).messages({
+    'any.only': identityModeMessage,
+    'string.base': identityModeMessage,
+    'any.required': 'identityMode is required'
+});
+const servicesMessages = {
+    'object.base': 'Services must be an object',
+    'services.none': 'At least one service must be enabled'
+};
+// Omitted fields fall back to defaults before the check
+const atLeastOneService = (value, helpers) => hasAnyService(normalizeOrganizationServices(value)) ? value : helpers.error('services.none');
 // Organization Registration Schema
 export const registerOrgSchema = Joi.object({
     orgName: textRule,
@@ -23,8 +41,17 @@ export const registerOrgSchema = Joi.object({
     firstName: textRule,
     lastName: textRule,
     email: emailRule,
-    password: passwordRule
+    password: passwordRule,
+    services: Joi.object({
+        sanctions: sanctionsRule,
+        identityMode: identityModeRule
+    }).custom(atLeastOneService).messages(servicesMessages).optional()
 });
+// Organization Services Update Schema (full object required)
+export const updateOrganizationServicesSchema = Joi.object({
+    sanctions: sanctionsRule.required(),
+    identityMode: identityModeRule.required()
+}).custom(atLeastOneService).messages(servicesMessages);
 // User Registration Schema
 export const registerUserSchema = Joi.object({
     firstName: textRule,

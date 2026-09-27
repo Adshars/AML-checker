@@ -139,7 +139,8 @@ export class AuthController {
             res.json({
                 valid: true,
                 organizationId: result.organizationId,
-                organizationName: result.name
+                organizationName: result.name,
+                services: result.services
             });
         }
         catch (error) {

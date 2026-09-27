@@ -45,5 +45,17 @@ export class IOrganizationRepository {
     async existsByName(name) {
         throw new Error('Method not implemented');
     }
+    /**
+     * List organizations (newest first), optionally filtered by name
+     */
+    async findAll(params) {
+        throw new Error('Method not implemented');
+    }
+    /**
+     * Replace organization service package
+     */
+    async updateServices(id, services) {
+        throw new Error('Method not implemented');
+    }
 }
 export default IOrganizationRepository;

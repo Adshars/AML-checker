@@ -1,3 +1,4 @@
+import { normalizeOrganizationServices } from '../../../domain/entities/OrganizationServices.js';
 /**
  * Login Response DTO
  */
@@ -10,7 +11,7 @@ export class LoginResponseDto {
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
     }
-    static create(user, accessToken, refreshToken) {
+    static create(user, accessToken, refreshToken, organizationName, services) {
         return new LoginResponseDto({
             user: {
                 id: user.id,
@@ -18,7 +19,9 @@ export class LoginResponseDto {
                 firstName: user.firstName,
                 lastName: user.lastName,
                 organizationId: user.organizationId,
-                role: user.role
+                organizationName,
+                role: user.role,
+                services: normalizeOrganizationServices(services)
             },
             accessToken,
             refreshToken

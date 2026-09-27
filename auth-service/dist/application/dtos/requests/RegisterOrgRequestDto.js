@@ -1,3 +1,4 @@
+import { normalizeOrganizationServices } from '../../../domain/entities/OrganizationServices.js';
 /**
  * Register Organization Request DTO
  */
@@ -10,7 +11,8 @@ export class RegisterOrgRequestDto {
     password;
     firstName;
     lastName;
-    constructor({ orgName, country, city, address, email, password, firstName, lastName }) {
+    services;
+    constructor({ orgName, country, city, address, email, password, firstName, lastName, services }) {
         this.orgName = orgName?.trim();
         this.country = country?.trim();
         this.city = city?.trim();
@@ -19,6 +21,7 @@ export class RegisterOrgRequestDto {
         this.password = password;
         this.firstName = firstName?.trim();
         this.lastName = lastName?.trim();
+        this.services = normalizeOrganizationServices(services);
     }
     static fromRequest(body) {
         return new RegisterOrgRequestDto({
@@ -29,7 +32,8 @@ export class RegisterOrgRequestDto {
             email: body.email,
             password: body.password,
             firstName: body.firstName,
-            lastName: body.lastName
+            lastName: body.lastName,
+            services: body.services
         });
     }
 }

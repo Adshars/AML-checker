@@ -1,3 +1,4 @@
+import { normalizeOrganizationServices } from './OrganizationServices.js';
 /**
  * Organization domain entity
  * Pure domain object without database dependencies
@@ -10,8 +11,9 @@ export class Organization {
     address;
     apiKey;
     apiSecretHash;
+    services;
     createdAt;
-    constructor({ id, name, country, city, address, apiKey = null, apiSecretHash = null, createdAt = new Date() }) {
+    constructor({ id, name, country, city, address, apiKey = null, apiSecretHash = null, services, createdAt = new Date() }) {
         this.id = id;
         this.name = name;
         this.country = country;
@@ -19,6 +21,7 @@ export class Organization {
         this.address = address;
         this.apiKey = apiKey;
         this.apiSecretHash = apiSecretHash;
+        this.services = normalizeOrganizationServices(services);
         this.createdAt = createdAt;
     }
     hasApiCredentials() {

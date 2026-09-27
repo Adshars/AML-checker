@@ -3,6 +3,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import NodeCache from 'node-cache';
 import logger from './utils/logger.js';
+import { normalizeOrganizationServices } from './types/organizationServices.js';
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
 // SECURITY: Fail-fast if JWT_SECRET is not configured
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -48,7 +49,9 @@ export default class AuthMiddleware {
                     authType: 'api-key',
                     userId: null,
                     email: null,
-                    role: null
+                    role: null,
+                    orgName: response.data.organizationName || undefined,
+                    services: normalizeOrganizationServices(response.data.services)
                 };
                 // Cache the result
                 this.apiKeyCache.set(cacheKey, result);
@@ -80,7 +83,9 @@ export default class AuthMiddleware {
                 userId: decoded.userId,
                 email: decoded.email,
                 role: decoded.role,
-                userName: decoded.firstName && decoded.lastName ? `${decoded.firstName} ${decoded.lastName}` : (decoded.email || 'User')
+                userName: decoded.firstName && decoded.lastName ? `${decoded.firstName} ${decoded.lastName}` : (decoded.email || 'User'),
+                orgName: decoded.organizationName,
+                services: normalizeOrganizationServices(decoded.services)
             };
         }
         catch (error) {
@@ -88,6 +93,16 @@ export default class AuthMiddleware {
             logger.warn('JWT Verification Failed', { requestId: req.requestId, error: message });
             throw new Error('Invalid or expired JWT token');
         }
+    }
+    /**
+     * Organization service package headers for downstream services
+     */
+    setOrganizationHeaders(req, authResult) {
+        req.headers['x-org-sanctions'] = String(authResult.services.sanctions);
+        req.headers['x-org-identity-mode'] = authResult.services.identityMode;
+        // Non-ASCII characters (e.g. Polish names) are not valid in HTTP headers
+        if (authResult.orgName)
+            req.headers['x-org-name'] = encodeURIComponent(authResult.orgName);
     }
     /**
      * Main middleware - tries API Key auth first, then JWT
@@ -113,6 +128,7 @@ export default class AuthMiddleware {
                     req.headers['x-user-id'] = authResult.userId;
                 if (authResult.role)
                     req.headers['x-role'] = authResult.role;
+                this.setOrganizationHeaders(req, authResult);
                 logger.info('Auth Success', { requestId: req.requestId, authType: 'api-key', orgId: authResult.orgId });
                 next();
                 return;
@@ -132,6 +148,7 @@ export default class AuthMiddleware {
                     req.headers['x-role'] = authResult.role;
                 if (authResult.userName)
                     req.headers['x-user-name'] = authResult.userName;
+                this.setOrganizationHeaders(req, authResult);
                 logger.info('Auth Success', { requestId: req.requestId, authType: 'jwt', userId: authResult.userId });
                 next();
                 return;

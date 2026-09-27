@@ -1,4 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
+import { IDENTITY_MODES } from '../../../../domain/entities/OrganizationServices.js';
 const organizationSchema = new Schema({
     name: {
         type: String,
@@ -28,6 +29,10 @@ const organizationSchema = new Schema({
     },
     apiSecretHash: {
         type: String
+    },
+    services: {
+        sanctions: { type: Boolean, default: true },
+        identityMode: { type: String, enum: IDENTITY_MODES, default: 'NONE' }
     },
     createdAt: {
         type: Date,

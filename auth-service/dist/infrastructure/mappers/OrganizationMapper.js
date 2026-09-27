@@ -1,4 +1,5 @@
 import { Organization } from '../../domain/entities/Organization.js';
+import { normalizeOrganizationServices } from '../../domain/entities/OrganizationServices.js';
 /**
  * Maps between Organization domain entity and MongoDB document
  */
@@ -17,6 +18,8 @@ export class OrganizationMapper {
             address: doc.address,
             apiKey: doc.apiKey,
             apiSecretHash: doc.apiSecretHash,
+            // Legacy documents may lack the field entirely
+            services: normalizeOrganizationServices(doc.services),
             createdAt: doc.createdAt
         });
     }
@@ -28,7 +31,8 @@ export class OrganizationMapper {
             name: entity.name,
             country: entity.country,
             city: entity.city,
-            address: entity.address
+            address: entity.address,
+            services: normalizeOrganizationServices(entity.services)
         };
         if (entity.apiKey) {
             doc.apiKey = entity.apiKey;
@@ -54,6 +58,7 @@ export class OrganizationMapper {
             city: entity.city,
             address: entity.address,
             apiKey: entity.apiKey,
+            services: entity.services,
             createdAt: entity.createdAt
         };
     }

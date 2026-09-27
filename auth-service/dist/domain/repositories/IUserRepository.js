@@ -45,5 +45,11 @@ export class IUserRepository {
     async existsByEmail(email) {
         throw new Error('Method not implemented');
     }
+    /**
+     * Count users per organization (organizations without users are omitted)
+     */
+    async countByOrganizationIds(organizationIds) {
+        throw new Error('Method not implemented');
+    }
 }
 export default IUserRepository;

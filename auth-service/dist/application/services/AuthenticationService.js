@@ -1,6 +1,7 @@
 import { UnauthorizedError, NotFoundError } from '../../shared/errors/index.js';
 import { LoginResponseDto } from '../dtos/responses/LoginResponseDto.js';
 import logger from '../../shared/logger/index.js';
+import { normalizeOrganizationServices } from '../../domain/entities/OrganizationServices.js';
 /**
  * Authentication Service
  * Handles login, logout, token refresh, and API key validation
@@ -31,21 +32,16 @@ export class AuthenticationService {
         if (!isMatch) {
             throw new UnauthorizedError('Invalid email or password');
         }
+        // Organization is needed in the token (name + services), so fetch it first
+        const organization = await this.findUserOrganization(user);
         // Generate tokens
-        const tokenPayload = {
-            userId: user.id,
-            organizationId: user.organizationId,
-            role: user.role,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email
-        };
+        const tokenPayload = this.buildAccessTokenPayload(user, organization);
         const accessToken = this.tokenService.generateAccessToken(tokenPayload);
         const refreshToken = this.tokenService.generateRefreshToken({ userId: user.id });
         // Store refresh token
         await this.tokenService.storeRefreshToken(refreshToken, user.id);
         logger.info('User logged in', { userId: user.id, role: user.role });
-        return LoginResponseDto.create(user, accessToken, refreshToken);
+        return LoginResponseDto.create(user, accessToken, refreshToken, organization?.name, tokenPayload.services);
     }
     /**
      * Refresh access token
@@ -65,19 +61,40 @@ export class AuthenticationService {
         }
         // Token rotation: revoke old, issue new
         await this.tokenService.revokeRefreshToken(refreshToken);
-        const tokenPayload = {
-            userId: user.id,
-            organizationId: user.organizationId,
-            role: user.role,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email
-        };
+        // Fresh organization data propagates service changes to signed-in users
+        const organization = await this.findUserOrganization(user);
+        const tokenPayload = this.buildAccessTokenPayload(user, organization);
         const newAccessToken = this.tokenService.generateAccessToken(tokenPayload);
         const newRefreshToken = this.tokenService.generateRefreshToken({ userId: user.id });
         await this.tokenService.storeRefreshToken(newRefreshToken, user.id);
         logger.info('Tokens refreshed (rotation)', { userId: user.id });
         return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+    }
+    /**
+     * Fetch the organization the user belongs to (SuperAdmin may have none)
+     */
+    async findUserOrganization(user) {
+        if (!user.organizationId)
+            return null;
+        return this.organizationRepository.findById(user.organizationId);
+    }
+    /**
+     * Build access token claims; services default when organization is missing
+     */
+    buildAccessTokenPayload(user, organization) {
+        const payload = {
+            userId: user.id,
+            organizationId: user.organizationId,
+            role: user.role,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            services: normalizeOrganizationServices(organization?.services)
+        };
+        if (organization?.name) {
+            payload.organizationName = organization.name;
+        }
+        return payload;
     }
     /**
      * Logout user by revoking refresh token
@@ -104,7 +121,8 @@ export class AuthenticationService {
         logger.info('API Key validated', { organizationId: organization.id });
         return {
             organizationId: organization.id,
-            name: organization.name
+            name: organization.name,
+            services: organization.services
         };
     }
 }

@@ -391,6 +391,42 @@ panel_user_id = (set after user creation)
 
 ---
 
+## Organization services (Phase 6A)
+
+Service package per organization: `{ "sanctions": bool, "identityMode": "NONE" | "IDENTITY" | "FULL_AML" }`.
+Defaults: `{ "sanctions": true, "identityMode": "NONE" }`. Changes reach signed-in users within 15 minutes
+(next token refresh) and API key clients within 60 seconds (gateway cache).
+
+### API (Postman, `{{superadmin_token}}`)
+
+1. `GET {{gateway_url}}/auth/organizations` → 200, each item has `services` and `userCount`;
+   `?search=<name>&page=1&limit=20` filters and paginates. Save the tested organization id to `{{org_id}}`.
+2. Log in as the organization admin and decode the access token (e.g. jwt.io) → payload contains
+   `services` and `organizationName`.
+3. `PUT {{gateway_url}}/auth/organizations/{{org_id}}/services` with `{ "sanctions": false, "identityMode": "IDENTITY" }` → 200.
+4. Wait **61 s**, then `GET {{gateway_url}}/sanctions/check?name=test` with `x-api-key`/`x-api-secret` of that organization
+   → **403** `{ "error": "Service not enabled for organization", "service": "sanctions" }`.
+5. Restore `{ "sanctions": true, "identityMode": "NONE" }`, wait 61 s → the same request returns 200.
+6. `PUT` with `{ "sanctions": false, "identityMode": "NONE" }` → 400 `At least one service must be enabled`.
+7. `PUT`/`GET /auth/organizations*` with an admin token → 403 `Only SuperAdmin can manage organizations`.
+8. Header spoofing: `GET /sanctions/check` with API key plus `x-role: admin`, `x-user-id: evil` → the request is processed
+   as the API key organization (spoofed headers are stripped by the gateway).
+9. `docker compose stop core-service` → `GET /sanctions/check` → 502 `Sanctions service unavailable`;
+   `docker compose start core-service`.
+
+### Browser
+
+1. Log in as superadmin → organization list (`/superadmin`): search, pagination, service badges, user counts.
+2. **New organization** → register with Sanctions + Full AML → the list shows both badges.
+3. Open an organization → uncheck **Sanctions screening**, select **Identity verification** → Save → confirm in the modal → success toast.
+4. In a separate (incognito) window log in as that organization's admin → no Dashboard/Check/History in the menu;
+   opening `/check` redirects to `/settings`; Users, Developer and Settings work.
+5. Uncheck all services → Save is disabled and "At least one service must be enabled" is shown.
+6. Restore Sanctions + None → admin logs out and in again → the menu is back.
+7. Narrow screen (hamburger menu) → superadmin items **Organizations** and **New Organization** are visible.
+
+---
+
 ## Notes
 
 - Refresh tokens are **HttpOnly cookies**, not returned in JSON.

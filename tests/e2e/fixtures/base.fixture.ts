@@ -7,6 +7,7 @@ import { UsersPage } from '../pages/UsersPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { DeveloperPage } from '../pages/DeveloperPage';
 import { SuperAdminPage } from '../pages/SuperAdminPage';
+import { SuperAdminOrganizationsPage } from '../pages/SuperAdminOrganizationsPage';
 import { loadCredentials } from '../utils/credentials';
 import { Credentials } from '../constants/auth';
 
@@ -19,6 +20,7 @@ type Fixtures = {
   settingsPage: SettingsPage;
   developerPage: DeveloperPage;
   superAdminPage: SuperAdminPage;
+  superAdminOrganizationsPage: SuperAdminOrganizationsPage;
   credentials: Credentials;
 };
 
@@ -31,6 +33,7 @@ export const test = base.extend<Fixtures>({
   settingsPage: async ({ page }, use) => use(new SettingsPage(page)),
   developerPage: async ({ page }, use) => use(new DeveloperPage(page)),
   superAdminPage: async ({ page }, use) => use(new SuperAdminPage(page)),
+  superAdminOrganizationsPage: async ({ page }, use) => use(new SuperAdminOrganizationsPage(page)),
   credentials: async ({}, use) => use(loadCredentials()),
 });
 

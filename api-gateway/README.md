@@ -202,10 +202,19 @@ All protected routes require authentication and are rate limited to **20 request
 | POST | `/auth/reset-secret` | ✅ JWT or API Key | admin/superadmin | Auth Service | Reset organization's API secret (requires password confirmation) |
 | POST | `/auth/change-password` | ✅ JWT or API Key | - | Auth Service | Change user's password (requires current password) |
 | GET | `/auth/organization/keys` | ✅ JWT or API Key | - | Auth Service | Get organization's public API key |
+| GET | `/auth/organizations` | ✅ JWT | superadmin | Auth Service | List organizations with services and user counts (`search`, `page`, `limit`) |
+| GET | `/auth/organizations/:id` | ✅ JWT | superadmin | Auth Service | Organization details |
+| PUT | `/auth/organizations/:id/services` | ✅ JWT | superadmin | Auth Service | Replace organization service package `{ sanctions, identityMode }` |
+
+Role checks for these routes are enforced by the Auth Service (gateway only authenticates).
 
 ### Sanctions Service Proxy (Core Service)
 
 All sanctions routes require **JWT or API Key authentication** and are rate limited to **100 requests per 15 minutes per IP**.
+They are additionally guarded by `requireService('sanctions')` ([src/serviceGuard.ts](src/serviceGuard.ts)): when the
+organization has sanctions screening disabled, the gateway returns
+`403 { "error": "Service not enabled for organization", "service": "sanctions" }` without calling Core Service.
+`requireService('identity')` (requires `identityMode !== 'NONE'`) is available for identity verification routes (Phase 6B).
 
 | Method | Endpoint | Auth Required | Proxied To | Description | Query Parameters |
 |--------|----------|---------------|------------|-------------|-----------------|
@@ -238,6 +247,23 @@ After successful authentication, the gateway automatically injects these headers
 | `x-user-name` | JWT payload | Full name when available (falls back to email) |
 | `x-auth-type` | Gateway | Authentication method: `"jwt"` or `"api-key"` |
 | `x-role` | JWT payload | User role: `"superadmin"`, `"admin"`, or `"user"` - not present for API Key auth |
+| `x-org-sanctions` | JWT `services` claim or API Key validation | `"true"` / `"false"` – sanctions screening enabled |
+| `x-org-identity-mode` | JWT `services` claim or API Key validation | `NONE` / `IDENTITY` / `FULL_AML` |
+| `x-org-name` | JWT `organizationName` claim or API Key validation | Organization name, **always** `encodeURIComponent`-encoded (non-ASCII names are not valid header values); omitted when unknown |
+
+Tokens issued before service packages existed (no `services` claim) and API key responses without `services`
+fall back to the defaults `{ sanctions: true, identityMode: 'NONE' }`.
+
+**Internal header stripping:** downstream services trust the headers above, so `stripInternalHeaders`
+(registered before CORS, Swagger, health and all routes) deletes every internal header sent by the client:
+`x-org-id`, `x-org-name`, `x-org-sanctions`, `x-org-identity-mode`, `x-user-id`, `x-user-name`, `x-user-email`,
+`x-role`, `x-auth-type`, `x-source`, `x-idv-verification-id`, `x-request-id`
+(list: [src/config/internalHeaders.ts](src/config/internalHeaders.ts)). CORS `allowedHeaders` no longer includes
+`x-org-id`, `x-user-id` or `x-role`.
+
+**Proxy errors:** proxies register their handlers under `on: { proxyReq, error }` (http-proxy-middleware v3).
+`proxyReq` forwards the context headers and `x-request-id`; `error` returns `502` with a service-specific
+message (e.g. `{ "error": "Sanctions service unavailable" }`) when the target service is unreachable.
 
 ## Authentication Middleware
 
@@ -485,7 +511,9 @@ How It Works (High Level)
 
 End-to-End (E2E) tests verify gateway routing, rate limiting, authentication, and header forwarding using Jest with Supertest and nock for mocking upstream services.
 
-**Test File:** [tests/gateway.test.ts](tests/gateway.test.ts)
+**Test Files:**
+- [tests/gateway.test.ts](tests/gateway.test.ts) – routing, rate limiting, authentication, CORS, health
+- [tests/services.test.ts](tests/services.test.ts) – internal header stripping, `x-org-*` headers, `requireService`, SuperAdmin organization routes, proxy `502` handling and `x-request-id` forwarding
 
 ### Test Suites
 

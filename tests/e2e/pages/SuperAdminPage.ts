@@ -30,7 +30,7 @@ export class SuperAdminPage {
   }
 
   async goto(): Promise<void> {
-    await this.page.goto('/superadmin');
+    await this.page.goto('/superadmin/organizations/new');
     await this.submitBtn.waitFor({ state: 'visible' });
   }
 

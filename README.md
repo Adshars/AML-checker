@@ -11,6 +11,7 @@ Microservice-based platform for sanctions and PEP screening using OpenSanctions 
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Authentication](#authentication)
+- [Organization service packages](#organization-service-packages)
 - [API Endpoints](#api-endpoints)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
@@ -208,6 +209,43 @@ For service-level details, see:
 - `x-api-key: pk_live_XXXXXX`
 - `x-api-secret: sk_live_YYYYYY`
 
+**Context headers (gateway → services)**
+
+After authentication the gateway forwards the caller context to downstream services:
+`x-org-id`, `x-auth-type`, `x-user-id`, `x-user-name`, `x-user-email`, `x-role`, `x-request-id`
+and the organization service package: `x-org-sanctions` (`true`/`false`),
+`x-org-identity-mode` (`NONE`/`IDENTITY`/`FULL_AML`), `x-org-name` (always URL-encoded).
+
+Downstream services trust these headers, so the gateway **strips every internal header sent by
+the client** (`x-org-*`, `x-user-*`, `x-role`, `x-auth-type`, `x-source`, `x-idv-verification-id`,
+`x-request-id`) before routing. The list lives in `api-gateway/src/config/internalHeaders.ts`.
+
+---
+
+## Organization service packages
+
+Each organization has a service package managed exclusively by the superadmin:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `sanctions` | `true` / `false` | Manual sanctions screening: Dashboard, Check, History and `GET /sanctions/*` (JWT and API key) |
+| `identityMode` | `NONE` | No identity verification |
+| | `IDENTITY` | Identity verification: document + selfie (liveness) + face match |
+| | `FULL_AML` | Identity verification + automatic sanctions screening of the verified person |
+
+- The two fields are independent (e.g. `{ "sanctions": true, "identityMode": "FULL_AML" }`).
+- At least one service must be enabled — `{ "sanctions": false, "identityMode": "NONE" }` is rejected with `400`.
+- **Defaults** (new organizations without `services`, existing organizations, tokens issued before this feature):
+  `{ "sanctions": true, "identityMode": "NONE" }` — i.e. the original behaviour.
+- Services are carried in the access token (`services`, `organizationName` claims) and in the
+  `POST /auth/internal/validate-api-key` response. The gateway enforces them: `/sanctions/*` with sanctions
+  disabled returns `403 { "error": "Service not enabled for organization", "service": "sanctions" }`.
+- The frontend builds the menu from the token: without sanctions screening Dashboard/Check/History are hidden
+  and their routes redirect to the first available page.
+- **Propagation delay:** signed-in users see changes after their next token refresh (up to 15 minutes);
+  API key clients after the gateway cache expires (up to 60 seconds).
+- Identity verification itself (Identity / Full AML tabs) is delivered in Phase 6B.
+
 ---
 
 ## API Endpoints
@@ -224,6 +262,9 @@ All requests go through the API Gateway (`http://localhost:8080`).
 - `POST /auth/register-user` (admin/superadmin)
 - `POST /auth/reset-secret`
 - `GET /auth/organization/keys`
+- `GET /auth/organizations?search=&page=&limit=` (superadmin — list with services and user counts)
+- `GET /auth/organizations/:id` (superadmin)
+- `PUT /auth/organizations/:id/services` (superadmin — body `{ "sanctions": bool, "identityMode": "NONE|IDENTITY|FULL_AML" }`)
 - `GET /users`
 - `POST /users`
 - `DELETE /users/:id`
@@ -233,6 +274,8 @@ All requests go through the API Gateway (`http://localhost:8080`).
 - `GET /sanctions/stats`
 - `GET /sanctions/health`
 - `GET /health`
+
+All `/sanctions/*` endpoints return `403` when sanctions screening is disabled for the caller's organization.
 
 See the service READMEs for detailed request/response formats.
 

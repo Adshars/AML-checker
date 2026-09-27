@@ -132,17 +132,20 @@ docker compose up --build auth-service
 
 | Method | Endpoint | Auth Required | Role Required | Description | Required Fields |
 |--------|----------|---------------|---------------|-------------|-----------------|
-| POST | `/auth/register-organization` | ✅ Gateway headers | superadmin | Register new organization with admin user; generates API key/secret; sends welcome email to admin | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
+| POST | `/auth/register-organization` | ✅ Gateway headers | superadmin | Register new organization with admin user; generates API key/secret; sends welcome email to admin. Optional `services` (defaults to `{ sanctions: true, identityMode: 'NONE' }`) | `orgName`, `country`, `city`, `address`, `email`, `password`, `firstName`, `lastName` |
 | POST | `/auth/register-user` | ✅ Gateway headers | admin/superadmin | Add user to organization (role forced to `user`); sends welcome email | `email`, `password`, `firstName`, `lastName`, `organizationId` |
 | POST | `/auth/reset-secret` | ✅ Gateway headers | admin only | Reset organization's API secret; requires password confirmation | `password` |
 | POST | `/auth/change-password` | ✅ Gateway headers | - | Change authenticated user's password | `currentPassword`, `newPassword` |
 | GET | `/auth/organization/keys` | ✅ Gateway headers | - | Get organization's public API key | - |
+| GET | `/auth/organizations` | ✅ Gateway headers | superadmin | List organizations (newest first) with `services` and `userCount`; query `search` (case-insensitive name), `page` (default 1), `limit` (default 20, max 100); returns `{ data, meta: { page, limit, total, totalPages } }` | - |
+| GET | `/auth/organizations/:id` | ✅ Gateway headers | superadmin | Organization details `{ id, name, country, city, address, createdAt, services, userCount }` (no API credentials); unknown or malformed id → 404 | - |
+| PUT | `/auth/organizations/:id/services` | ✅ Gateway headers | superadmin | Replace the organization service package; at least one service must be enabled (`At least one service must be enabled` → 400) | `sanctions`, `identityMode` |
 
 #### Internal Endpoints (Not Exposed via Gateway)
 
 | Method | Endpoint | Description | Required Fields |
 |--------|----------|-------------|-----------------|
-| POST | `/auth/internal/validate-api-key` | Validate API key/secret for API Gateway (B2B auth) | `apiKey`, `apiSecret` |
+| POST | `/auth/internal/validate-api-key` | Validate API key/secret for API Gateway (B2B auth); returns `{ valid, organizationId, organizationName, services }` | `apiKey`, `apiSecret` |
 
 ### Users Management Endpoints (`/users/*`)
 
@@ -157,7 +160,8 @@ All users management endpoints require **gateway-injected context headers** with
 ### Endpoint Details
 
 **Authentication & Authorization:**
-- JWT tokens contain: `userId`, `organizationId`, `role`, `email`, `firstName`, `lastName`
+- JWT tokens contain: `userId`, `organizationId`, `role`, `email`, `firstName`, `lastName`, `organizationName` (omitted when the user has no organization) and `services` (`{ sanctions, identityMode }`)
+- `services` are read from the database on every login **and** refresh — this is how service changes reach signed-in users (within the access token lifetime, 15 min by default). `LoginResponseDto.user` also includes `services`.
 - Access token validity: configurable via `JWT_EXPIRES_IN` / `JWT_ACCESS_EXPIRATION`
 - Refresh token validity: configurable via `REFRESH_TOKEN_EXPIRES_IN`
 - Rate limiting: 50 req/15min for login endpoint (express-rate-limit)
@@ -665,9 +669,17 @@ Warning: Self-deletion prevented. User must belong to admin's organization.
   address: String (required),
   apiKey: String (unique, format: "pk_live_..."),
   apiSecretHash: String (bcrypt hashed),
+  services: {
+    sanctions: Boolean (default: true),
+    identityMode: String (enum: ['NONE', 'IDENTITY', 'FULL_AML'], default: 'NONE')
+  },
   createdAt: Date (auto-generated)
 }
 ```
+
+Documents created before service packages existed have no `services` field; `OrganizationMapper`
+normalizes them to the defaults (`normalizeOrganizationServices` in `src/domain/entities/OrganizationServices.ts`).
+The combination `{ sanctions: false, identityMode: 'NONE' }` is rejected by validation.
 
 **User**
 ```javascript
@@ -773,7 +785,9 @@ The Auth Service includes integration tests that verify endpoint behavior, valid
 - **supertest** 7.2.2 – HTTP assertions
 - **Mocking**: Jest mocks for Mongoose schemas, nodemailer, and logger
 
-**Test File:** [tests/auth.test.ts](tests/auth.test.ts)
+**Test Files:**
+- [tests/auth.test.ts](tests/auth.test.ts) – authentication, users, password flows, API keys
+- [tests/organizations.test.ts](tests/organizations.test.ts) – organization service packages, SuperAdmin organization endpoints, `services` in tokens and API key validation
 
 **Running Tests:**
 ```bash

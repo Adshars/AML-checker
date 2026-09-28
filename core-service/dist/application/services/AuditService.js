@@ -47,5 +47,28 @@ export class AuditService {
         });
         return HistoryResponseDto.fromQueryResult(result, page, limit);
     }
+    /**
+     * Get all audit logs matching filters, without pagination (for CSV export)
+     */
+    async exportHistory(queryDto) {
+        const { search, hasHit, startDate, endDate, userId, orgId, organizationId, role } = queryDto;
+        if (role === 'superadmin') {
+            return this.auditLogRepository.findAllForExport({
+                search,
+                hasHit,
+                startDate,
+                endDate,
+                userId,
+                orgId
+            });
+        }
+        return this.auditLogRepository.findByOrganizationForExport(organizationId, {
+            search,
+            hasHit,
+            startDate,
+            endDate,
+            userId
+        });
+    }
 }
 export default AuditService;

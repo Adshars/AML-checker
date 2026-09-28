@@ -291,6 +291,23 @@ describe('GET /check Integration Test', () => {
         }));
     });
 
+    it('should decode the URL-encoded x-user-name header', async () => {
+        mockCheckSanctions.mockResolvedValue({
+            data: { hits_count: 0, data: [] },
+            duration: 25
+        });
+
+        await request(app)
+            .get('/check?name=Test')
+            .set('x-org-id', 'org-123')
+            .set('x-user-id', 'user-456')
+            .set('x-user-name', encodeURIComponent('Adam Węglewski'));
+
+        expect(mockAuditLogModel.create).toHaveBeenCalledWith(expect.objectContaining({
+            userName: 'Adam Węglewski'
+        }));
+    });
+
     it('should trim whitespace from name parameter', async () => {
         mockCheckSanctions.mockResolvedValue({
             data: { hits_count: 0, data: [] },

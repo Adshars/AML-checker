@@ -1,3 +1,14 @@
+// api-gateway URL-encodes names (non-ASCII characters are invalid in HTTP headers)
+const decodeHeader = (value) => {
+    if (!value)
+        return value;
+    try {
+        return decodeURIComponent(value);
+    }
+    catch {
+        return value;
+    }
+};
 /**
  * Sanctions Check Request DTO
  */
@@ -33,7 +44,7 @@ export class SanctionsCheckRequestDto {
             country: req.query.country,
             organizationId: req.headers['x-org-id'],
             userId: req.headers['x-user-id'],
-            userName: req.headers['x-user-name'],
+            userName: decodeHeader(req.headers['x-user-name']),
             userEmail: req.headers['x-user-email'],
             requestId: req.headers['x-request-id'] || `req-${Date.now()}`
         });

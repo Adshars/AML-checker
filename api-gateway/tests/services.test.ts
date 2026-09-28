@@ -7,6 +7,7 @@ import express, { type Application, type Request, type Response, type NextFuncti
 const JWT_SECRET = 'test-jwt-secret';
 const AUTH_URL = 'http://auth-service.test';
 const CORE_URL = 'http://core-service.test';
+const IDV_URL = 'http://idv-service.test';
 const CLOSED_PORT_URL = 'http://127.0.0.1:1';
 
 // Fresh app instance (resets rate limiters and API key cache)
@@ -15,6 +16,7 @@ const setupApp = async (overrides: Record<string, string> = {}): Promise<Applica
 	process.env.JWT_SECRET = JWT_SECRET;
 	process.env.AUTH_SERVICE_URL = overrides.AUTH_SERVICE_URL ?? AUTH_URL;
 	process.env.CORE_SERVICE_URL = overrides.CORE_SERVICE_URL ?? CORE_URL;
+	process.env.IDV_SERVICE_URL = overrides.IDV_SERVICE_URL ?? IDV_URL;
 
 	jest.resetModules();
 	const { app } = await import('../src/index.js');
@@ -167,6 +169,20 @@ describe('Organization service headers', () => {
 		expect(captured.headers['x-org-identity-mode']).toBe('FULL_AML');
 		expect(captured.headers['x-org-name']).toBe(encodeURIComponent('Zażółć Sp. z o.o.'));
 		expect(decodeURIComponent(captured.headers['x-org-name'] as string)).toBe('Zażółć Sp. z o.o.');
+	});
+
+	test('JWT user name with Polish characters is forwarded URL-encoded', async () => {
+		const app = await setupApp();
+		const captured = captureCoreHeaders();
+		const token = signToken({ userId: 'u1', organizationId: 'org1', role: 'user', firstName: 'Łukasz', lastName: 'Węglewski' });
+
+		const res = await request(app)
+			.get('/sanctions/check')
+			.query({ name: 'test' })
+			.set('Authorization', `Bearer ${token}`);
+
+		expect(res.statusCode).toBe(200);
+		expect(decodeURIComponent(captured.headers['x-user-name'] as string)).toBe('Łukasz Węglewski');
 	});
 
 	test('legacy JWT without services is allowed with default services', async () => {
@@ -418,5 +434,112 @@ describe('Proxy error handling', () => {
 			.set('Authorization', `Bearer ${signToken({ userId: 'u1', organizationId: 'org1', role: 'user' })}`);
 
 		expect(captured.headers['x-request-id']).toEqual(expect.stringMatching(/^req-\d+-/));
+	});
+});
+
+describe('Identity verification routes', () => {
+
+	// Capture method, path, headers and body received by idv-service
+	const captureIdv = (method: 'get' | 'post', path: string | RegExp) => {
+		const captured: { path?: string; headers: Record<string, unknown>; body?: unknown } = { headers: {} };
+		nock(IDV_URL)[method](path)
+			.query(true)
+			.reply(function(uri, body) {
+				captured.path = uri;
+				captured.headers = this.req.headers;
+				captured.body = body;
+				return [201, { ok: true }];
+			});
+		return captured;
+	};
+
+	const jwtFor = (identityMode: string) => signToken({
+		userId: 'u1',
+		organizationId: 'org1',
+		role: 'user',
+		firstName: 'Łukasz',
+		lastName: 'Kowalski',
+		organizationName: 'Zażółć Sp. z o.o.',
+		services: { sanctions: true, identityMode }
+	});
+
+	test('organization with identityMode NONE -> 403 and nothing is proxied', async () => {
+		const app = await setupApp();
+		const scope = nock(IDV_URL).get(/.*/).reply(200, {});
+
+		const res = await request(app)
+			.get('/idv/verifications')
+			.set('Authorization', `Bearer ${jwtFor('NONE')}`);
+
+		expect(res.statusCode).toBe(403);
+		expect(res.body).toEqual({ error: 'Service not enabled for organization', service: 'identity' });
+		expect(scope.isDone()).toBe(false);
+	});
+
+	test('missing credentials -> 401', async () => {
+		const app = await setupApp();
+
+		const res = await request(app).get('/idv/verifications');
+
+		expect(res.statusCode).toBe(401);
+	});
+
+	test('API key with IDENTITY -> proxied without the /idv prefix, with organization headers and body', async () => {
+		const app = await setupApp();
+		mockApiKeyValidation({ organizationName: 'Łódź Trade', services: { sanctions: false, identityMode: 'IDENTITY' } });
+		const captured = captureIdv('post', '/verifications');
+
+		const res = await request(app)
+			.post('/idv/verifications')
+			.set('x-api-key', 'pk_live_test123')
+			.set('x-api-secret', 'sk_live_secret456')
+			.send({ externalRef: 'CUST-1' });
+
+		expect(res.statusCode).toBe(201);
+		expect(captured.path).toBe('/verifications');
+		expect(captured.body).toEqual({ externalRef: 'CUST-1' });
+		expect(captured.headers['x-org-id']).toBe('org1');
+		expect(captured.headers['x-auth-type']).toBe('api-key');
+		expect(captured.headers['x-org-identity-mode']).toBe('IDENTITY');
+		expect(decodeURIComponent(captured.headers['x-org-name'] as string)).toBe('Łódź Trade');
+	});
+
+	test('JWT with FULL_AML -> user context headers reach idv-service', async () => {
+		const app = await setupApp();
+		const captured = captureIdv('get', /\/verifications/);
+
+		const res = await request(app)
+			.get('/idv/verifications')
+			.query({ page: 2 })
+			.set('Authorization', `Bearer ${jwtFor('FULL_AML')}`);
+
+		expect(res.statusCode).toBe(201);
+		expect(captured.path).toBe('/verifications?page=2');
+		expect(captured.headers['x-auth-type']).toBe('jwt');
+		expect(captured.headers['x-user-id']).toBe('u1');
+		expect(captured.headers['x-org-identity-mode']).toBe('FULL_AML');
+		expect(decodeURIComponent(captured.headers['x-user-name'] as string)).toBe('Łukasz Kowalski');
+	});
+
+	test('client cannot spoof the identity mode header', async () => {
+		const app = await setupApp();
+
+		const res = await request(app)
+			.get('/idv/verifications')
+			.set('Authorization', `Bearer ${jwtFor('NONE')}`)
+			.set('x-org-identity-mode', 'FULL_AML');
+
+		expect(res.statusCode).toBe(403);
+	});
+
+	test('unreachable idv-service -> 502 with custom message', async () => {
+		const app = await setupApp({ IDV_SERVICE_URL: CLOSED_PORT_URL });
+
+		const res = await request(app)
+			.get('/idv/verifications')
+			.set('Authorization', `Bearer ${jwtFor('IDENTITY')}`);
+
+		expect(res.statusCode).toBe(502);
+		expect(res.body).toEqual({ error: 'Identity verification service unavailable' });
 	});
 });

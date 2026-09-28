@@ -24,6 +24,7 @@ export default class GatewayServer {
   authProxy!: ProxyRequestHandler<Request, Response>;
   sanctionsProxy!: ProxyRequestHandler<Request, Response>;
   usersProxy!: ProxyRequestHandler<Request, Response>;
+  idvProxy!: ProxyRequestHandler<Request, Response>;
 
   constructor(port = 8080) {
     this.app = express();
@@ -125,6 +126,7 @@ export default class GatewayServer {
   setupProxies(): void {
     const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
     const CORE_SERVICE_URL = process.env.CORE_SERVICE_URL || 'http://core-service:3000';
+    const IDV_SERVICE_URL = process.env.IDV_SERVICE_URL || 'http://idv-service:3000';
 
     // Forward auth context headers (set by AuthMiddleware) and the request tracking ID.
     // Client-supplied copies were already removed by stripInternalHeaders.
@@ -144,7 +146,7 @@ export default class GatewayServer {
     const createServiceProxy = (
       serviceName: string,
       unavailableMessage: string,
-      options: Pick<ProxyOptions<Request, Response>, 'target' | 'pathRewrite' | 'cookieDomainRewrite'>
+      options: Pick<ProxyOptions<Request, Response>, 'target' | 'pathRewrite' | 'cookieDomainRewrite' | 'proxyTimeout' | 'timeout'>
     ): ProxyRequestHandler<Request, Response> => createProxyMiddleware<Request, Response>({
       ...options,
       changeOrigin: true,
@@ -183,6 +185,13 @@ export default class GatewayServer {
       target: AUTH_SERVICE_URL,
       // Express strips the "/users" prefix when hitting this proxy; map it back
       pathRewrite: (path: string) => path.replace(/^\//, '/users/'),
+    });
+
+    // Identity verification (authenticated routes)
+    this.idvProxy = createServiceProxy('IDV Service', 'Identity verification service unavailable', {
+      target: IDV_SERVICE_URL,
+      pathRewrite: { '^/idv': '' },
+      proxyTimeout: 30000,
     });
   }
 
@@ -292,6 +301,17 @@ export default class GatewayServer {
       this.usersProxy
     );
 
+    // ==================== PROTECTED IDENTITY VERIFICATION ROUTES ====================
+    // Auth required (API key or JWT) and identity verification enabled for the organization.
+    // Which endpoints accept API keys vs user sessions is enforced by idv-service.
+
+    this.app.use('/idv',
+      this.authMiddleware.middleware,
+      requireService('identity'),
+      this.apiLimiter,
+      this.idvProxy
+    );
+
     logger.info('All routes configured', {
       protectedAuthRoutes: [
         '/register-organization', '/register-user', '/reset-secret', '/change-password', '/organization/keys',
@@ -300,6 +320,7 @@ export default class GatewayServer {
       publicAuthRoutes: ['/login', '/forgot-password', '/reset-password', '/refresh', '/logout'],
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
       protectedUsersRoutes: ['/users (wildcard)'],
+      protectedIdvRoutes: ['/idv (wildcard)'],
     });
   }
 

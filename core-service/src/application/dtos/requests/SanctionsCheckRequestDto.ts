@@ -13,6 +13,16 @@ export interface SanctionsCheckRequestDtoParams {
   requestId?: string;
 }
 
+// api-gateway URL-encodes names (non-ASCII characters are invalid in HTTP headers)
+const decodeHeader = (value?: string): string | undefined => {
+  if (!value) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
 /**
  * Sanctions Check Request DTO
  */
@@ -61,7 +71,7 @@ export class SanctionsCheckRequestDto {
       country: req.query.country as string | undefined,
       organizationId: req.headers['x-org-id'] as string | undefined,
       userId: req.headers['x-user-id'] as string | undefined,
-      userName: req.headers['x-user-name'] as string | undefined,
+      userName: decodeHeader(req.headers['x-user-name'] as string | undefined),
       userEmail: req.headers['x-user-email'] as string | undefined,
       requestId: (req.headers['x-request-id'] as string | undefined) || `req-${Date.now()}`
     });

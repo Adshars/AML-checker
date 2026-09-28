@@ -22,6 +22,18 @@ export class IAuditLogRepository {
         throw new Error('Method not implemented');
     }
     /**
+     * Find all audit logs matching filters for an organization, without pagination (for export)
+     */
+    async findByOrganizationForExport(organizationId, options = {}) {
+        throw new Error('Method not implemented');
+    }
+    /**
+     * Find all audit logs matching filters, without pagination (for superadmin export)
+     */
+    async findAllForExport(options = {}) {
+        throw new Error('Method not implemented');
+    }
+    /**
      * Count total audit logs for organization
      */
     async countByOrganization(organizationId) {

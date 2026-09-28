@@ -68,6 +68,185 @@ components:
         service:
           type: string
           example: sanctions
+    IdvError:
+      type: object
+      description: Error returned by the identity verification service
+      properties:
+        error:
+          type: string
+          example: This endpoint requires API key authentication
+        code:
+          type: string
+          enum: [VALIDATION_ERROR, UNAUTHORIZED, SERVICE_NOT_ENABLED, FORBIDDEN_AUTH_TYPE, SUPERADMIN_FORBIDDEN, NOT_FOUND, INVALID_STATE]
+    VerificationStatus:
+      type: string
+      enum: [PENDING, IN_PROGRESS, PROCESSING, VERIFIED, REJECTED, MANUAL_REVIEW, EXPIRED]
+    CreateVerificationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        externalRef:
+          type: string
+          maxLength: 100
+          example: CUST-123
+        customerName:
+          type: string
+          maxLength: 200
+          example: Jan Kowalski
+        redirectUrl:
+          type: string
+          maxLength: 2000
+          description: https:// URL the customer returns to after finishing (http://localhost allowed in development)
+          example: https://client.example/kyc/done
+    VerificationCreated:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        identityMode:
+          type: string
+          enum: [IDENTITY, FULL_AML]
+        isDemo:
+          type: boolean
+        verificationUrl:
+          type: string
+          description: Link for the end customer (valid 72 h until they start)
+          example: http://localhost/verify/Qm9vZ2x5LXRva2Vu
+        linkExpiresAt:
+          type: string
+          format: date-time
+        externalRef:
+          type: string
+          nullable: true
+        customerName:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    VerificationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        externalRef:
+          type: string
+          nullable: true
+        customerName:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        identityMode:
+          type: string
+          enum: [IDENTITY, FULL_AML]
+        isDemo:
+          type: boolean
+        createdBy:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [API, USER]
+            name:
+              type: string
+              nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        screeningStatus:
+          type: string
+          enum: [NOT_APPLICABLE, PENDING, CLEAR, HIT, ERROR]
+        decision:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [AUTO, MANUAL]
+              nullable: true
+            reason:
+              type: string
+              nullable: true
+            reviewedByName:
+              type: string
+              nullable: true
+    VerificationDetails:
+      type: object
+      description: >
+        Full verification result. document and checks are null until collected;
+        verificationUrl is present only while the link is still usable (PENDING).
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        verificationUrl:
+          type: string
+          nullable: true
+        document:
+          type: object
+          nullable: true
+        checks:
+          type: object
+          nullable: true
+        attempts:
+          type: object
+          properties:
+            document:
+              type: integer
+            selfie:
+              type: integer
+        decision:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [AUTO, MANUAL]
+              nullable: true
+            reason:
+              type: string
+              nullable: true
+            reviewedBy:
+              type: object
+              nullable: true
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            reviewedAt:
+              type: string
+              format: date-time
+              nullable: true
+            comment:
+              type: string
+              nullable: true
+        screening:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [NOT_APPLICABLE, PENDING, CLEAR, HIT, ERROR]
+        images:
+          type: object
+          properties:
+            document:
+              type: boolean
+            selfie:
+              type: boolean
+            purgedAt:
+              type: string
+              format: date-time
+              nullable: true
 
 security:
   - bearerAuth: []
@@ -863,3 +1042,191 @@ paths:
                         createdAt:
                           type: string
                           format: date-time
+  # ==================== IDENTITY VERIFICATION ====================
+  # Requires identityMode IDENTITY or FULL_AML (otherwise 403 ServiceNotEnabled from the gateway).
+  # SuperAdmin has no access (403 SUPERADMIN_FORBIDDEN).
+
+  /idv/verifications:
+    post:
+      summary: Create a verification link for an end customer (API key only)
+      description: >
+        Returns verificationUrl to pass to the end customer. The link is valid for 72 hours until the
+        customer starts (consent); the customer then has 60 minutes to finish. Poll
+        GET /idv/verifications/{id} for the result.
+      tags: [Identity verification]
+      security:
+        - apiKeyAuth: []
+          apiSecretAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVerificationRequest'
+      responses:
+        201:
+          description: Verification created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationCreated'
+        400:
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdvError'
+        401:
+          description: Unauthorized
+        403:
+          description: Identity verification not enabled, or JWT used (FORBIDDEN_AUTH_TYPE)
+    get:
+      summary: List verifications of the organization
+      tags: [Identity verification]
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/VerificationStatus'
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: search
+          description: Matches externalRef or customerName
+          schema:
+            type: string
+        - in: query
+          name: includeDemo
+          schema:
+            type: boolean
+            default: true
+      responses:
+        200:
+          description: Paginated list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VerificationSummary'
+                  meta:
+                    type: object
+                    properties:
+                      totalItems:
+                        type: integer
+                      totalPages:
+                        type: integer
+                      currentPage:
+                        type: integer
+                      itemsPerPage:
+                        type: integer
+        400:
+          description: Invalid query
+        401:
+          description: Unauthorized
+        403:
+          description: Identity verification not enabled / SuperAdmin
+
+  /idv/verifications/demo:
+    post:
+      summary: Create a demo verification for the signed-in user (JWT only)
+      tags: [Identity verification]
+      security:
+        - bearerAuth: []
+      responses:
+        201:
+          description: Demo verification created (isDemo true)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationCreated'
+        403:
+          description: API key used (FORBIDDEN_AUTH_TYPE) / identity verification not enabled / SuperAdmin
+
+  /idv/verifications/{id}:
+    get:
+      summary: Verification details (B2B polling and panel)
+      tags: [Identity verification]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: Verification details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationDetails'
+        404:
+          description: Not found (also for another organization's verification)
+
+  /idv/verifications/{id}/review:
+    post:
+      summary: Approve or reject a verification in manual review (JWT only)
+      description: Records who decided and when. A comment of at least 3 characters is required to reject.
+      tags: [Identity verification]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [APPROVE, REJECT]
+                comment:
+                  type: string
+                  maxLength: 1000
+      responses:
+        200:
+          description: Decision saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationDetails'
+        400:
+          description: Validation error (e.g. missing comment on reject)
+        403:
+          description: API key used (FORBIDDEN_AUTH_TYPE)
+        404:
+          description: Not found
+        409:
+          description: Not in MANUAL_REVIEW (INVALID_STATE)

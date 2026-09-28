@@ -146,8 +146,9 @@ export default class AuthMiddleware {
                     req.headers['x-user-id'] = authResult.userId;
                 if (authResult.role)
                     req.headers['x-role'] = authResult.role;
+                // Same encoding as x-org-name — names with Polish characters are invalid header values
                 if (authResult.userName)
-                    req.headers['x-user-name'] = authResult.userName;
+                    req.headers['x-user-name'] = encodeURIComponent(authResult.userName);
                 this.setOrganizationHeaders(req, authResult);
                 logger.info('Auth Success', { requestId: req.requestId, authType: 'jwt', userId: authResult.userId });
                 next();

@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BACKEND_SERVICES = ['api-gateway', 'auth-service', 'core-service', 'op-adapter'];
+const BACKEND_SERVICES = ['api-gateway', 'auth-service', 'core-service', 'op-adapter', 'idv-service'];
 const SERVICES = [...BACKEND_SERVICES, 'frontend'];
 
 let passed = 0;

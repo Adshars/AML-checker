@@ -44,3 +44,6 @@ CLAUDE.md
 
 # E2E test environment
 .env.test
+
+# Build output of services added after the TypeScript migration (dist/ is built inside Docker)
+idv-service/dist/

@@ -15,6 +15,7 @@ services:
       - OP_ADAPTER_URL=http://op-adapter:3000
       - JWT_SECRET=${JWT_SECRET}
       - CORE_SERVICE_URL=http://core-service:3000
+      - IDV_SERVICE_URL=http://idv-service:3000
     depends_on:
       - auth-service
       - op-adapter
@@ -105,6 +106,43 @@ services:
     depends_on:
       - postgres
       - op-adapter
+
+  # Identity verification (own database idv_db, created on first start)
+  idv-service:
+    build: ./idv-service
+    volumes:
+      - ./idv-service/logs:/app/logs
+      # Encrypted copies of document and selfie images
+      - idv_data:/app/data
+    environment:
+      - DB_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - IDV_DB_NAME=idv_db
+      - IDV_PROVIDER=${IDV_PROVIDER:-idswyft}
+      - IDSWYFT_API_URL=http://idswyft-api:3001
+      - IDSWYFT_API_KEY=${IDSWYFT_API_KEY:-}
+      - IDSWYFT_TIMEOUT_MS=${IDSWYFT_TIMEOUT_MS:-90000}
+      - CORE_SERVICE_URL=http://core-service:3000
+      # Base of the customer verification link: <FRONTEND_URL>/verify/<token>
+      - FRONTEND_URL=${FRONTEND_URL}
+      - IDV_STORAGE_DIR=/app/data
+      - IDV_STORAGE_KEY=${IDV_STORAGE_KEY}
+      - IDV_LINK_TTL_HOURS=${IDV_LINK_TTL_HOURS:-72}
+      - IDV_SESSION_TTL_MINUTES=${IDV_SESSION_TTL_MINUTES:-60}
+      - IDV_IMAGE_RETENTION_DAYS=${IDV_IMAGE_RETENTION_DAYS:-14}
+      - IDV_MAX_DOCUMENT_ATTEMPTS=${IDV_MAX_DOCUMENT_ATTEMPTS:-3}
+      - IDV_MAX_SELFIE_ATTEMPTS=${IDV_MAX_SELFIE_ATTEMPTS:-3}
+      - IDV_JOBS_INTERVAL_MS=${IDV_JOBS_INTERVAL_MS:-300000}
+    depends_on:
+      postgres:
+        condition: service_started
+      core-service:
+        condition: service_started
+      # Not started when the "idswyft" profile is off (IDV_PROVIDER=fake)
+      idswyft-api:
+        condition: service_started
+        required: false
 
   # OpenSanctions (Yente)
   yente:
@@ -277,6 +315,7 @@ volumes:
   es_data:
   mongo_data:
   postgres_data:
+  idv_data:
   idswyft_pgdata:
   idswyft_uploads:
   idswyft_temp:

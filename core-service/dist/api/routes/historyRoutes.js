@@ -5,6 +5,8 @@ import { validateHistoryAccess } from '../validators/index.js';
  */
 export const createHistoryRoutes = (historyController) => {
     const router = express.Router();
+    // GET /history/export - Export full matching history as CSV (must be registered before /history)
+    router.get('/history/export', validateHistoryAccess, historyController.exportHistory);
     // GET /history - Audit history with pagination
     router.get('/history', validateHistoryAccess, historyController.getHistory);
     return router;

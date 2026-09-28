@@ -13,7 +13,9 @@
     "test:e2e:ui": "npx playwright test --config=tests/e2e/playwright.config.ts --ui",
     "test:e2e:headed": "npx playwright test --config=tests/e2e/playwright.config.ts --headed",
     "test:e2e:debug": "npx playwright test --config=tests/e2e/playwright.config.ts --debug",
-    "test:e2e:report": "npx playwright show-report playwright-report"
+    "test:e2e:report": "npx playwright show-report playwright-report",
+    "idv:bootstrap": "node scripts/idswyft-bootstrap.mjs",
+    "idv:probe": "node scripts/idswyft-probe.mjs"
   },
   "devDependencies": {
     "@faker-js/faker": "^8.4.1",

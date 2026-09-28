@@ -181,8 +181,103 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Identity verification engine (self-hosted idswyft-community, MIT)
+  # Prebuilt images pinned by digest — see infra/idswyft/README.md for versions and updates.
+  # Enabled by the "idswyft" profile (COMPOSE_PROFILES=idswyft in .env).
+  idswyft-postgres:
+    image: postgres:16-alpine
+    profiles: ["idswyft"]
+    environment:
+      - POSTGRES_DB=idswyft
+      - POSTGRES_USER=idswyft
+      - POSTGRES_PASSWORD=${IDSWYFT_DB_PASSWORD}
+    volumes:
+      - idswyft_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U idswyft -d idswyft"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  idswyft-engine:
+    image: ghcr.io/team-idswyft/idswyft-engine@sha256:5da684c9c21afd6eec50ab40e128ab524f1c831277bc3b81e97cf089412f702e
+    profiles: ["idswyft"]
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - LOG_LEVEL=info
+    volumes:
+      # PaddleOCR downloads its ONNX models here on the first OCR request
+      - idswyft_engine_cache:/home/nodeuser/.cache
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+
+  idswyft-api:
+    image: ghcr.io/team-idswyft/idswyft-api@sha256:2b08ca2f40cfc9085c7ed3a95e6eaba4475f9d7afd51a4580552629871fcc93f
+    profiles: ["idswyft"]
+    depends_on:
+      idswyft-postgres:
+        condition: service_healthy
+      idswyft-engine:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://idswyft:${IDSWYFT_DB_PASSWORD}@idswyft-postgres:5432/idswyft
+      # SSL is auto-enabled for hosts other than "localhost"/"postgres" — internal network, no TLS
+      - DATABASE_SSL=false
+      - JWT_SECRET=${IDSWYFT_JWT_SECRET}
+      - API_KEY_SECRET=${IDSWYFT_API_KEY_SECRET}
+      - ENCRYPTION_KEY=${IDSWYFT_ENCRYPTION_KEY}
+      - SERVICE_TOKEN=${IDSWYFT_SERVICE_TOKEN}
+      - ENGINE_URL=http://idswyft-engine:3002
+      - STORAGE_PROVIDER=local
+      - STORAGE_ENCRYPTION=true
+      - SANDBOX_MODE=false
+      # Default cap is 5 verifications / 24 h per developer account — all our organizations share one
+      - RATE_LIMIT_ENABLED=false
+      # Their AML module falls back to "clear" on errors — screening is done by core-service instead
+      - AML_PROVIDER=none
+      - DATA_RETENTION_DAYS=14
+      - MIGRATIONS_LENIENT=true
+      - CORS_ORIGINS=
+    volumes:
+      - idswyft_uploads:/app/backend/uploads
+      - idswyft_temp:/app/backend/temp
+      - ./infra/idswyft/migrations:/app/backend/migrations:ro
+    ports:
+      # Localhost only — used by the bootstrap/probe scripts
+      - "127.0.0.1:${IDSWYFT_API_PORT:-3010}:3001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
 volumes:
   yente_data:
   es_data:
   mongo_data:
   postgres_data:
+  idswyft_pgdata:
+  idswyft_uploads:
+  idswyft_temp:
+  idswyft_engine_cache:

@@ -28,6 +28,11 @@ export type UpdateConditions = Partial<Pick<Verification, 'status' | 'documentAt
 export interface IVerificationRepository {
   create(verification: NewVerification): Promise<Verification>;
 
+  findById(id: string): Promise<Verification | null>;
+
+  /** Customer link lookup — tokens are stored only as SHA-256 hashes */
+  findByTokenHash(tokenHash: string): Promise<Verification | null>;
+
   /** Scoped to the organization — another organization's verification is never returned */
   findByIdForOrganization(id: string, organizationId: string): Promise<Verification | null>;
 
@@ -37,4 +42,17 @@ export interface IVerificationRepository {
    * Update only when the conditions still hold; returns the updated verification or null
    */
   update(id: string, patch: VerificationPatch, conditions?: UpdateConditions): Promise<Verification | null>;
+
+  /**
+   * Take the upload lock (free or stale); returns the locked verification or null when busy
+   */
+  acquireLock(id: string, now: Date, until: Date): Promise<Verification | null>;
+
+  /**
+   * PENDING past linkExpiresAt and unlocked IN_PROGRESS past sessionExpiresAt → EXPIRED; returns the count
+   */
+  expireStale(now: Date): Promise<number>;
+
+  /** Verifications created before the cutoff whose images were not deleted yet */
+  findForImageRetention(createdBefore: Date, limit: number): Promise<Verification[]>;
 }

@@ -1,0 +1,21 @@
+{
+  "success": true,
+  "verification_id": "f257c04a-fc31-4be3-9109-eff930e3f92f",
+  "verification_mode": "identity",
+  "status": "HARD_REJECTED",
+  "current_step": 0,
+  "total_steps": 3,
+  "selfie_id": "0c7e3d1a-2b4f-4c55-9f0e-5a1d2c3b4e5f",
+  "face_match_results": null,
+  "liveness_results": { "liveness_passed": true, "liveness_score": 0.72, "liveness_mode": "passive" },
+  "deepfake_check": null,
+  "age_estimation": null,
+  "velocity_analysis": null,
+  "geo_analysis": null,
+  "final_result": "failed",
+  "rejection_reason": "FACE_NOT_DETECTED",
+  "rejection_detail": "No face detected in live capture (confidence: 0.12, threshold: 0.5)",
+  "failure_reason": "No face detected in live capture (confidence: 0.12, threshold: 0.5)",
+  "manual_review_reason": null,
+  "message": "We could not detect your face. Please ensure your face is clearly visible and well-lit."
+}

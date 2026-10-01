@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "verification_id": "863bc128-5e8a-4d7f-a789-4292fe2671a4",
+  "verification_mode": "identity",
+  "status": "HARD_REJECTED",
+  "current_step": 0,
+  "total_steps": 3,
+  "document_id": "4ef0eb9b-f9aa-414a-8dc7-a14c3317c546",
+  "ocr_data": null,
+  "rejection_reason": "FRONT_LOW_CONFIDENCE",
+  "rejection_detail": "OCR confidence 0.07 is below minimum 0.6",
+  "final_result": "failed",
+  "requires_back": false,
+  "message": "The photo of your ID is not clear enough. Please retake it in good lighting with the full document visible."
+}

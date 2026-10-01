@@ -9,6 +9,7 @@ import {
   type Verification
 } from '../../domain/entities/Verification.js';
 import type { IVerificationRepository } from '../../domain/repositories/IVerificationRepository.js';
+import type { EncryptedFileStorage } from '../../infrastructure/storage/EncryptedFileStorage.js';
 import { decryptToken, encryptToken, generateToken, hashToken } from '../../infrastructure/security/tokens.js';
 import type { RequestContext } from '../../api/middlewares/requestContext.js';
 import type { CreateVerificationDto } from '../dtos/requests/CreateVerificationDto.js';
@@ -24,6 +25,8 @@ import {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export type ImageKind = 'document' | 'selfie';
+
 export interface VerificationServiceOptions {
   publicBaseUrl: string;
   linkTtlHours: number;
@@ -38,11 +41,13 @@ export interface VerificationServiceOptions {
  */
 export class VerificationService {
   repository: IVerificationRepository;
+  storage: EncryptedFileStorage;
   options: VerificationServiceOptions;
   now: () => Date;
 
-  constructor(repository: IVerificationRepository, options: VerificationServiceOptions) {
+  constructor(repository: IVerificationRepository, storage: EncryptedFileStorage, options: VerificationServiceOptions) {
     this.repository = repository;
+    this.storage = storage;
     this.options = options;
     this.now = options.now ?? (() => new Date());
   }
@@ -150,6 +155,29 @@ export class VerificationService {
   async getDetails(ctx: RequestContext, id: string): Promise<VerificationDetails> {
     const verification = await this.findOwned(ctx, id);
     return toVerificationDetails(verification, this.linkFor(verification));
+  }
+
+  /**
+   * Latest accepted image of a kind, decrypted; 404 when missing or purged by retention
+   */
+  async getImage(ctx: RequestContext, id: string, kind: ImageKind): Promise<{ data: Buffer; mime: string }> {
+    const verification = await this.findOwned(ctx, id);
+    const storedPath = kind === 'document' ? verification.documentImagePath : verification.selfieImagePath;
+    const mime = kind === 'document' ? verification.documentImageMime : verification.selfieImageMime;
+    if (!storedPath || !mime) {
+      throw new NotFoundError('Image not available');
+    }
+
+    try {
+      return { data: await this.storage.read(storedPath), mime };
+    } catch (error) {
+      logger.error('Cannot read stored image', {
+        verificationId: verification.id,
+        kind,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw new NotFoundError('Image not available');
+    }
   }
 
   /**

@@ -54,6 +54,14 @@ export const reviewSchema = Joi.object({
   })
 });
 
+export const startSessionSchema = Joi.object({
+  consent: Joi.boolean().strict().valid(true).required().messages({
+    'any.only': 'Consent is required to continue',
+    'any.required': 'Consent is required to continue',
+    'boolean.base': 'Consent is required to continue'
+  })
+});
+
 const toValidationError = (error: Joi.ValidationError): ValidationError =>
   new ValidationError(error.details[0].message, error.details.map((detail) => ({
     field: detail.path.join('.'),

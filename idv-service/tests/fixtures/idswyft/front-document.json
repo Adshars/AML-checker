@@ -1,0 +1,34 @@
+{
+  "success": true,
+  "verification_id": "f257c04a-fc31-4be3-9109-eff930e3f92f",
+  "verification_mode": "identity",
+  "status": "AWAITING_LIVE",
+  "current_step": 2,
+  "total_steps": 3,
+  "document_id": "4ef0eb9b-f9aa-414a-8dc7-a14c3317c546",
+  "ocr_data": {
+    "full_name": "JAN TESTOWY",
+    "date_of_birth": "1985-03-14",
+    "id_number": "ABC123456",
+    "expiry_date": "2031-07-01",
+    "nationality": "POL",
+    "issuing_country": "PL",
+    "name": "JAN TESTOWY",
+    "document_number": "ABC123456",
+    "expiration_date": "2031-07-01",
+    "detected_document_type": "national_id",
+    "classification_confidence": 0.91,
+    "confidence_scores": {
+      "name": 0.94,
+      "document_number": 0.9,
+      "date_of_birth": 0.92,
+      "expiration_date": 0.88
+    }
+  },
+  "detected_document_type": "national_id",
+  "classification_confidence": 0.91,
+  "rejection_reason": null,
+  "rejection_detail": null,
+  "requires_back": false,
+  "message": "Front document processed successfully - ready for live capture"
+}

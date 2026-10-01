@@ -29,6 +29,16 @@ export class SequelizeVerificationRepository implements IVerificationRepository 
     return toDomain(created);
   }
 
+  async findById(id: string): Promise<Verification | null> {
+    const row = await this.model.findOne({ where: { id } });
+    return row ? toDomain(row) : null;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<Verification | null> {
+    const row = await this.model.findOne({ where: { tokenHash } });
+    return row ? toDomain(row) : null;
+  }
+
   async findByIdForOrganization(id: string, organizationId: string): Promise<Verification | null> {
     const row = await this.model.findOne({ where: { id, organizationId } });
     return row ? toDomain(row) : null;
@@ -74,6 +84,40 @@ export class SequelizeVerificationRepository implements IVerificationRepository 
 
     const row = await this.model.findOne({ where: { id } });
     return row ? toDomain(row) : null;
+  }
+
+  async acquireLock(id: string, now: Date, until: Date): Promise<Verification | null> {
+    const [affected] = await this.model.update({ lockedUntil: until }, {
+      where: {
+        id,
+        [Op.or]: [{ lockedUntil: null }, { lockedUntil: { [Op.lt]: now } }]
+      } as WhereOptions<Verification>
+    });
+    return affected === 0 ? null : this.findById(id);
+  }
+
+  async expireStale(now: Date): Promise<number> {
+    const [links] = await this.model.update({ status: 'EXPIRED', tokenEncrypted: null }, {
+      where: { status: 'PENDING', linkExpiresAt: { [Op.lte]: now } } as WhereOptions<Verification>
+    });
+    const [sessions] = await this.model.update({ status: 'EXPIRED' }, {
+      where: {
+        status: 'IN_PROGRESS',
+        sessionExpiresAt: { [Op.lte]: now },
+        // An upload still being processed finishes first
+        [Op.or]: [{ lockedUntil: null }, { lockedUntil: { [Op.lt]: now } }]
+      } as WhereOptions<Verification>
+    });
+    return links + sessions;
+  }
+
+  async findForImageRetention(createdBefore: Date, limit: number): Promise<Verification[]> {
+    const rows = await this.model.findAll({
+      where: { createdAt: { [Op.lt]: createdBefore }, imagesPurgedAt: null } as WhereOptions<Verification>,
+      order: [['createdAt', 'ASC']],
+      limit
+    });
+    return rows.map(toDomain);
   }
 }
 

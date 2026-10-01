@@ -543,3 +543,96 @@ describe('Identity verification routes', () => {
 		expect(res.body).toEqual({ error: 'Identity verification service unavailable' });
 	});
 });
+
+describe('Public identity verification routes', () => {
+
+	const TOKEN = 'Qm9vZ2x5LXRva2VuLWZvci10ZXN0cy0xMjM0NTY3ODkw';
+
+	test('session routes are proxied without auth to /public/sessions', async () => {
+		const app = await setupApp();
+		const captured: { path?: string; headers: Record<string, unknown> } = { headers: {} };
+		nock(IDV_URL)
+			.get(`/public/sessions/${TOKEN}`)
+			.reply(function(uri) {
+				captured.path = uri;
+				captured.headers = this.req.headers;
+				return [200, { step: 'CONSENT' }];
+			});
+
+		const res = await request(app)
+			.get(`/public/idv/sessions/${TOKEN}`)
+			.set('x-org-id', 'spoofed-org')
+			.set('x-auth-type', 'api-key')
+			.set('x-org-identity-mode', 'FULL_AML');
+
+		expect(res.statusCode).toBe(200);
+		expect(res.body).toEqual({ step: 'CONSENT' });
+		expect(captured.path).toBe(`/public/sessions/${TOKEN}`);
+		expect(captured.headers['x-org-id']).toBeUndefined();
+		expect(captured.headers['x-auth-type']).toBeUndefined();
+		expect(captured.headers['x-org-identity-mode']).toBeUndefined();
+		expect(captured.headers['x-forwarded-for']).toEqual(expect.any(String));
+	});
+
+	test('multipart upload is streamed through', async () => {
+		const app = await setupApp();
+		let body = '';
+		nock(IDV_URL)
+			.post(`/public/sessions/${TOKEN}/document`, (b) => {
+				const text = String(b);
+				body = /^[0-9a-f]+$/.test(text) ? Buffer.from(text, 'hex').toString('latin1') : text;
+				return true;
+			})
+			.reply(200, { step: 'SELFIE' });
+
+		const res = await request(app)
+			.post(`/public/idv/sessions/${TOKEN}/document`)
+			.attach('document', Buffer.from([0xff, 0xd8, 0xff, 0x00]), 'id.jpg');
+
+		expect(res.statusCode).toBe(200);
+		expect(body).toContain('name="document"; filename="id.jpg"');
+	});
+
+	test('health is public and rewritten to /health', async () => {
+		const app = await setupApp();
+		nock(IDV_URL).get('/health').reply(200, { service: 'idv-service', status: 'UP', provider: 'fake' });
+
+		const res = await request(app).get('/public/idv/health');
+
+		expect(res.statusCode).toBe(200);
+		expect(res.body.provider).toBe('fake');
+	});
+
+	test('public limiter: 60 requests per 15 min per IP', async () => {
+		const app = await setupApp();
+		nock(IDV_URL).get(`/public/sessions/${TOKEN}`).times(60).reply(200, {});
+
+		for (let i = 0; i < 60; i += 1) {
+			expect((await request(app).get(`/public/idv/sessions/${TOKEN}`)).statusCode).toBe(200);
+		}
+		const limited = await request(app).get(`/public/idv/sessions/${TOKEN}`);
+
+		expect(limited.statusCode).toBe(429);
+		expect(limited.body.error).toMatch(/Too many verification requests/);
+	});
+
+	test('unreachable idv-service -> 502', async () => {
+		const app = await setupApp({ IDV_SERVICE_URL: CLOSED_PORT_URL });
+
+		const res = await request(app).get(`/public/idv/sessions/${TOKEN}`);
+
+		expect(res.statusCode).toBe(502);
+		expect(res.body).toEqual({ error: 'Identity verification service unavailable' });
+	});
+});
+
+describe('Log redaction', () => {
+
+	test('verification link tokens are removed from logged URLs', async () => {
+		const { redactUrl } = await import('../src/GatewayServer.js');
+
+		expect(redactUrl('/public/idv/sessions/Qm9vZ2x5LXRva2Vu/document')).toBe('/public/idv/sessions/:token/document');
+		expect(redactUrl('/public/idv/sessions/Qm9vZ2x5LXRva2Vu?x=1')).toBe('/public/idv/sessions/:token?x=1');
+		expect(redactUrl('/idv/verifications/123')).toBe('/idv/verifications/123');
+	});
+});

@@ -2,8 +2,11 @@ import type { Request, Response } from 'express';
 import { CreateVerificationDto } from '../../application/dtos/requests/CreateVerificationDto.js';
 import { ListVerificationsQueryDto } from '../../application/dtos/requests/ListVerificationsQueryDto.js';
 import { ReviewVerificationDto } from '../../application/dtos/requests/ReviewVerificationDto.js';
-import type { VerificationService } from '../../application/services/VerificationService.js';
+import type { ImageKind, VerificationService } from '../../application/services/VerificationService.js';
+import { NotFoundError } from '../../shared/errors/index.js';
 import type { RequestContext } from '../middlewares/requestContext.js';
+
+const IMAGE_KINDS: readonly string[] = ['document', 'selfie'];
 
 /**
  * Verifications Controller
@@ -48,6 +51,20 @@ export class VerificationsController {
   getDetails = async (req: Request, res: Response): Promise<void> => {
     const details = await this.verificationService.getDetails(req.ctx as RequestContext, String(req.params.id));
     res.json(details);
+  };
+
+  /**
+   * GET /verifications/:id/images/:kind (kind = document | selfie)
+   */
+  getImage = async (req: Request, res: Response): Promise<void> => {
+    const kind = String(req.params.kind);
+    if (!IMAGE_KINDS.includes(kind)) {
+      throw new NotFoundError('Image not available');
+    }
+    const image = await this.verificationService.getImage(req.ctx as RequestContext, String(req.params.id), kind as ImageKind);
+    res.setHeader('Content-Type', image.mime);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(image.data);
   };
 
   /**

@@ -2,6 +2,11 @@ import type { Request, Response, NextFunction } from 'express';
 import logger from '../../shared/logger/index.js';
 import { AppError } from '../../shared/errors/index.js';
 
+/**
+ * Paths with a verification link token are logged without it
+ */
+export const redactPath = (path: string): string => path.replace(/(\/sessions\/)[^/]+/, '$1:token');
+
 export const notFoundHandler = (req: Request, res: Response): void => {
   res.status(404).json({ error: `Route ${req.method} ${req.path} not found`, code: 'NOT_FOUND' });
 };
@@ -14,9 +19,9 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
 
   if (err instanceof AppError) {
     if (err.statusCode >= 500) {
-      logger.error('Request failed', { requestId, path: req.path, code: err.code, error: err.message });
+      logger.error('Request failed', { requestId, path: redactPath(req.path), code: err.code, error: err.message });
     } else {
-      logger.warn('Request rejected', { requestId, path: req.path, code: err.code });
+      logger.warn('Request rejected', { requestId, path: redactPath(req.path), code: err.code });
     }
     res.status(err.statusCode).json(err.toJSON());
     return;
@@ -29,7 +34,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
   }
 
   const error = err instanceof Error ? err : new Error(String(err));
-  logger.error('Unhandled error', { requestId, path: req.path, method: req.method, error: error.message, stack: error.stack });
+  logger.error('Unhandled error', { requestId, path: redactPath(req.path), method: req.method, error: error.message, stack: error.stack });
   res.status(500).json({
     error: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : error.message,
     code: 'INTERNAL_ERROR'

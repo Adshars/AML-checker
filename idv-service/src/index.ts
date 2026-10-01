@@ -8,7 +8,9 @@ import { config, validateConfig } from './shared/config/index.js';
 const bootstrap = async (): Promise<void> => {
   try {
     validateConfig(config);
-    const app = await createApp();
+    const application = new Application();
+    const app = await application.initialize();
+    application.startJobs(config.jobsIntervalMs);
 
     app.listen(config.port, () => {
       logger.info('IDV Service running', {

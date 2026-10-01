@@ -73,6 +73,7 @@ export const createVerificationModel = (sequelize: Sequelize): VerificationModel
     screeningIsPep: nullableBoolean(),
     screeningTopMatch: nullableJson(),
     auditLogId: { type: DataTypes.UUID, allowNull: true },
+    lockedUntil: nullableDate(),
     createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
     updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
   }, {

@@ -1,35 +1,8 @@
 import { jest } from '@jest/globals';
 import crypto from 'crypto';
+import { createInMemoryModel, type Row } from './helpers/inMemoryModel.js';
 
-type Row = Record<string, unknown>;
-
-// In-memory Verification model (only the calls used by the repository)
-const rows: Row[] = [];
-const plainMatch = (row: Row, where: Row) =>
-  Object.entries(where).every(([key, value]) =>
-    value !== null && typeof value === 'object' ? true : row[key] === value);
-const wrap = (row: Row) => ({ get: () => ({ ...row }) });
-
-const mockModel = {
-  create: jest.fn(async (data: Row) => {
-    const row = { ...data, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() };
-    rows.push(row);
-    return wrap(row);
-  }),
-  findOne: jest.fn(async ({ where }: { where: Row }) => {
-    const row = rows.find((r) => plainMatch(r, where));
-    return row ? wrap(row) : null;
-  }),
-  findAndCountAll: jest.fn(async ({ where, limit, offset }: { where: Row; limit: number; offset: number }) => {
-    const matching = rows.filter((r) => plainMatch(r, where));
-    return { rows: matching.slice(offset, offset + limit).map(wrap), count: matching.length };
-  }),
-  update: jest.fn(async (patch: Row, { where }: { where: Row }) => {
-    const matching = rows.filter((r) => plainMatch(r, where));
-    matching.forEach((r) => Object.assign(r, patch));
-    return [matching.length];
-  })
-};
+const { rows, model: mockModel } = createInMemoryModel();
 
 jest.unstable_mockModule('../src/infrastructure/database/sequelize/models/VerificationModel.js', () => ({
   createVerificationModel: () => mockModel

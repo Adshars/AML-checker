@@ -9,7 +9,7 @@
 //   npm run idv:probe -- <document.jpg> <selfie.jpg> [options]
 //
 // Options:
-//   --save-fixtures   save masked responses to idv-service/tests/fixtures/idswyft/
+//   --save-fixtures   save masked responses to idv-service/tests/fixtures/idswyft/recorded/
 //   --expect-reject   the document is expected to be rejected (saves front-document-rejected.json)
 //   --type <t>        document_type: auto (default) | national_id | passport | drivers_license
 //   --country <CC>    issuing_country, 2-letter ISO code (e.g. PL)
@@ -25,7 +25,7 @@ const envFile = path.join(ROOT, '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const BASE_URL = `http://127.0.0.1:${process.env.IDSWYFT_API_PORT || 3010}/api/v2/verify`;
-const FIXTURES_DIR = path.join(ROOT, 'idv-service', 'tests', 'fixtures', 'idswyft');
+const FIXTURES_DIR = path.join(ROOT, 'idv-service', 'tests', 'fixtures', 'idswyft', 'recorded');
 const REQUEST_TIMEOUT_MS = 180_000;
 
 // ---------- arguments ----------

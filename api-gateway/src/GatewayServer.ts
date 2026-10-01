@@ -15,16 +15,22 @@ import logger from './utils/logger.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Customer verification links carry a secret token — never write it to logs
+export const redactUrl = (url: string): string => url.replace(/(\/public\/idv\/sessions\/)[^/?]+/, '$1:token');
+
 export default class GatewayServer {
   app: Application;
   port: number;
   authMiddleware: AuthMiddleware;
   authLimiter!: RateLimitRequestHandler;
   apiLimiter!: RateLimitRequestHandler;
+  publicLimiter!: RateLimitRequestHandler;
   authProxy!: ProxyRequestHandler<Request, Response>;
   sanctionsProxy!: ProxyRequestHandler<Request, Response>;
   usersProxy!: ProxyRequestHandler<Request, Response>;
   idvProxy!: ProxyRequestHandler<Request, Response>;
+  idvPublicProxy!: ProxyRequestHandler<Request, Response>;
+  idvHealthProxy!: ProxyRequestHandler<Request, Response>;
 
   constructor(port = 8080) {
     this.app = express();
@@ -85,8 +91,8 @@ export default class GatewayServer {
       logger.info('Incoming Request', {
         requestId,
         method: req.method,
-        url: req.originalUrl,
-        path: req.path,
+        url: redactUrl(req.originalUrl),
+        path: redactUrl(req.path),
         ip: req.ip || req.socket.remoteAddress,
       });
 
@@ -118,6 +124,15 @@ export default class GatewayServer {
       standardHeaders: true,
       legacyHeaders: false,
     });
+
+    // Customer verification page (no auth) — a whole flow is a handful of requests
+    this.publicLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 60,
+      message: { error: 'Too many verification requests from this IP, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
   }
 
   /**
@@ -146,14 +161,14 @@ export default class GatewayServer {
     const createServiceProxy = (
       serviceName: string,
       unavailableMessage: string,
-      options: Pick<ProxyOptions<Request, Response>, 'target' | 'pathRewrite' | 'cookieDomainRewrite' | 'proxyTimeout' | 'timeout'>
+      options: Pick<ProxyOptions<Request, Response>, 'target' | 'pathRewrite' | 'cookieDomainRewrite' | 'proxyTimeout' | 'timeout' | 'xfwd'>
     ): ProxyRequestHandler<Request, Response> => createProxyMiddleware<Request, Response>({
       ...options,
       changeOrigin: true,
       on: {
         proxyReq: (proxyReq, req) => {
           injectHeaders(proxyReq, req);
-          logger.debug(`Proxying to ${serviceName}`, { requestId: req.requestId, path: req.path });
+          logger.debug(`Proxying to ${serviceName}`, { requestId: req.requestId, path: redactUrl(req.originalUrl) });
         },
         error: (err, req, res) => {
           logger.error(`${serviceName} Proxy Error`, { requestId: req.requestId, error: err.message });
@@ -192,6 +207,22 @@ export default class GatewayServer {
       target: IDV_SERVICE_URL,
       pathRewrite: { '^/idv': '' },
       proxyTimeout: 30000,
+    });
+
+    // Customer verification page: long uploads (OCR takes up to ~30 s per image).
+    // X-Forwarded-For carries the customer IP for the consent record.
+    this.idvPublicProxy = createServiceProxy('IDV Service', 'Identity verification service unavailable', {
+      target: IDV_SERVICE_URL,
+      // Express strips "/public/idv/sessions" when hitting this proxy
+      pathRewrite: (path: string) => `/public/sessions${path}`,
+      proxyTimeout: 120000,
+      timeout: 120000,
+      xfwd: true,
+    });
+
+    this.idvHealthProxy = createServiceProxy('IDV Service', 'Identity verification service unavailable', {
+      target: IDV_SERVICE_URL,
+      pathRewrite: () => '/health',
     });
   }
 
@@ -312,6 +343,20 @@ export default class GatewayServer {
       this.idvProxy
     );
 
+    // ==================== PUBLIC IDENTITY VERIFICATION ROUTES ====================
+    // No auth — the verification token in the URL is the credential. Internal headers are
+    // stripped globally, so nothing can impersonate an organization here.
+
+    this.app.get('/public/idv/health',
+      this.publicLimiter,
+      this.idvHealthProxy
+    );
+
+    this.app.use('/public/idv/sessions',
+      this.publicLimiter,
+      this.idvPublicProxy
+    );
+
     logger.info('All routes configured', {
       protectedAuthRoutes: [
         '/register-organization', '/register-user', '/reset-secret', '/change-password', '/organization/keys',
@@ -321,6 +366,7 @@ export default class GatewayServer {
       protectedSanctionsRoutes: ['/sanctions (wildcard)'],
       protectedUsersRoutes: ['/users (wildcard)'],
       protectedIdvRoutes: ['/idv (wildcard)'],
+      publicIdvRoutes: ['/public/idv/health', '/public/idv/sessions (wildcard)'],
     });
   }
 

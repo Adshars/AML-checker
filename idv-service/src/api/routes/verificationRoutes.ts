@@ -26,6 +26,8 @@ export const createVerificationRoutes = (controller: VerificationsController): R
 
   router.get('/verifications/:id', controller.getDetails);
 
+  router.get('/verifications/:id/images/:kind', controller.getImage);
+
   router.post('/verifications/:id/review', requireAuthType('jwt'), validateBody(reviewSchema), controller.review);
 
   return router;

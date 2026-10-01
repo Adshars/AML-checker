@@ -8,6 +8,14 @@ servers:
     description: Local Docker Environment
 
 components:
+  parameters:
+    VerificationToken:
+      in: path
+      name: token
+      required: true
+      description: Token from verificationUrl (43 URL-safe characters)
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
@@ -68,6 +76,21 @@ components:
         service:
           type: string
           example: sanctions
+    RejectedImage:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum: [DOCUMENT_REJECTED, SELFIE_REJECTED]
+        attemptsLeft:
+          type: integer
+          example: 2
+        reason:
+          type: string
+          nullable: true
+          example: FRONT_LOW_CONFIDENCE
     IdvError:
       type: object
       description: Error returned by the identity verification service
@@ -1187,6 +1210,41 @@ paths:
         404:
           description: Not found (also for another organization's verification)
 
+  /idv/verifications/{id}/images/{kind}:
+    get:
+      summary: Document or selfie image of a verification
+      description: >
+        Latest accepted image, decrypted. Images are deleted 14 days after the verification was created
+        (images.purgedAt in the details), after which this endpoint returns 404.
+      tags: [Identity verification]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: kind
+          required: true
+          schema:
+            type: string
+            enum: [document, selfie]
+      responses:
+        200:
+          description: Image (Cache-Control no-store)
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        404:
+          description: Not found, not collected yet or deleted by retention
+
   /idv/verifications/{id}/review:
     post:
       summary: Approve or reject a verification in manual review (JWT only)
@@ -1230,3 +1288,205 @@ paths:
           description: Not found
         409:
           description: Not in MANUAL_REVIEW (INVALID_STATE)
+
+  # ==================== PUBLIC IDENTITY VERIFICATION (customer page) ====================
+  # No authentication - the token from verificationUrl is the credential.
+  # Rate limited to 60 requests / 15 minutes / IP. Upload timeout 120 s.
+
+  /public/idv/health:
+    get:
+      summary: Identity verification service health (includes the active provider)
+      tags: [Identity verification - customer]
+      security: []
+      responses:
+        200:
+          description: Service status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: idv-service
+                  status:
+                    type: string
+                    example: UP
+                  provider:
+                    type: string
+                    enum: [idswyft, fake]
+                  db:
+                    type: boolean
+
+  /public/idv/sessions/{token}:
+    get:
+      summary: Current step of the customer verification
+      tags: [Identity verification - customer]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/VerificationToken'
+      responses:
+        200:
+          description: Session state (never the verification result)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizationName:
+                    type: string
+                  status:
+                    type: string
+                    enum: [PENDING, IN_PROGRESS]
+                  step:
+                    type: string
+                    enum: [CONSENT, DOCUMENT, SELFIE]
+                  linkExpiresAt:
+                    type: string
+                    format: date-time
+                  sessionExpiresAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  documentAttemptsLeft:
+                    type: integer
+                  selfieAttemptsLeft:
+                    type: integer
+        404:
+          description: Unknown link (NOT_FOUND)
+        410:
+          description: LINK_EXPIRED (72 h without consent), SESSION_EXPIRED (60 min after consent) or ALREADY_COMPLETED
+
+  /public/idv/sessions/{token}/start:
+    post:
+      summary: Give consent and start the 60-minute session
+      tags: [Identity verification - customer]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/VerificationToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consent]
+              properties:
+                consent:
+                  type: boolean
+                  enum: [true]
+      responses:
+        200:
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  step:
+                    type: string
+                    example: DOCUMENT
+                  sessionExpiresAt:
+                    type: string
+                    format: date-time
+        400:
+          description: Consent missing
+        409:
+          description: Already started (INVALID_STATE)
+        410:
+          description: Link expired or already completed
+
+  /public/idv/sessions/{token}/document:
+    post:
+      summary: Upload the front of the identity document (JPEG / PNG, max 10 MB)
+      tags: [Identity verification - customer]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/VerificationToken'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          description: Document accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  step:
+                    type: string
+                    example: SELFIE
+        409:
+          description: Wrong step or another upload in progress (INVALID_STATE)
+        410:
+          description: Session expired or already completed
+        413:
+          description: FILE_TOO_LARGE
+        415:
+          description: UNSUPPORTED_MEDIA_TYPE (checked by file content, not extension)
+        422:
+          description: DOCUMENT_REJECTED - the document could not be read; attemptsLeft tells whether to retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectedImage'
+        502:
+          description: PROVIDER_UNAVAILABLE - the attempt is not counted
+
+  /public/idv/sessions/{token}/selfie:
+    post:
+      summary: Upload the selfie taken with the camera (JPEG / PNG, max 10 MB)
+      tags: [Identity verification - customer]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/VerificationToken'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [selfie]
+              properties:
+                selfie:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          description: Verification submitted (the result is not disclosed to the customer)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  step:
+                    type: string
+                    example: DONE
+                  redirectUrl:
+                    type: string
+                    nullable: true
+        409:
+          description: Wrong step or another upload in progress (INVALID_STATE)
+        410:
+          description: Session expired or already completed
+        413:
+          description: FILE_TOO_LARGE
+        415:
+          description: UNSUPPORTED_MEDIA_TYPE (checked by file content, not extension)
+        422:
+          description: SELFIE_REJECTED - no face detected; attemptsLeft tells whether to retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectedImage'
+        502:
+          description: PROVIDER_UNAVAILABLE - the attempt is not counted

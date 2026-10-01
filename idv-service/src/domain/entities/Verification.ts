@@ -83,6 +83,8 @@ export interface Verification {
   screeningIsPep: boolean | null;
   screeningTopMatch: ScreeningTopMatch | null;
   auditLogId: string | null;
+  /** Held while an upload is processed — prevents parallel uploads of the same session */
+  lockedUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -151,7 +153,8 @@ export const buildNewVerification = ({ now, linkTtlHours, ...params }: NewVerifi
   screeningIsSanctioned: null,
   screeningIsPep: null,
   screeningTopMatch: null,
-  auditLogId: null
+  auditLogId: null,
+  lockedUntil: null
 });
 
 // ---------- predicates ----------
@@ -179,6 +182,17 @@ export const canUploadSelfie = (v: Verification, now: Date): boolean =>
   v.status === 'IN_PROGRESS' && !isSessionExpired(v, now) && hasAcceptedDocument(v);
 
 export const canReview = (v: Verification): boolean => v.status === 'MANUAL_REVIEW';
+
+export type PublicStep = 'CONSENT' | 'DOCUMENT' | 'SELFIE' | 'DONE';
+
+/** Step shown on the customer page */
+export const getPublicStep = (v: Verification): PublicStep => {
+  if (v.status === 'PENDING') return 'CONSENT';
+  if (v.status === 'IN_PROGRESS') return hasAcceptedDocument(v) ? 'SELFIE' : 'DOCUMENT';
+  return 'DONE';
+};
+
+export const attemptsLeft = (used: number, max: number): number => Math.max(0, max - used);
 
 // ---------- transitions (return the fields to update) ----------
 
@@ -209,6 +223,25 @@ export const applyStart = (
     startedAt: now,
     sessionExpiresAt: new Date(now.getTime() + sessionTtlMinutes * 60 * 1000),
     tokenEncrypted: null
+  };
+};
+
+/**
+ * IN_PROGRESS → REJECTED when the customer used up all document / selfie attempts
+ */
+export const applyAttemptsExhausted = (
+  v: Verification,
+  reason: 'DOCUMENT_UNREADABLE' | 'NO_FACE_DETECTED',
+  now: Date
+): VerificationPatch => {
+  if (v.status !== 'IN_PROGRESS') {
+    throw new InvalidStateError('Verification is not in progress', { status: v.status });
+  }
+  return {
+    status: 'REJECTED',
+    decisionSource: 'AUTO',
+    decisionReason: reason,
+    completedAt: now
   };
 };
 

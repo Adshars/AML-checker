@@ -274,6 +274,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      # "info" would log OCR field values (personal data) for every document
+      - LOG_LEVEL=warn
       - DATABASE_URL=postgresql://idswyft:${IDSWYFT_DB_PASSWORD}@idswyft-postgres:5432/idswyft
       # SSL is auto-enabled for hosts other than "localhost"/"postgres" — internal network, no TLS
       - DATABASE_SSL=false

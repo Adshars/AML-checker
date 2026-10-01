@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "verification_id": "f257c04a-fc31-4be3-9109-eff930e3f92f",
+  "session_token": "<redacted>",
+  "verification_url": "<redacted>",
+  "verification_mode": "identity",
+  "status": "AWAITING_FRONT",
+  "current_step": 1,
+  "total_steps": 3,
+  "message": "Identity verification initialized — upload front document"
+}

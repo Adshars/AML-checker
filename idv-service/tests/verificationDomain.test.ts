@@ -1,13 +1,16 @@
 import {
+  applyAttemptsExhausted,
   applyExpiry,
   applyProviderResult,
   applyReview,
   applyScreeningResult,
   applyStart,
+  attemptsLeft,
   canReview,
   canStart,
   canUploadDocument,
   canUploadSelfie,
+  getPublicStep,
   isFinalStatus,
   isLinkExpired,
   isSessionExpired,
@@ -268,5 +271,32 @@ describe('applyReview', () => {
   test('outside MANUAL_REVIEW -> InvalidStateError', () => {
     expect(() => applyReview(makeVerification({ status: 'VERIFIED' }), { decision: 'APPROVE', ...reviewer }, NOW))
       .toThrow(InvalidStateError);
+  });
+});
+
+describe('Customer page helpers', () => {
+  test('public step follows status and the accepted document', () => {
+    expect(getPublicStep(makeVerification())).toBe('CONSENT');
+    expect(getPublicStep(inProgress())).toBe('DOCUMENT');
+    expect(getPublicStep(inProgress({ documentImagePath: 'doc' }))).toBe('SELFIE');
+    for (const status of ['PROCESSING', 'VERIFIED', 'REJECTED', 'MANUAL_REVIEW', 'EXPIRED'] as const) {
+      expect(getPublicStep(makeVerification({ status }))).toBe('DONE');
+    }
+  });
+
+  test('attempts left never goes below zero', () => {
+    expect(attemptsLeft(0, 3)).toBe(3);
+    expect(attemptsLeft(3, 3)).toBe(0);
+    expect(attemptsLeft(5, 3)).toBe(0);
+  });
+
+  test('exhausted attempts -> REJECTED with an automatic decision', () => {
+    expect(applyAttemptsExhausted(inProgress(), 'NO_FACE_DETECTED', NOW)).toEqual({
+      status: 'REJECTED',
+      decisionSource: 'AUTO',
+      decisionReason: 'NO_FACE_DETECTED',
+      completedAt: NOW
+    });
+    expect(() => applyAttemptsExhausted(makeVerification(), 'DOCUMENT_UNREADABLE', NOW)).toThrow(InvalidStateError);
   });
 });

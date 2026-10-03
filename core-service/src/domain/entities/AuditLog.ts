@@ -1,3 +1,6 @@
+/** Who triggered the check: panel user, B2B API key or automatic identity verification screening */
+export type AuditLogSource = 'panel' | 'api' | 'idv';
+
 export interface AuditLogProps {
   id?: string;
   organizationId: string;
@@ -17,6 +20,8 @@ export interface AuditLogProps {
   hitDetails?: Record<string, unknown> | null;
   isSanctioned?: boolean;
   isPep?: boolean;
+  source?: AuditLogSource | null;
+  idvVerificationId?: string | null;
   createdAt?: Date;
 }
 
@@ -41,6 +46,8 @@ export interface FromCheckResultParams {
   userEmail?: string | null;
   searchQuery: string;
   adapterResponse?: AdapterCheckResult;
+  source?: AuditLogSource | null;
+  idvVerificationId?: string | null;
 }
 
 /**
@@ -66,6 +73,8 @@ export class AuditLog {
   hitDetails: Record<string, unknown> | null;
   isSanctioned: boolean;
   isPep: boolean;
+  source: AuditLogSource | null;
+  idvVerificationId: string | null;
   createdAt: Date;
 
   constructor({
@@ -87,6 +96,8 @@ export class AuditLog {
     hitDetails = null,
     isSanctioned = false,
     isPep = false,
+    source = null,
+    idvVerificationId = null,
     createdAt = new Date()
   }: AuditLogProps) {
     this.id = id;
@@ -107,6 +118,8 @@ export class AuditLog {
     this.hitDetails = hitDetails;
     this.isSanctioned = isSanctioned;
     this.isPep = isPep;
+    this.source = source;
+    this.idvVerificationId = idvVerificationId;
     this.createdAt = createdAt;
   }
 
@@ -143,7 +156,9 @@ export class AuditLog {
     userName,
     userEmail,
     searchQuery,
-    adapterResponse
+    adapterResponse,
+    source = null,
+    idvVerificationId = null
   }: FromCheckResultParams): AuditLog {
     const hitsCount = adapterResponse?.hits_count || 0;
     const hasHit = hitsCount > 0;
@@ -224,7 +239,9 @@ export class AuditLog {
       hitsCount,
       ...entityData,
       isSanctioned,
-      isPep
+      isPep,
+      source,
+      idvVerificationId
     });
   }
 }

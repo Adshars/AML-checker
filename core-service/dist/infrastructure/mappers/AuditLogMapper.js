@@ -30,6 +30,8 @@ export class AuditLogMapper {
             hitDetails: data.hitDetails,
             isSanctioned: data.isSanctioned,
             isPep: data.isPep,
+            source: data.source ?? null,
+            idvVerificationId: data.idvVerificationId ?? null,
             createdAt: data.createdAt
         });
     }
@@ -54,7 +56,9 @@ export class AuditLogMapper {
             entityDescription: entity.entityDescription,
             hitDetails: entity.hitDetails,
             isSanctioned: entity.isSanctioned,
-            isPep: entity.isPep
+            isPep: entity.isPep,
+            source: entity.source,
+            idvVerificationId: entity.idvVerificationId
         };
     }
     /**
@@ -82,6 +86,8 @@ export class AuditLogMapper {
             hitDetails: entity.hitDetails,
             isSanctioned: entity.isSanctioned,
             isPep: entity.isPep,
+            source: entity.source,
+            idvVerificationId: entity.idvVerificationId,
             createdAt: entity.createdAt
         };
     }

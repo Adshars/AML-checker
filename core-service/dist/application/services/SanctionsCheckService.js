@@ -15,7 +15,7 @@ export class SanctionsCheckService {
      * Perform sanctions check
      */
     async check(requestDto) {
-        const { name, limit, fuzzy, schema, country, organizationId, userId, userName, userEmail, requestId } = requestDto;
+        const { name, limit, fuzzy, schema, country, organizationId, userId, userName, userEmail, requestId, source, idvVerificationId } = requestDto;
         // Call OP Adapter
         const result = await this.opAdapterClient.checkSanctions({
             name: name,
@@ -28,6 +28,7 @@ export class SanctionsCheckService {
         const adapterResponse = result.data;
         const adapterLatency = result.duration;
         // Create audit log (non-blocking failure)
+        let audit = null;
         try {
             const auditLog = AuditLog.fromCheckResult({
                 organizationId: organizationId,
@@ -35,13 +36,26 @@ export class SanctionsCheckService {
                 userName: userName || (userId ? 'User' : 'API'),
                 userEmail,
                 searchQuery: name,
-                adapterResponse
+                adapterResponse,
+                source,
+                idvVerificationId
             });
-            await this.auditLogRepository.create(auditLog);
+            const saved = await this.auditLogRepository.create(auditLog);
+            if (saved?.id) {
+                audit = {
+                    id: saved.id,
+                    hasHit: saved.hasHit,
+                    isSanctioned: saved.isSanctioned,
+                    isPep: saved.isPep,
+                    entityName: saved.entityName,
+                    entityScore: saved.entityScore
+                };
+            }
             logger.info('Audit log saved successfully', {
                 requestId,
                 organizationId,
                 hasHit: auditLog.hasHit,
+                source,
                 userEmail
             });
         }
@@ -58,7 +72,7 @@ export class SanctionsCheckService {
             result: (adapterResponse.hits_count ?? 0) > 0 ? 'HIT' : 'CLEAR',
             adapterLatency
         });
-        return adapterResponse;
+        return { ...adapterResponse, audit };
     }
 }
 export default SanctionsCheckService;

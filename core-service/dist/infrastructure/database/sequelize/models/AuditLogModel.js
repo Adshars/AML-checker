@@ -77,6 +77,15 @@ export const createAuditLogModel = (sequelize) => {
             type: DataTypes.BOOLEAN,
             defaultValue: false
         },
+        // panel / api / idv — null for checks recorded before the column existed
+        source: {
+            type: DataTypes.STRING(16),
+            allowNull: true
+        },
+        idvVerificationId: {
+            type: DataTypes.UUID,
+            allowNull: true
+        },
         createdAt: {
             type: DataTypes.DATE,
             defaultValue: DataTypes.NOW

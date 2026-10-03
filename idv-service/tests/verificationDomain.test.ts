@@ -3,6 +3,8 @@ import {
   applyExpiry,
   applyProviderResult,
   applyReview,
+  applyScreeningError,
+  applyScreeningImpossible,
   applyScreeningResult,
   applyStart,
   attemptsLeft,
@@ -14,6 +16,7 @@ import {
   isFinalStatus,
   isLinkExpired,
   isSessionExpired,
+  MAX_SCREENING_ATTEMPTS,
   VERIFICATION_STATUSES
 } from '../src/domain/entities/Verification.js';
 import { InvalidStateError, ValidationError } from '../src/shared/errors/index.js';
@@ -298,5 +301,37 @@ describe('Customer page helpers', () => {
       completedAt: NOW
     });
     expect(() => applyAttemptsExhausted(makeVerification(), 'DOCUMENT_UNREADABLE', NOW)).toThrow(InvalidStateError);
+  });
+});
+
+describe('Screening errors', () => {
+  const awaiting = (overrides = {}) => makeVerification({
+    status: 'PROCESSING', identityMode: 'FULL_AML', providerOutcome: 'VERIFIED', screeningStatus: 'PENDING', ...overrides
+  });
+
+  test('error keeps PROCESSING and counts the attempt (never clear)', () => {
+    expect(applyScreeningError(awaiting({ screeningAttempts: 2 }), NOW)).toEqual({ screeningStatus: 'ERROR', screeningAttempts: 3 });
+  });
+
+  test('last attempt → MANUAL_REVIEW (SCREENING_FAILED)', () => {
+    expect(MAX_SCREENING_ATTEMPTS).toBe(12);
+    expect(applyScreeningError(awaiting({ screeningAttempts: 11 }), NOW)).toEqual({
+      screeningStatus: 'ERROR',
+      screeningAttempts: 12,
+      status: 'MANUAL_REVIEW',
+      decisionSource: 'AUTO',
+      decisionReason: 'SCREENING_FAILED',
+      completedAt: NOW
+    });
+  });
+
+  test('no name → MANUAL_REVIEW; a provider rejection stays REJECTED with its reason', () => {
+    expect(applyScreeningImpossible(awaiting(), 'SCREENING_NO_NAME', NOW)).toMatchObject({ status: 'MANUAL_REVIEW', decisionReason: 'SCREENING_NO_NAME' });
+    expect(applyScreeningImpossible(awaiting({ providerOutcome: 'REJECTED', decisionReason: 'LIVENESS_FAILED' }), 'SCREENING_NO_NAME', NOW))
+      .toMatchObject({ status: 'REJECTED', decisionReason: 'LIVENESS_FAILED' });
+  });
+
+  test('not applicable to IDENTITY', () => {
+    expect(() => applyScreeningError(awaiting({ identityMode: 'IDENTITY' }), NOW)).toThrow(InvalidStateError);
   });
 });

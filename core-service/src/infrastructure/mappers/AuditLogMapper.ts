@@ -1,4 +1,4 @@
-import { AuditLog } from '../../domain/entities/AuditLog.js';
+import { AuditLog, type AuditLogSource } from '../../domain/entities/AuditLog.js';
 import type { AuditLogCreationAttributes } from '../database/sequelize/models/AuditLogModel.js';
 
 /**
@@ -33,6 +33,8 @@ export class AuditLogMapper {
       hitDetails: data.hitDetails as Record<string, unknown> | null,
       isSanctioned: data.isSanctioned as boolean,
       isPep: data.isPep as boolean,
+      source: (data.source as AuditLogSource | null | undefined) ?? null,
+      idvVerificationId: (data.idvVerificationId as string | null | undefined) ?? null,
       createdAt: data.createdAt as Date
     });
   }
@@ -58,7 +60,9 @@ export class AuditLogMapper {
       entityDescription: entity.entityDescription,
       hitDetails: entity.hitDetails,
       isSanctioned: entity.isSanctioned,
-      isPep: entity.isPep
+      isPep: entity.isPep,
+      source: entity.source,
+      idvVerificationId: entity.idvVerificationId
     };
   }
 
@@ -87,6 +91,8 @@ export class AuditLogMapper {
       hitDetails: entity.hitDetails,
       isSanctioned: entity.isSanctioned,
       isPep: entity.isPep,
+      source: entity.source,
+      idvVerificationId: entity.idvVerificationId,
       createdAt: entity.createdAt
     };
   }

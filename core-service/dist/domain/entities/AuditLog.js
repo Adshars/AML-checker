@@ -21,8 +21,10 @@ export class AuditLog {
     hitDetails;
     isSanctioned;
     isPep;
+    source;
+    idvVerificationId;
     createdAt;
-    constructor({ id, organizationId, userId = null, userName = null, userEmail = null, searchQuery, hasHit = false, hitsCount = 0, entityName = null, entityScore = null, entityBirthDate = null, entityGender = null, entityCountries = null, entityDatasets = null, entityDescription = null, hitDetails = null, isSanctioned = false, isPep = false, createdAt = new Date() }) {
+    constructor({ id, organizationId, userId = null, userName = null, userEmail = null, searchQuery, hasHit = false, hitsCount = 0, entityName = null, entityScore = null, entityBirthDate = null, entityGender = null, entityCountries = null, entityDatasets = null, entityDescription = null, hitDetails = null, isSanctioned = false, isPep = false, source = null, idvVerificationId = null, createdAt = new Date() }) {
         this.id = id;
         this.organizationId = organizationId;
         this.userId = userId;
@@ -41,6 +43,8 @@ export class AuditLog {
         this.hitDetails = hitDetails;
         this.isSanctioned = isSanctioned;
         this.isPep = isPep;
+        this.source = source;
+        this.idvVerificationId = idvVerificationId;
         this.createdAt = createdAt;
     }
     /**
@@ -69,7 +73,7 @@ export class AuditLog {
      * Create from adapter response data
      * Handles both property-based format (OpenSanctions) and flat format (legacy)
      */
-    static fromCheckResult({ organizationId, userId, userName, userEmail, searchQuery, adapterResponse }) {
+    static fromCheckResult({ organizationId, userId, userName, userEmail, searchQuery, adapterResponse, source = null, idvVerificationId = null }) {
         const hitsCount = adapterResponse?.hits_count || 0;
         const hasHit = hitsCount > 0;
         const bestHit = adapterResponse?.data?.[0];
@@ -142,7 +146,9 @@ export class AuditLog {
             hitsCount,
             ...entityData,
             isSanctioned,
-            isPep
+            isPep,
+            source,
+            idvVerificationId
         });
     }
 }

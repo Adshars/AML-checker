@@ -111,6 +111,21 @@ export class SequelizeVerificationRepository implements IVerificationRepository 
     return links + sessions;
   }
 
+  async findScreeningRetries(updatedBefore: Date, limit: number): Promise<Verification[]> {
+    const rows = await this.model.findAll({
+      where: {
+        status: 'PROCESSING',
+        identityMode: 'FULL_AML',
+        providerOutcome: { [Op.ne]: null },
+        screeningStatus: { [Op.in]: ['ERROR', 'PENDING'] },
+        updatedAt: { [Op.lt]: updatedBefore }
+      } as WhereOptions<Verification>,
+      order: [['updatedAt', 'ASC']],
+      limit
+    });
+    return rows.map(toDomain);
+  }
+
   async findForImageRetention(createdBefore: Date, limit: number): Promise<Verification[]> {
     const rows = await this.model.findAll({
       where: { createdAt: { [Op.lt]: createdBefore }, imagesPurgedAt: null } as WhereOptions<Verification>,

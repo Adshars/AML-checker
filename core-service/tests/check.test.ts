@@ -392,3 +392,84 @@ describe('GET /check Integration Test', () => {
         }));
     });
 });
+
+describe('GET /check — check source and audit reference', () => {
+    const VERIFICATION_ID = '5b0c9f8e-1c2d-4e3f-8a9b-0c1d2e3f4a5b';
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockCheckSanctions.mockResolvedValue({
+            data: { hits_count: 1, data: [{ name: 'Vladimir Putin', score: 0.97, isSanctioned: true, isPep: true }] },
+            duration: 20
+        });
+        mockAuditLogModel.create.mockImplementation(async (data: any) => ({ ...data, id: 'audit-1', createdAt: new Date() }));
+    });
+
+    const savedLog = () => mockAuditLogModel.create.mock.calls[0][0] as Record<string, unknown>;
+
+    it('panel (JWT) check is recorded with source "panel"', async () => {
+        await request(app).get('/check?name=Putin').set('x-org-id', 'org-1').set('x-auth-type', 'jwt').set('x-user-id', 'u1');
+        expect(savedLog()).toMatchObject({ source: 'panel', idvVerificationId: null });
+    });
+
+    it('API key check is recorded with source "api"', async () => {
+        await request(app).get('/check?name=Putin').set('x-org-id', 'org-1').set('x-auth-type', 'api-key');
+        expect(savedLog()).toMatchObject({ source: 'api', idvVerificationId: null });
+    });
+
+    it('identity verification screening is recorded with source "idv" and the verification id', async () => {
+        await request(app)
+            .get('/check?name=Putin')
+            .set('x-org-id', 'org-1')
+            .set('x-auth-type', 'internal')
+            .set('x-source', 'idv')
+            .set('x-idv-verification-id', VERIFICATION_ID);
+
+        expect(savedLog()).toMatchObject({ source: 'idv', idvVerificationId: VERIFICATION_ID });
+    });
+
+    it('verification id without x-source: idv is ignored', async () => {
+        await request(app)
+            .get('/check?name=Putin')
+            .set('x-org-id', 'org-1')
+            .set('x-auth-type', 'jwt')
+            .set('x-idv-verification-id', VERIFICATION_ID);
+
+        expect(savedLog()).toMatchObject({ source: 'panel', idvVerificationId: null });
+    });
+
+    it('malformed verification id is not stored', async () => {
+        await request(app)
+            .get('/check?name=Putin')
+            .set('x-org-id', 'org-1')
+            .set('x-source', 'idv')
+            .set('x-idv-verification-id', 'not-a-uuid');
+
+        expect(savedLog()).toMatchObject({ source: 'idv', idvVerificationId: null });
+    });
+
+    it('response contains the adapter result plus the audit reference', async () => {
+        const res = await request(app).get('/check?name=Putin').set('x-org-id', 'org-1').set('x-auth-type', 'jwt');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.hits_count).toBe(1);
+        expect(res.body.audit).toEqual({
+            id: 'audit-1',
+            hasHit: true,
+            isSanctioned: true,
+            isPep: true,
+            entityName: 'Vladimir Putin',
+            entityScore: 0.97
+        });
+    });
+
+    it('audit is null when the log could not be saved (check still succeeds)', async () => {
+        mockAuditLogModel.create.mockRejectedValueOnce(new Error('DB down'));
+
+        const res = await request(app).get('/check?name=Putin').set('x-org-id', 'org-1');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.hits_count).toBe(1);
+        expect(res.body.audit).toBeNull();
+    });
+});

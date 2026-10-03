@@ -7,6 +7,7 @@ import { SequelizeVerificationRepository } from './infrastructure/database/seque
 import { parseKey } from './infrastructure/security/tokens.js';
 import { EncryptedFileStorage } from './infrastructure/storage/EncryptedFileStorage.js';
 import { createProvider } from './infrastructure/providers/createProvider.js';
+import { CoreServiceClient } from './infrastructure/clients/CoreServiceClient.js';
 
 // Application Services
 import { VerificationService } from './application/services/VerificationService.js';
@@ -84,7 +85,7 @@ export class Application {
       provider: config.provider,
       tokenKey: storageKey
     });
-    const screeningService = new ScreeningService(verificationRepository);
+    const screeningService = new ScreeningService(verificationRepository, new CoreServiceClient(config.coreService.url));
     const publicSessionService = new PublicSessionService(verificationRepository, provider, storage, screeningService, {
       sessionTtlMinutes: config.verification.sessionTtlMinutes,
       maxDocumentAttempts: config.verification.maxDocumentAttempts,

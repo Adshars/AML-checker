@@ -19,6 +19,8 @@ export interface AuditLogAttributes {
   hitDetails: Record<string, unknown> | null;
   isSanctioned: boolean;
   isPep: boolean;
+  source: string | null;
+  idvVerificationId: string | null;
   createdAt: Date;
 }
 
@@ -40,6 +42,8 @@ export type AuditLogCreationAttributes = Optional<
   | 'hitDetails'
   | 'isSanctioned'
   | 'isPep'
+  | 'source'
+  | 'idvVerificationId'
   | 'createdAt'
 >;
 
@@ -124,6 +128,15 @@ export const createAuditLogModel = (sequelize: Sequelize): AuditLogModelStatic =
     isPep: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
+    },
+    // panel / api / idv — null for checks recorded before the column existed
+    source: {
+      type: DataTypes.STRING(16),
+      allowNull: true
+    },
+    idvVerificationId: {
+      type: DataTypes.UUID,
+      allowNull: true
     },
     createdAt: {
       type: DataTypes.DATE,

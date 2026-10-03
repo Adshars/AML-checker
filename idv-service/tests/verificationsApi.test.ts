@@ -29,6 +29,7 @@ jest.unstable_mockModule('../src/shared/config/index.js', () => ({
   config: {
     database: {},
     provider: 'fake',
+    coreService: { url: 'http://core-service.test' },
     publicBaseUrl: 'http://localhost',
     storage: { dir: '/tmp', key: STORAGE_KEY },
     verification: { linkTtlHours: 72, sessionTtlMinutes: 60 },

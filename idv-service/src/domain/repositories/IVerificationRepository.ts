@@ -20,7 +20,7 @@ export interface VerificationListResult {
 /**
  * Fields that must still match for a conditional update (optimistic locking)
  */
-export type UpdateConditions = Partial<Pick<Verification, 'status' | 'documentAttempts' | 'selfieAttempts'>>;
+export type UpdateConditions = Partial<Pick<Verification, 'status' | 'documentAttempts' | 'selfieAttempts' | 'screeningAttempts'>>;
 
 /**
  * Verification Repository Interface
@@ -52,6 +52,11 @@ export interface IVerificationRepository {
    * PENDING past linkExpiresAt and unlocked IN_PROGRESS past sessionExpiresAt → EXPIRED; returns the count
    */
   expireStale(now: Date): Promise<number>;
+
+  /**
+   * FULL_AML verifications waiting for screening (failed, or never finished) and untouched since the cutoff
+   */
+  findScreeningRetries(updatedBefore: Date, limit: number): Promise<Verification[]>;
 
   /** Verifications created before the cutoff whose images were not deleted yet */
   findForImageRetention(createdBefore: Date, limit: number): Promise<Verification[]>;

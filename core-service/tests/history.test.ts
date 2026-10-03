@@ -109,6 +109,23 @@ describe('GET /history Integration Test', () => {
         });
     });
 
+    it('should return the check source (idv, api, panel, legacy null)', async () => {
+        mockAuditLogModel.findAndCountAll.mockResolvedValue({
+            count: 3,
+            rows: [
+                { id: 'a', searchQuery: 'Putin', source: 'idv', idvVerificationId: '5b0c9f8e-1c2d-4e3f-8a9b-0c1d2e3f4a5b' },
+                { id: 'b', searchQuery: 'Test', source: 'api' },
+                { id: 'c', searchQuery: 'Old' }
+            ]
+        });
+
+        const res = await request(app).get('/history').set('x-org-id', 'org-1');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.data.map((log: { source: string | null }) => log.source)).toEqual(['idv', 'api', null]);
+        expect(res.body.data[0].idvVerificationId).toBe('5b0c9f8e-1c2d-4e3f-8a9b-0c1d2e3f4a5b');
+    });
+
     it('should enforce data isolation for regular users', async () => {
 
         // SCENARIO: A user from 'ORG-A' tries to fetch history.

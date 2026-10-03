@@ -30,6 +30,8 @@ const matchOperators = (cell: unknown, ops: Where): boolean =>
       case Op.gt: return actual !== null && actual !== undefined && (actual as number) > (expected as number);
       case Op.gte: return actual !== null && actual !== undefined && (actual as number) >= (expected as number);
       case Op.iLike: return typeof cell === 'string' && likeToRegExp(String(expected)).test(cell);
+      case Op.ne: return expected === null ? cell !== null && cell !== undefined : actual !== expected;
+      case Op.in: return (ops[op] as unknown[]).includes(cell);
       default: throw new Error(`Operator not supported in tests: ${String(op)}`);
     }
   });

@@ -14,6 +14,7 @@ const { MaintenanceJobs } = await import('../src/application/services/Maintenanc
 const { ScreeningService } = await import('../src/application/services/ScreeningService.js');
 const { SequelizeVerificationRepository } = await import('../src/infrastructure/database/sequelize/repositories/SequelizeVerificationRepository.js');
 const { EncryptedFileStorage } = await import('../src/infrastructure/storage/EncryptedFileStorage.js');
+const { CoreServiceClient } = await import('../src/infrastructure/clients/CoreServiceClient.js');
 type Verification = import('../src/domain/entities/Verification.js').Verification;
 
 const MINUTE = 60 * 1000;
@@ -27,7 +28,8 @@ let jobs: InstanceType<typeof MaintenanceJobs>;
 
 const add = (overrides: Partial<Verification>): Verification => {
   const verification = makeVerification({ id: crypto.randomUUID(), ...overrides });
-  rows.push(verification as unknown as Record<string, unknown>);
+  // Stored copy — changing the "database" row must not change the object passed to the service
+  rows.push(structuredClone(verification) as unknown as Record<string, unknown>);
   return verification;
 };
 const get = (id: string) => rows.find((row) => row.id === id) as Record<string, any>;
@@ -37,7 +39,7 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'idv-jobs-'));
   const repository = new SequelizeVerificationRepository(model as never);
   storage = new EncryptedFileStorage(dir, crypto.randomBytes(32));
-  jobs = new MaintenanceJobs(repository, storage, new ScreeningService(repository), 14);
+  jobs = new MaintenanceJobs(repository, storage, new ScreeningService(repository, new CoreServiceClient('http://core-service.test')), 14);
 });
 
 afterEach(() => {

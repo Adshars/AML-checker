@@ -32,6 +32,7 @@ jest.unstable_mockModule('../src/shared/config/index.js', () => ({
   config: {
     database: {},
     provider: 'fake',
+    coreService: { url: 'http://core-service.test' },
     publicBaseUrl: 'http://localhost',
     storage: { dir: STORAGE_DIR, key: STORAGE_KEY },
     verification: {
@@ -184,7 +185,7 @@ describe('Happy path (IDENTITY)', () => {
 
 describe('FULL_AML', () => {
   test('selfie result goes to the screening service', async () => {
-    const run = jest.spyOn(ScreeningService.prototype, 'run');
+    const run = jest.spyOn(ScreeningService.prototype, 'run').mockImplementation(async (v) => v);
     const { id, token } = await createLink({}, 'FULL_AML');
     await start(token);
     await uploadDocument(token);

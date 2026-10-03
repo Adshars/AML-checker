@@ -324,6 +324,48 @@ export const applyScreeningResult = (
   };
 };
 
+/** Screening retries (every IDV_JOBS_INTERVAL_MS) before giving up */
+export const MAX_SCREENING_ATTEMPTS = 12;
+
+const assertAwaitingScreening = (v: Verification): void => {
+  if (v.status !== 'PROCESSING' || v.identityMode !== 'FULL_AML' || v.providerOutcome === null) {
+    throw new InvalidStateError('Screening applies only to a processed FULL_AML verification', { status: v.status });
+  }
+};
+
+/**
+ * Screening failed (core-service error, no audit entry). Never treated as clear:
+ * status stays PROCESSING for a retry, after the last attempt → screening cannot be done.
+ */
+export const applyScreeningError = (v: Verification, now: Date): VerificationPatch => {
+  assertAwaitingScreening(v);
+  const attempts = v.screeningAttempts + 1;
+  if (attempts >= MAX_SCREENING_ATTEMPTS) {
+    return { ...applyScreeningImpossible(v, 'SCREENING_FAILED', now), screeningAttempts: attempts };
+  }
+  return { screeningStatus: 'ERROR', screeningAttempts: attempts };
+};
+
+/**
+ * Screening cannot be done (no name on the document / retries exhausted) → a human decides.
+ * A verification the provider already rejected stays REJECTED.
+ */
+export const applyScreeningImpossible = (
+  v: Verification,
+  reason: 'SCREENING_FAILED' | 'SCREENING_NO_NAME',
+  now: Date
+): VerificationPatch => {
+  assertAwaitingScreening(v);
+  const rejected = v.providerOutcome === 'REJECTED';
+  return {
+    screeningStatus: 'ERROR',
+    status: rejected ? 'REJECTED' : 'MANUAL_REVIEW',
+    decisionSource: 'AUTO',
+    decisionReason: rejected ? v.decisionReason : reason,
+    completedAt: now
+  };
+};
+
 /**
  * MANUAL_REVIEW → VERIFIED / REJECTED by a panel user; a comment is required to reject
  */

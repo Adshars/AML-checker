@@ -1,4 +1,7 @@
 import type { Request } from 'express';
+import type { AuditLogSource } from '../../../domain/entities/AuditLog.js';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface SanctionsCheckRequestDtoParams {
   name?: string;
@@ -11,6 +14,8 @@ export interface SanctionsCheckRequestDtoParams {
   userName?: string;
   userEmail?: string;
   requestId?: string;
+  source?: AuditLogSource | null;
+  idvVerificationId?: string | null;
 }
 
 // api-gateway URL-encodes names (non-ASCII characters are invalid in HTTP headers)
@@ -37,6 +42,8 @@ export class SanctionsCheckRequestDto {
   userName?: string;
   userEmail?: string;
   requestId?: string;
+  source: AuditLogSource | null;
+  idvVerificationId: string | null;
 
   constructor({
     name,
@@ -48,7 +55,9 @@ export class SanctionsCheckRequestDto {
     userId,
     userName,
     userEmail,
-    requestId
+    requestId,
+    source = null,
+    idvVerificationId = null
   }: SanctionsCheckRequestDtoParams) {
     this.name = name?.trim();
     this.limit = limit;
@@ -60,6 +69,8 @@ export class SanctionsCheckRequestDto {
     this.userName = userName;
     this.userEmail = userEmail;
     this.requestId = requestId;
+    this.source = source;
+    this.idvVerificationId = idvVerificationId;
   }
 
   static fromRequest(req: Request): SanctionsCheckRequestDto {
@@ -73,8 +84,23 @@ export class SanctionsCheckRequestDto {
       userId: req.headers['x-user-id'] as string | undefined,
       userName: decodeHeader(req.headers['x-user-name'] as string | undefined),
       userEmail: req.headers['x-user-email'] as string | undefined,
-      requestId: (req.headers['x-request-id'] as string | undefined) || `req-${Date.now()}`
+      requestId: (req.headers['x-request-id'] as string | undefined) || `req-${Date.now()}`,
+      ...SanctionsCheckRequestDto.sourceFromHeaders(req)
     });
+  }
+
+  /**
+   * x-source / x-idv-verification-id come only from idv-service (api-gateway strips them from clients).
+   * The verification id is trusted only together with x-source: idv.
+   */
+  static sourceFromHeaders(req: Request): { source: AuditLogSource | null; idvVerificationId: string | null } {
+    if (req.headers['x-source'] === 'idv') {
+      const verificationId = req.headers['x-idv-verification-id'] as string | undefined;
+      return { source: 'idv', idvVerificationId: verificationId && UUID_PATTERN.test(verificationId) ? verificationId : null };
+    }
+    const authType = req.headers['x-auth-type'];
+    const source = authType === 'api-key' ? 'api' : authType === 'jwt' ? 'panel' : null;
+    return { source, idvVerificationId: null };
   }
 
   isValid(): boolean {
